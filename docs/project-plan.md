@@ -242,6 +242,24 @@ The work splits into four workstreams that one person each can own, so a team of
 
 The atc_app fixes described above make a natural opener with Naveen Mathew: they solve that project's top open issue.
 
+## Publications
+
+Each stage produces a result worth publishing, so the project can put out papers as it goes rather than one at the end. Preprints go on arXiv first, with the code and environment open so others can reproduce the results.
+
+| Paper | Comes from | Lead workstream | Possible venue |
+| --- | --- | --- | --- |
+| Does fixing the training–simulation mismatch improve an RL controller? Naveen's agent retrained in a closed-loop world, on his own benchmark | First steps, step 2 | AI training (Naveen Mathew) | arXiv preprint alongside the atc_app contribution |
+| Predicting holding at Gatwick's WILLO and TIMBA stacks from OpenSky data, and what it means for arrival fuel | Data side, alongside stages 0–1 | Data and baselines | OpenSky Symposium (proceedings in the Journal of Open Aviation Science) |
+| An open Gatwick approach environment: real procedures, replayed real arrivals, and rules and real-controller baselines | Stages 0–2 | Simulated world | SESAR Innovation Days, or the Journal of Open Aviation Science |
+| Learning to vector arrivals onto final at Gatwick: RL against a rules controller and real controllers on identical traffic | Stages 1–3 | AI training | SESAR Innovation Days, or ICRAT (International Conference on Research in Air Transportation) |
+| A two-layer AI approach controller handling holds, go-arounds, runway changes and storms | Stages 4–6 | AI training and simulated world | ICRAT, the USA/Europe ATM R&D Seminar, or a journal such as Transportation Research Part C |
+| AI and human controllers on the same traffic: a live comparison with VATSIM controllers, and possibly NATS | Live baseline | Whole team | ICRAT or the ATM R&D Seminar |
+| Does an approach controller trained at Gatwick work at Geneva? | Stage 7 | AI training | Journal paper |
+
+- **Authorship follows the workstreams.** Whoever leads a paper is first author, and everyone who contributed is a co-author.
+- **Data and acknowledgements.** OpenSky asks users of its data to cite its reference paper. VATSIM UK material and the sector file need acknowledging, and live sessions need each controller's consent.
+- **Deadlines change each year,** so check the calls for papers once a result is close.
+
 ## Decisions
 
 | Question | Decision |
