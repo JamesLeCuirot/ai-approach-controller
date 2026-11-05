@@ -1,6 +1,6 @@
 # AI Approach Controller
 
-A simulated approach radar where an AI controller works arrival traffic from the holding stacks onto final, and you watch it on a radar screen. The first airport is London Gatwick (EGKK).
+An open benchmark for AI approach control, and a simulated approach radar where an AI controller works arrival traffic from the holding stacks onto final while you watch. The first airport is London Gatwick (EGKK).
 
 **End goal:** an open benchmark for AI approach control at a real, busy airport, starting with Gatwick, with our AI controller as its first entrant. The controller safely and efficiently manages all the arrival traffic, you can watch it working on a radar screen, and the benchmark scores it against real controllers handling the same traffic.
 
@@ -31,7 +31,7 @@ Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA hol
 | --- | --- |
 | `approach/sim/` | The simulated world: BlueSky aircraft, the replay hand-over, scripted pilots |
 | `approach/airports/` | Airports as data. `egkk/` is Gatwick |
-| `approach/controllers/` | Hand-written baselines: the rules controller and a random controller |
+| `approach/controllers/` | Baseline controllers: rules, imitation and random, plus the safety check |
 | `approach/ai/` | The learned controller: network, scoring, training, evaluation |
 | `approach/data/` | Pipelines for OpenSky ADS-B, METARs and aircraft types |
 | `approach/radar/` | The radar screen and session replays |
