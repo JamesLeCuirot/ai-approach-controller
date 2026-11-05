@@ -1,0 +1,15 @@
+# Simulator and training environments (TU Delft, MIT licence)
+bluesky-simulator==1.1.1
+bluesky-gym==0.2.0
+
+# Reinforcement learning
+torch>=2.2
+stable-baselines3>=2.3
+gymnasium>=0.29
+
+# Data handling
+numpy>=1.24
+pandas>=2.0
+
+# Tests
+pytest>=7.4

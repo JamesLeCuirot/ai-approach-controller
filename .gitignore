@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Downloaded data: never committed (licences, size)
+data/raw/
+data/external/
+data/processed/
+
+# Reference documents (VATSIM vMATS, UK AIP): link to them, don't commit them
+*.pdf
+
+# Trained models and outputs
+checkpoints/
+models/
+*.pt
+*.pth
+*.zip
+runs/
+outputs/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
