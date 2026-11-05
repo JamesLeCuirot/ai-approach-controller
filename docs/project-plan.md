@@ -2,9 +2,9 @@
 
 Snapshot of the shared project plan, 5 November 2026 · James Le Cuirot
 
-We build a simulated approach radar where an AI controller works arrival traffic from the arrival fixes onto final, and we watch it on a radar screen. It starts with two aircraft and speed control only, then grows stage by stage to wake spacing, holds, go-arounds, runway changes and storms.
+We build an open benchmark for AI approach control at Gatwick, and an AI controller that works arrival traffic from the arrival fixes onto final while we watch it on a radar screen. It starts with two aircraft and speed control only, then grows stage by stage to wake spacing, holds, go-arounds, runway changes and storms.
 
-**End goal:** an AI approach controller that safely and efficiently manages all the arrival traffic into a real, busy airport, starting with Gatwick, which you can watch working on a radar screen and compare against real controllers handling the same traffic.
+**End goal:** an open benchmark for AI approach control at a real, busy airport, starting with Gatwick, with our AI controller as its first entrant. The controller safely and efficiently manages all the arrival traffic, you can watch it working on a radar screen, and the benchmark scores it against real controllers handling the same traffic.
 
 ## What you'll watch
 
@@ -61,7 +61,7 @@ The Air Traffic Management Research Institute, led by Sameer Alam, is the most a
 ### What this project adds
 
 1. **The whole approach job in one controller**, learned stage by stage: vectoring, sequencing, holds, go-arounds, wake spacing, runway changes and weather. Each work above covers one or two of these. Auto-ATC comes closest, but works one aircraft at a time and turns its predictions into instructions with fixed rules.
-2. **A busy real airport, fully open.** An open Gatwick approach environment that anyone can test a controller against. Bluebird is closed and most papers release no code.
+2. **An open benchmark at a busy real airport.** The same real traffic, scoring and baselines for every controller, so results can be compared. Today each paper tests in its own simulator and scenarios, Bluebird is closed, and most papers release no code.
 3. **AI against human controllers on identical scenarios, published openly**, using VATSIM controllers and possibly Gatwick's own.
 4. **Moving a trained controller to a new airport** (Gatwick to Geneva), which none of the works above attempt.
 
@@ -75,7 +75,7 @@ This comes from a targeted search on 5 November 2026 and OpenSky's list of publi
 
 ## How it works
 
-Three pieces run together: the simulated world, the AI controller and the radar screen. The controller has two layers, matching how a real controller thinks: first the plan, then the instructions that deliver it.
+Three pieces run together: the simulated world, the AI controller and the radar screen, with a fixed safety check between the controller and the aircraft. The controller has two layers, matching how a real controller thinks: first the plan, then the instructions that deliver it.
 
 ```mermaid
 flowchart LR
@@ -88,7 +88,9 @@ flowchart LR
     R["Radar screen<br/>Targets, data blocks and trails<br/>Instruction transcript and alerts"]
     S["Scorer (training only)<br/>Safety, landings, delay, workload"]
     W -- traffic picture --> P
-    V -- instructions --> W
+    SC["Safety check<br/>blocks unsafe instructions"]
+    V -- proposed instructions --> SC
+    SC -- instructions --> W
     W -- live positions --> R
     W -- outcomes --> S
     S -- score to learn from --> AI
@@ -108,6 +110,7 @@ The AI learns by practising: it works thousands of simulated sessions, each one 
 | Aircraft landed | Reward | The point of the job |
 | Each minute an aircraft spends in the sector | Small cost | Stops it parking everyone in a hold forever |
 | Each instruction issued | Small cost | Rewards fewer, cleaner instructions, as a good controller gives |
+| Instruction blocked by the safety check | Medium penalty | Teaches it not to lean on the safety net |
 
 Design choices made up front, so later stages don't force a rewrite:
 
@@ -117,6 +120,7 @@ Design choices made up front, so later stages don't force a rewrite:
 - **Small model.** Tens of thousands of parameters, trained with PPO (a standard reinforcement-learning method). No GPU needed for the early stages.
 - **Scaled scores.** Raw scores are scaled down before training, the fix atc_app needed when its training became unstable.
 - **Any airport.** Airports plug in as data (runways, arrivals, holds, approaches), so Gatwick is the first airport rather than the only one. Naveen's JFK data and Geneva in stage 7 use the same code.
+- **A safety check outside the AI.** A fixed, rule-based check sits between the AI and the aircraft and blocks any instruction that would break separation, terrain or airspace limits. The AI trains with it in place, and every block is counted and reported, so it is clear how much the AI relied on it.
 
 ## Training process
 
@@ -151,12 +155,13 @@ The AI succeeds when it is never unsafe and lands traffic at least as efficientl
 | Extra track miles and delay per arrival | Below the rules controller | Rules controller and real controllers |
 | Instructions per arrival | Below the rules controller | Rules controller |
 
-Four baselines put the numbers in context:
+Five baselines put the numbers in context:
 
 1. **Random controller.** A sanity floor: if the AI can't beat random instructions, something is broken.
 2. **Rules controller.** Hand-written in stage 0. It assigns landing slots and vectors tactically to hit them. This is the bar the AI must clear.
-3. **Real controllers, recorded.** Measured from real ADS-B arrivals at Gatwick: spacing achieved on final, track miles flown, time in holds. Because the AI works the same recorded arrivals from the boundary, each replayed day is a direct comparison: identical traffic, handled once by the AI and once by real controllers.
-4. **Real controllers, live.** If Gatwick's approach controllers at NATS agree, they work the same scenarios on our radar screen and are scored exactly as the AI is. This is the strongest comparison, and the hardest to arrange.
+3. **Imitation controller.** Copies how aircraft were actually flown in the ADS-B data, as Auto-ATC does. Shows whether learning from practice beats copying, and puts the work directly alongside the closest existing system.
+4. **Real controllers, recorded.** Measured from real ADS-B arrivals at Gatwick: spacing achieved on final, track miles flown, time in holds. Because the AI works the same recorded arrivals from the boundary, each replayed day is a direct comparison: identical traffic, handled once by the AI and once by real controllers.
+5. **Real controllers, live.** If Gatwick's approach controllers at NATS agree, they work the same scenarios on our radar screen and are scored exactly as the AI is. This is the strongest comparison, and the hardest to arrange.
 
 The targets are starting points, to be tuned once we see real numbers.
 
@@ -166,7 +171,7 @@ Eight stages take the project from two aircraft to the full demo, then to a seco
 
 | Stage | What's new on screen | Gate to pass |
 | --- | --- | --- |
-| 0 · Foundations | Simulator, radar screen and a rules controller flying two arrivals to the runway | The rules controller lands two arrivals safely, start to finish, on screen |
+| 0 · Foundations | Simulator, safety check, radar screen and rules controller; real controllers scored | The rules controller lands two arrivals safely, start to finish, on screen |
 | 1 · Speed-only spacing | 2–4 arrivals on one arrival route; the AI only adjusts their speeds | The AI's spacing on final beats the rules controller's |
 | 2 · Vectoring onto final | Downwind, base and intercept, using headings, altitudes and speeds | 95% of approaches stable at 1,000 ft, every intercept at 45° or less |
 | 3 · Traffic and wake | A busy hour of arrivals in mixed sizes, with bigger gaps behind heavy aircraft | No separation losses and every pair at its wake minimum, over 100 sessions |
@@ -183,8 +188,8 @@ The first four steps turn atc_app into the foundation, prove it on Naveen Mathew
 
 1. **Build the closed-loop environment.** Replace atc_app's replay-based training with a world run by BlueSky, where instructions take effect at real turn and climb rates, and fix the BlueSky connection. Done when the AI's "turn left 30°" turns the aircraft at about 3° a second and its track changes. Airports plug in as data, so Naveen's JFK data works as well as Gatwick.
 2. **Retrain Naveen's agent on it and rerun his benchmark.** Same AI, same scoring, and his three scenarios (head-on, crossing, high density), compared with his published results. This answers the open question in his README: does fixing the mismatch improve his agent? The environment and results go back to atc_app as a contribution.
-3. **Add Gatwick.** Enter its arrival routes, holds and approaches from the UK AIP and VATSIM material. Replay real arrivals from OpenSky data up to the edge of the approach airspace, and hand each aircraft to the controller as it crosses. Then write the rules controller and show it on the radar screen. This completes stage 0.
-4. **Start the data side in parallel.** Run FlightPathAnalysis on Gatwick OpenSky data to get real arrival routes for realistic traffic, and start the WILLO and TIMBA holding-time study.
+3. **Add Gatwick.** Enter its arrival routes, holds and approaches from the UK AIP and VATSIM material. Replay real arrivals from OpenSky data up to the edge of the approach airspace, and hand each aircraft to the controller as it crosses. Then write the rules controller and the safety check, and show them on the radar screen. This completes stage 0.
+4. **Start the data side in parallel.** Score how real controllers handled Gatwick arrivals from OpenSky data: spacing at the threshold, track miles and holding, with FlightPathAnalysis cleaning the tracks. This needs no AI, is the first publishable result, and becomes the benchmark's real-controller baseline.
 
 Entering Gatwick's procedures for step 3 can start straight away, so every workstream has work from day one.
 
@@ -201,7 +206,7 @@ Everything needed is free and open source, so the project runs on a laptop with 
 | Simulator | [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) 1.1.1 (TU Delft), MIT licence | Aircraft physics and autopilot, navigation data, wind, and a built-in radar display |
 | Starter environments | [BlueSky-Gym](https://pypi.org/project/bluesky-gym/) 0.2.0, MIT licence | Ready-made training worlds: MergeEnv (arrivals merging, a head start on stage 1), StaticObstacleEnv (routing around no-go areas, a head start on storms), DescentEnv |
 | Training | Stable-Baselines3 and PyTorch | A tested PPO implementation, so we write the world and scoring, not the learning algorithm |
-| Radar display | BlueSky's radar first, then our own browser radar scope | BlueSky's display is enough for stages 0–2. The demo gets a custom scope with data blocks, trails, the instruction transcript and storm overlays, plus a mode where a person gives the instructions instead of the AI |
+| Radar display | BlueSky's radar first, then our own browser radar scope | BlueSky's display is enough for stages 0–2. The demo gets a custom scope with data blocks, trails, the instruction transcript and storm overlays, plus a mode where a person gives the instructions instead of the AI. OpenScope, the open-source browser simulator Auto-ATC used, is worth checking as a ready-made scope |
 | Procedures | Gatwick's published procedures from the UK AIP (NATS) | Arrivals, the WILLO and TIMBA holds, and approaches to 26L and 08R |
 | Airspace data | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File), GPL-3 | Fix coordinates, vectoring-area and minimum-altitude shapes, arrival routes and runways, already in coordinates. Downloaded by script, not committed |
 | Controller procedures | VATSIM UK controller guides and forums | How Gatwick traffic is vectored in practice: speed control, when holds are used. Written for the simulation network, so check details against the UK AIP |
@@ -275,6 +280,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 | Synthetic voice | Not now. A possible nice-to-have later |
 | Arrival traffic | Real Gatwick arrivals from OpenSky ADS-B data, replayed up to the edge of the approach airspace. The AI takes over each aircraft as it crosses that boundary |
 | The AI model | A small neural network trained locally with reinforcement learning. No paid APIs |
+| Project framing | Benchmark first: an open Gatwick benchmark with real traffic and real-controller scores, with our AI as its first entrant. Adds real-controller scoring as the first result, a safety check, and an imitation baseline. Decided after reviewing OpenSky's publication list |
 
 ## Open questions
 
@@ -282,6 +288,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 - [ ] **Laptop or cloud?** Start on laptops. A shared cloud machine for training becomes worth it once several people are training models.
 - [ ] **Licence for this repo.** MIT keeps it widest open; GPL-3 would allow bundling the VATSIM UK sector file. Decide before going public.
 - [ ] **Read the closest papers in full:** Han Lu (2026), ApproachNet (2026), Auto-ATC (2025), the Applied Sciences framework (2025), and NTU's arrival-sequencing work.
+- [ ] **OpenScope as the radar screen?** Check its licence, whether it has Gatwick, and how it would connect to BlueSky.
 
 ## Sources
 

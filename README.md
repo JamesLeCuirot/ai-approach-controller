@@ -2,7 +2,7 @@
 
 A simulated approach radar where an AI controller works arrival traffic from the holding stacks onto final, and you watch it on a radar screen. The first airport is London Gatwick (EGKK).
 
-**End goal:** an AI approach controller that safely and efficiently manages all the arrival traffic into a real, busy airport, starting with Gatwick, which you can watch working on a radar screen and compare against real controllers handling the same traffic.
+**End goal:** an open benchmark for AI approach control at a real, busy airport, starting with Gatwick, with our AI controller as its first entrant. The controller safely and efficiently manages all the arrival traffic, you can watch it working on a radar screen, and the benchmark scores it against real controllers handling the same traffic.
 
 The AI starts with two aircraft and speed control only, then grows stage by stage to full vectoring, wake turbulence spacing, holds, go-arounds, runway changes and storms. It is a small neural network trained with reinforcement learning in the simulator, on a laptop, with no paid APIs.
 
@@ -18,11 +18,12 @@ The AI starts with two aircraft and speed control only, then grows stage by stag
 ```mermaid
 flowchart LR
     W["Simulated world (BlueSky)"] -- traffic picture --> AI["AI controller<br/>planner + vectoring"]
-    AI -- instructions --> W
+    AI -- proposed instructions --> SC["Safety check"]
+    SC -- instructions --> W
     W -- live positions --> R["Radar screen"]
 ```
 
-Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA holds. From there the AI controls each aircraft until it is established on the ILS for 26L or 08R. The same traffic can be compared with what real controllers did.
+Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA holds. From there the AI controls each aircraft until it is established on the ILS for 26L or 08R. A fixed safety check blocks any unsafe instruction. Every controller, including the real Gatwick controllers scored from the same traffic, is measured the same way.
 
 ## Repo layout
 
