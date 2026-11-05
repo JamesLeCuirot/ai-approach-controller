@@ -2,6 +2,8 @@
 
 A simulated approach radar where an AI controller works arrival traffic from the holding stacks onto final, and you watch it on a radar screen. The first airport is London Gatwick (EGKK).
 
+**End goal:** an AI approach controller that safely and efficiently manages all the arrival traffic into a real, busy airport, starting with Gatwick, which you can watch working on a radar screen and compare against real controllers handling the same traffic.
+
 The AI starts with two aircraft and speed control only, then grows stage by stage to full vectoring, wake turbulence spacing, holds, go-arounds, runway changes and storms. It is a small neural network trained with reinforcement learning in the simulator, on a laptop, with no paid APIs.
 
 **Status:** planning done, stage 0 prototype next. Nothing runs yet beyond the data download script.

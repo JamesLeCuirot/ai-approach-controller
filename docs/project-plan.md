@@ -4,6 +4,8 @@ Snapshot of the shared project plan, 5 November 2026 · James Le Cuirot
 
 We build a simulated approach radar where an AI controller works arrival traffic from the arrival fixes onto final, and we watch it on a radar screen. It starts with two aircraft and speed control only, then grows stage by stage to wake spacing, holds, go-arounds, runway changes and storms.
 
+**End goal:** an AI approach controller that safely and efficiently manages all the arrival traffic into a real, busy airport, starting with Gatwick, which you can watch working on a radar screen and compare against real controllers handling the same traffic.
+
 ## What you'll watch
 
 The finished demo is a radar scope showing an approach sector during a busy hour, with the AI working every arrival from the arrival fixes to the runway. Each target has a data block (callsign, altitude, speed) and a trail. The AI's instructions scroll in a transcript, for example "DAL123, turn left heading 250, descend and maintain 4,000". Conflict alerts and storm cells are drawn on the scope.
