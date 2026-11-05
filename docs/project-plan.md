@@ -113,6 +113,25 @@ Design choices made up front, so later stages don't force a rewrite:
 - **Scaled scores.** Raw scores are scaled down before training, the fix atc_app needed when its training became unstable.
 - **Any airport.** Airports plug in as data (runways, arrivals, holds, approaches), so Gatwick is the first airport rather than the only one. Naveen's JFK data and Geneva in stage 7 use the same code.
 
+## Training process
+
+The AI learns mostly by trial and error in the simulator, with a head start from the rules controller. Real data supplies the traffic it practises on and the controllers it is compared with.
+
+**What the AI sees and does.** Every 10 seconds or so it gets the traffic picture: each aircraft's position, altitude, speed, heading and wake category, its distance to the runway and to the aircraft ahead, and the airspace limits. It answers with instructions: heading, altitude, speed, hold, or cleared for the approach. The scoring above tells it afterwards how well that went.
+
+1. **Start tiny and build up.** One aircraft, one runway and no wind, learning only to get established on the ILS. Each roadmap stage adds one thing and starts from the previous stage's model, the way a trainee builds up (curriculum learning).
+2. **Head start from the rules controller.** At the start of each stage the AI briefly copies the rules controller (behaviour cloning), so it doesn't begin from random instructions.
+3. **Practice.** Many simulations run in parallel. In each one the AI makes its own decisions and is scored, and training nudges it towards what scored well (PPO). This is where it can overtake the rules controller.
+4. **Check.** Test it on scenarios it never practised on, and watch replays as well as scores.
+
+Where real data fits:
+
+- **Traffic:** real Gatwick arrival streams handed over at WILLO and TIMBA, for practice and testing. Some real days are kept back for testing only.
+- **Comparison:** the same days, as handled by real controllers.
+- **Optional teacher:** controller instructions inferred from ADS-B (turns, level-offs, speed changes), as NTU Singapore has done. ADS-B shows what aircraft did, not what controllers said, so this is noisy: a later experiment or an extra head start, not the main training.
+
+Copying alone can only match the controllers it watched, and never learns what happens after a bad decision. Trial and error alone starts slow and random, and may find odd strategies. The mix gets the best of both.
+
 ## Measuring success
 
 The AI succeeds when it is never unsafe and lands traffic at least as efficiently as a hand-written rules controller, and gets close to what real controllers achieve. Every measure is tracked across many sessions, never a single run.
