@@ -198,20 +198,28 @@
   function drawAircraft(t) {
     const i = frameIndex(t);
     ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
+    if (fullTrail && i >= 0) {
+      // Every aircraft's whole track so far, including ones that have landed, coloured by phase.
+      const tracks = {};
+      for (let k = 0; k <= i; k++) frames[k].ac.forEach(a => (tracks[a.cs] = tracks[a.cs] || []).push(a));
+      ctx.lineWidth = 1.5; ctx.globalAlpha = 0.55;
+      Object.values(tracks).forEach(pts => {
+        for (let k = 1; k < pts.length; k++) {
+          ctx.strokeStyle = colour(pts[k].phase);
+          line(pts[k - 1].x, pts[k - 1].y, pts[k].x, pts[k].y);
+        }
+        const last = pts[pts.length - 1];
+        if (!aircraftAt(t).some(a => a.cs === last.cs)) {
+          ctx.globalAlpha = 0.9; ctx.fillStyle = C['--muted'];
+          ctx.fillText(last.cs, sx(last.x) + 6, sy(last.y) - 6); ctx.globalAlpha = 0.55;
+        }
+      });
+      ctx.globalAlpha = 1; ctx.lineWidth = 1;
+    }
     aircraftAt(t).forEach(p => {
       const col = colour(p.phase);
       // Trail: dots for recent positions; with ?trail=all the whole track as a faint line
       ctx.fillStyle = col; ctx.globalAlpha = 0.45;
-      if (fullTrail) {
-        ctx.strokeStyle = col; ctx.globalAlpha = 0.35; ctx.beginPath();
-        let started = false;
-        for (let k = 0; k <= i; k++) {
-          const q = frames[k].ac.find(a => a.cs === p.cs); if (!q) continue;
-          if (!started) { ctx.moveTo(sx(q.x), sy(q.y)); started = true; } else ctx.lineTo(sx(q.x), sy(q.y));
-        }
-        ctx.lineTo(sx(p.x), sy(p.y)); ctx.stroke();
-      }
-      ctx.globalAlpha = 0.45;
       for (let k = 1; k <= trailLen && i - k >= 0; k++) {
         const q = frames[i - k].ac.find(a => a.cs === p.cs); if (!q) break;
         ctx.fillRect(sx(q.x) - 1.5, sy(q.y) - 1.5, 3, 3);
