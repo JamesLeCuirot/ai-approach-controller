@@ -28,3 +28,6 @@ outputs/
 .DS_Store
 .vscode/
 .idea/
+
+# Milestone videos (published as GitHub release assets)
+media/

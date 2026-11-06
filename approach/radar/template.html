@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: #111a2b; --line: #22304a; --text: #e5e7eb; --muted: #94a3b8;
+    --ring: #1e2b42; --map: #3b4a63; --rma: #2f6f68; --smaa: #4b3f66; --runway: #e2e8f0;
+    --centreline: #6b7a90; --fix: #8fa3bf; --hold: #5d7190;
+    --vectoring: #7dd3fc; --established: #86efac; --goaround: #fbbf24; --blocked: #fbbf24; --held: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #app { display: flex; height: 100%; }
+  #scope { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  #panel { width: 340px; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0; }
+  #panel header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+  #panel h1 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 11.5px; }
+  #controls { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  button, select { background: #1b2740; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; }
+  #clock { font-size: 15px; font-weight: 600; margin-left: auto; }
+  #slider { width: 100%; margin: 0; }
+  #sliderrow { padding: 4px 14px 8px; border-bottom: 1px solid var(--line); }
+  h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 10px 14px 6px; font-weight: 600; }
+  #transcript { flex: 1; overflow-y: auto; padding: 0 14px 8px; min-height: 80px; }
+  .ev { padding: 3px 0; border-bottom: 1px solid #172238; }
+  .ev .t { color: var(--muted); margin-right: 6px; }
+  .ev.blocked { color: var(--blocked); }
+  .ev.landed { color: var(--established); }
+  .ev.goaround, .ev.loss { color: var(--goaround); }
+  .ev.note, .ev.takeover { color: var(--muted); }
+  #scores { padding: 0 14px 12px; border-top: 1px solid var(--line); }
+  #scores table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #scores td { padding: 2px 0; }
+  #scores td:last-child { text-align: right; }
+  #legend { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 11.5px;
+    background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; }
+  #legend span { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  #legend span:first-child { margin-left: 0; }
+  #banner { position: absolute; left: 12px; top: 10px; font-size: 12px; color: var(--muted);
+    background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; }
+  @media (max-width: 760px) {
+    #app { flex-direction: column; }
+    #scope { height: 60vh; flex: none; }
+    #panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); flex: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scope">
+    <canvas id="c"></canvas>
+    <div id="banner"></div>
+    <div id="legend"><span style="background:var(--vectoring)"></span>vectoring<span style="background:var(--established)"></span>established<span style="background:var(--held)"></span>holding<span style="background:var(--goaround)"></span>go-around</div>
+  </div>
+  <aside id="panel">
+    <header><h1 id="title"></h1><div class="sub" id="subtitle"></div></header>
+    <div id="controls">
+      <button id="play">Play</button>
+      <select id="speed"><option>1</option><option>5</option><option selected>10</option><option>30</option><option>60</option></select><span class="sub">× speed</span>
+      <span id="clock">00:00</span>
+    </div>
+    <div id="sliderrow"><input id="slider" type="range" min="0" max="1000" value="0"></div>
+    <h2>Transcript</h2>
+    <div id="transcript"></div>
+    <div id="scores"><h2 style="margin-left:0">Scores</h2><table id="scoretable"></table></div>
+  </aside>
+</div>
+<script id="session" type="application/json">__SESSION__</script>
+<script>
+(() => {
+  const S = JSON.parse(document.getElementById('session').textContent);
+  const M = S.map, frames = S.frames, events = S.events;
+  const params = new URLSearchParams(location.search);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = {};
+  ['--ring','--map','--rma','--smaa','--runway','--centreline','--fix','--hold','--vectoring','--established','--goaround','--held','--text','--muted'].forEach(k => C[k] = css(k));
+  const duration = Math.max(S.meta.duration || 0, frames.length ? frames[frames.length - 1].t : 0, 1);
+
+  document.title = S.meta.title || 'Radar replay';
+  document.getElementById('title').textContent = S.meta.title || 'Radar replay';
+  document.getElementById('subtitle').textContent = [S.meta.scenario, S.meta.controller, M.airport + ' ' + M.runway, S.meta.milestone].filter(Boolean).join(' · ');
+  document.getElementById('banner').textContent = M.name + ' · runway ' + M.runway + (S.meta.code_version ? ' · code ' + S.meta.code_version : '');
+
+  // Scores table
+  const st = document.getElementById('scoretable');
+  const labels = S.scores_labels || {};
+  Object.entries(S.scores || {}).forEach(([k, v]) => {
+    if (typeof v === 'object') return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td>';
+    tr.children[0].textContent = (labels[k] || k.replace(/_/g, ' '));
+    tr.children[1].textContent = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v);
+    st.appendChild(tr);
+  });
+  if (!st.children.length) document.getElementById('scores').style.display = 'none';
+
+  // View
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+  const pts = [[0, 0], M.active.threshold].concat(M.holds.map(h => h.xy));
+  const c26 = M.active.course_true * Math.PI / 180;
+  pts.push([M.active.threshold[0] - 20 * Math.sin(c26), M.active.threshold[1] - 20 * Math.cos(c26)]);
+  let xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  let cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 14;
+  let zoom = 1;
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1; W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    zoom = zoom === 1 ? Math.min(W, H) / span : zoom;
+  }
+  const sx = x => W / 2 + (x - cx) * zoom, sy = y => H / 2 - (y - cy) * zoom;
+  window.addEventListener('resize', () => { const z = zoom; resize(); zoom = z; draw(); });
+  let drag = null;
+  canvas.addEventListener('mousedown', e => drag = [e.clientX, e.clientY, cx, cy]);
+  window.addEventListener('mouseup', () => drag = null);
+  window.addEventListener('mousemove', e => { if (!drag) return; cx = drag[2] - (e.clientX - drag[0]) / zoom; cy = drag[3] + (e.clientY - drag[1]) / zoom; draw(); });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); zoom *= e.deltaY < 0 ? 1.15 : 1 / 1.15; draw(); }, { passive: false });
+
+  function line(x0, y0, x1, y1) { ctx.beginPath(); ctx.moveTo(sx(x0), sy(y0)); ctx.lineTo(sx(x1), sy(y1)); ctx.stroke(); }
+
+  function drawMap() {
+    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+    // Range rings around the airport
+    ctx.strokeStyle = C['--ring']; ctx.lineWidth = 1; ctx.fillStyle = C['--muted'];
+    [10, 20, 30, 40].forEach(r => { ctx.beginPath(); ctx.arc(sx(0), sy(0), r * zoom, 0, 2 * Math.PI); ctx.stroke(); ctx.fillText(r + ' NM', sx(0) + 4, sy(r) - 3); });
+    // Airspace
+    Object.entries(M.airspace).forEach(([name, segs]) => {
+      ctx.strokeStyle = /SMAA/.test(name) ? C['--smaa'] : C['--rma']; ctx.lineWidth = 1;
+      segs.forEach(s => line(s[0], s[1], s[2], s[3]));
+    });
+    // Extended centreline with a tick every mile, longer every 5
+    const t = M.active.threshold, c = M.active.course_true * Math.PI / 180;
+    const ux = -Math.sin(c), uy = -Math.cos(c), px = Math.cos(c), py = -Math.sin(c);
+    ctx.strokeStyle = C['--centreline']; ctx.setLineDash([6, 6]); line(t[0], t[1], t[0] + 20 * ux, t[1] + 20 * uy); ctx.setLineDash([]);
+    for (let d = 1; d <= 20; d++) { const k = d % 5 ? 0.25 : 0.6; line(t[0] + d * ux - k * px, t[1] + d * uy - k * py, t[0] + d * ux + k * px, t[1] + d * uy + k * py); }
+    // Runways
+    ctx.strokeStyle = C['--runway']; ctx.lineWidth = 3;
+    const byName = Object.fromEntries(M.runways.map(r => [r.name, r]));
+    if (byName['26L'] && byName['08R']) line(byName['26L'].threshold[0], byName['26L'].threshold[1], byName['08R'].threshold[0], byName['08R'].threshold[1]);
+    ctx.lineWidth = 1;
+    // Holds as racetracks: one-minute inbound leg ending at the fix
+    ctx.strokeStyle = C['--hold'];
+    M.holds.forEach(h => {
+      const ib = h.inbound_true * Math.PI / 180, leg = 3.7, r = 1.5, side = h.turn === 'right' ? 1 : -1;
+      const fx = h.xy[0], fy = h.xy[1];
+      const bx = fx - leg * Math.sin(ib), by = fy - leg * Math.cos(ib);           // start of the inbound leg
+      const ox = 2 * r * Math.cos(ib) * side, oy = -2 * r * Math.sin(ib) * side;  // offset to the outbound leg
+      line(bx, by, fx, fy); line(bx + ox, by + oy, fx + ox, fy + oy);
+      // Turn at the fix onto the outbound leg, and at the far end back onto the inbound leg.
+      [[fx, fy, fx + ox / 2, fy + oy / 2], [bx + ox, by + oy, bx + ox / 2, by + oy / 2]].forEach(([x, y, mx, my]) => {
+        ctx.beginPath();
+        const start = Math.atan2(-(y - my), x - mx);
+        ctx.arc(sx(mx), sy(my), r * zoom, start, start + Math.PI * side, side < 0);
+        ctx.stroke();
+      });
+    });
+    // Fixes
+    ctx.fillStyle = C['--fix']; ctx.strokeStyle = C['--fix'];
+    M.fixes.forEach(f => {
+      const x = sx(f.xy[0]), y = sy(f.xy[1]);
+      ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 4, y + 3); ctx.lineTo(x - 4, y + 3); ctx.closePath(); ctx.stroke();
+      ctx.fillText(f.name, x + 6, y + 4);
+    });
+    ctx.fillStyle = C['--runway']; ctx.fillText(M.airport, sx(0) + 6, sy(0) - 8);
+  }
+
+  // Frames
+  function frameIndex(t) {
+    let lo = 0, hi = frames.length - 1;
+    if (hi < 0 || t < frames[0].t) return -1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (frames[mid].t <= t) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
+  function aircraftAt(t) {
+    const i = frameIndex(t); if (i < 0) return [];
+    const a = frames[i], b = frames[Math.min(i + 1, frames.length - 1)];
+    const f = b.t > a.t ? Math.min(1, (t - a.t) / (b.t - a.t)) : 0;
+    const next = Object.fromEntries(b.ac.map(p => [p.cs, p]));
+    return a.ac.map(p => {
+      const q = next[p.cs]; if (!q) return p;
+      return Object.assign({}, p, { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, alt: p.alt + (q.alt - p.alt) * f, cas: p.cas + (q.cas - p.cas) * f });
+    });
+  }
+  const colour = ph => ph === 'established' || ph === 'final' ? C['--established'] : ph === 'go_around' ? C['--goaround'] : ph === 'holding' ? C['--held'] : C['--vectoring'];
+
+  function drawAircraft(t) {
+    const i = frameIndex(t);
+    ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
+    aircraftAt(t).forEach(p => {
+      const col = colour(p.phase);
+      // Trail: positions from up to 10 earlier frames
+      ctx.fillStyle = col; ctx.globalAlpha = 0.45;
+      for (let k = 1; k <= 10 && i - k >= 0; k++) {
+        const q = frames[i - k].ac.find(a => a.cs === p.cs); if (!q) break;
+        ctx.fillRect(sx(q.x) - 1.5, sy(q.y) - 1.5, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+      const x = sx(p.x), y = sy(p.y);
+      // One-minute leader line along the heading
+      const h = p.hdg * Math.PI / 180, d = (p.gs || p.cas) / 60;
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      line(p.x, p.y, p.x + d * Math.sin(h), p.y + d * Math.cos(h));
+      ctx.fillStyle = col; ctx.fillRect(x - 4, y - 4, 8, 8);
+      // Data block
+      const lx = x + 14, ly = y - 18;
+      ctx.beginPath(); ctx.moveTo(x + 4, y - 4); ctx.lineTo(lx - 2, ly + 6); ctx.stroke();
+      ctx.fillText(p.cs, lx, ly);
+      const alt = p.alt >= 6000 ? 'F' + String(Math.round(p.alt / 100)).padStart(3, '0') : 'A' + String(Math.round(p.alt / 100)).padStart(3, '0');
+      ctx.fillText(alt + ' ' + String(Math.round(p.cas / 10)).padStart(2, '0'), lx, ly + 13);
+      ctx.fillText(p.type + ' ' + (p.wake || ''), lx, ly + 26);
+    });
+  }
+
+  let t = 0, playing = false, speed = Number(params.get('speed') || 10), last = null;
+  document.getElementById('speed').value = String([1, 5, 10, 30, 60].includes(speed) ? speed : 10);
+  const tr = document.getElementById('transcript'), slider = document.getElementById('slider'), clock = document.getElementById('clock');
+  let shown = 0;
+  function fmt(s) { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0'); }
+  function updateTranscript() {
+    const upto = events.filter(e => e.t <= t).length;
+    if (upto < shown) { tr.innerHTML = ''; shown = 0; }
+    for (; shown < upto; shown++) {
+      const e = events[shown], div = document.createElement('div');
+      div.className = 'ev ' + ({ blocked: 'blocked', landed: 'landed', go_around: 'goaround', separation_loss: 'loss', note: 'note', takeover: 'takeover' }[e.kind] || '');
+      const span = document.createElement('span'); span.className = 't'; span.textContent = fmt(e.t);
+      div.appendChild(span); div.appendChild(document.createTextNode(e.text));
+      tr.appendChild(div);
+    }
+    tr.scrollTop = tr.scrollHeight;
+  }
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, W, H);
+    drawMap(); drawAircraft(t);
+    clock.textContent = fmt(t) + ' / ' + fmt(duration);
+    slider.value = String(Math.round(1000 * t / duration));
+    updateTranscript();
+  }
+  function tick(now) {
+    if (playing) {
+      if (last !== null) t = Math.min(duration, t + (now - last) / 1000 * speed);
+      last = now;
+      if (t >= duration) { playing = false; document.getElementById('play').textContent = 'Play'; window.replayDone = true; }
+    }
+    draw();
+    requestAnimationFrame(tick);
+  }
+  document.getElementById('play').onclick = () => { if (t >= duration) t = 0; playing = !playing; last = null; document.getElementById('play').textContent = playing ? 'Pause' : 'Play'; };
+  document.getElementById('speed').onchange = e => speed = Number(e.target.value);
+  slider.oninput = () => { t = duration * Number(slider.value) / 1000; };
+  resize();
+  if (params.get('autoplay') === '1') { setTimeout(() => { playing = true; last = null; document.getElementById('play').textContent = 'Pause'; }, Number(params.get('delay') || 800)); }
+  window.replayDuration = duration;
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
