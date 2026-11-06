@@ -1,2 +1,3 @@
 date,milestone,scenario,controller,code_version,arrivals,landed,separation_losses,wake_violations,min_spacing_nm,mean_spacing_nm,track_miles_per_arrival,instructions_per_arrival,safety_blocks,go_arounds,stable_at_1000ft_pct
 2026-11-06,stage0-01-airport-data,map,none,ae379c2,,,,,,,,,,,
+2026-11-06,stage0-02-turn-test,turn_test,script,348e860,1,0,0,0,,,,4.0,0,0,
