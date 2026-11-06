@@ -171,13 +171,15 @@ def main(argv: list[str] | None = None) -> None:
         csv_rows.append(score_row(args.date, args.slug, name, log))
         print(f"[{name}] {scores_line(log)} | video: {video or note}")
 
+    # Re-recording a milestone replaces its rows instead of adding duplicates.
     scores_csv = DIARY / "scores.csv"
-    new = not scores_csv.exists()
-    with scores_csv.open("a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=SCORE_FIELDS)
-        if new:
-            w.writeheader()
-        w.writerows(csv_rows)
+    existing = list(csv.DictReader(scores_csv.open())) if scores_csv.exists() else []
+    redone = {(r["milestone"], r["scenario"]) for r in csv_rows}
+    keep = [r for r in existing if (r.get("milestone"), r.get("scenario")) not in redone]
+    with scores_csv.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=SCORE_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(keep + csv_rows)
     write_entry(out / "README.md", args.title, args.date, args.slug, args.summary, rows)
     write_index()
     (out / "milestone.json").write_text(json.dumps({"slug": args.slug, "title": args.title, "folder": folder}))

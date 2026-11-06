@@ -80,6 +80,7 @@
   const S = JSON.parse(document.getElementById('session').textContent);
   const M = S.map, frames = S.frames, events = S.events;
   const params = new URLSearchParams(location.search);
+  const fullTrail = params.get('trail') === 'all', trailLen = Number(params.get('trail')) || 10;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const C = {};
   ['--ring','--map','--rma','--smaa','--runway','--centreline','--fix','--hold','--vectoring','--established','--goaround','--held','--text','--muted'].forEach(k => C[k] = css(k));
@@ -94,7 +95,7 @@
   const st = document.getElementById('scoretable');
   const labels = (S.meta && S.meta.scores_labels) || {};
   Object.entries(S.scores || {}).forEach(([k, v]) => {
-    if (typeof v === 'object') return;
+    if (typeof v === 'object' || v === '' || v === null) return;
     const tr = document.createElement('tr');
     tr.innerHTML = '<td></td><td></td>';
     tr.children[0].textContent = (labels[k] || k.replace(/_/g, ' '));
@@ -199,9 +200,19 @@
     ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
     aircraftAt(t).forEach(p => {
       const col = colour(p.phase);
-      // Trail: positions from up to 10 earlier frames
+      // Trail: dots for recent positions; with ?trail=all the whole track as a faint line
       ctx.fillStyle = col; ctx.globalAlpha = 0.45;
-      for (let k = 1; k <= 10 && i - k >= 0; k++) {
+      if (fullTrail) {
+        ctx.strokeStyle = col; ctx.globalAlpha = 0.35; ctx.beginPath();
+        let started = false;
+        for (let k = 0; k <= i; k++) {
+          const q = frames[k].ac.find(a => a.cs === p.cs); if (!q) continue;
+          if (!started) { ctx.moveTo(sx(q.x), sy(q.y)); started = true; } else ctx.lineTo(sx(q.x), sy(q.y));
+        }
+        ctx.lineTo(sx(p.x), sy(p.y)); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.45;
+      for (let k = 1; k <= trailLen && i - k >= 0; k++) {
         const q = frames[i - k].ac.find(a => a.cs === p.cs); if (!q) break;
         ctx.fillRect(sx(q.x) - 1.5, sy(q.y) - 1.5, 3, 3);
       }

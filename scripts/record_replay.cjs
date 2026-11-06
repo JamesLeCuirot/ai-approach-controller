@@ -36,7 +36,7 @@ const { chromium } = require('playwright');
   // 2. Sharp screenshot of the final frame for diaries and thumbnails.
   const shotCtx = await browser.newContext({ viewport: size, deviceScaleFactor: 2 });
   const shot = await shotCtx.newPage();
-  await shot.goto(`${url}?autoplay=1&speed=100000&delay=0`);
+  await shot.goto(`${url}?autoplay=1&speed=100000&delay=0&trail=all`);
   await shot.waitForFunction(() => window.replayDone === true, null, { timeout: 60000 });
   await shot.waitForTimeout(300);
   await shot.screenshot({ path: shotOut });
