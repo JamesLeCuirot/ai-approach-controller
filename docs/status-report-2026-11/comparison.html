@@ -3,10 +3,10 @@ body{margin:0;background:#fff;font-family:Inter,Helvetica,Arial,sans-serif;color
 .wrap{width:1200px;padding:48px 56px 36px;box-sizing:border-box}
 h1{font-size:34px;font-weight:650;margin:0 0 10px}
 .sub{font-size:20px;color:#5b606b;margin:0 0 28px}
-table{border-collapse:collapse;width:100%;font-size:21px}
+table{border-collapse:collapse;width:100%;font-size:21px;table-layout:fixed}
 th{font-weight:600;text-align:center;padding:10px 8px;color:#16181d}
 th.left,td.left{text-align:left}
-thead tr.group th{font-size:20px} thead tr.group th[colspan]{border-bottom:1px solid #b9bdc4} thead th[rowspan], thead tr.who th{border-bottom:2px solid #16181d}
+thead tr.group th{font-size:19px;line-height:1.25;vertical-align:bottom} thead tr.group th[colspan]{border-bottom:1px solid #b9bdc4} thead th[rowspan], thead tr.who th{border-bottom:2px solid #16181d}
 thead tr.who th{font-size:17px;color:#5b606b;font-weight:500;padding-top:6px}
 td{padding:16px 8px;text-align:center;border-bottom:1px solid #e4e6ea}
 td.real{color:#16181d}
@@ -19,8 +19,8 @@ td.bad{color:#c2412d;font-weight:700}
 </style></head><body><div class="wrap">
 <h1>Same real traffic, two controllers</h1>
 <p class="sub">Real Gatwick controllers against ours, a hand-written rules controller: same arrivals, same winds</p>
-<table><thead>
-<tr class="group"><th class="left" rowspan="2">Real hour</th><th rowspan="2">Arrivals</th><th colspan="2">Landed</th><th colspan="2">Separation losses</th><th colspan="2">Go-arounds</th><th colspan="2">Minutes per arrival</th></tr>
+<table><colgroup><col style="width:316px"><col style="width:100px"><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:84px"><col style="width:84px"></colgroup><thead>
+<tr class="group"><th class="left" rowspan="2">Real hour</th><th rowspan="2">Arrivals</th><th colspan="2">Landed</th><th colspan="2">Separation<br>losses</th><th colspan="2">Go-arounds</th><th colspan="2">Minutes per<br>arrival</th></tr>
 <tr class="who"><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th></tr>
 </thead><tbody><tr><td class="left"><b>Busy hour, runway 26L</b><span class="when">30 May 2026, 12:00–13:00 UTC</span></td><td>28</td><td class="real">28</td><td class="rules">28</td><td class="real">0</td><td class="bad">5</td><td class="real">0</td><td class="bad">4</td><td class="real">17.5</td><td class="rules">21.7</td></tr><tr><td class="left"><b>Busy hour, runway 08R</b><span class="when">1 June 2024, 12:00–13:00 UTC</span></td><td>28</td><td class="real">28</td><td class="rules">18*</td><td class="real">0</td><td class="bad">7</td><td class="real">0</td><td class="bad">3</td><td class="real">19.8</td><td class="rules">40.4</td></tr><tr><td class="left"><b>Storm Darragh, runway 26L</b><span class="when">7 December 2024, 14:00–15:00 UTC</span></td><td>17</td><td class="real">17</td><td class="rules">17</td><td class="real">0</td><td class="bad">1</td><td class="real">0</td><td class="rules">0</td><td class="real">16.9</td><td class="rules">17.7</td></tr></tbody></table>
 <p class="note">Red: a safety event. * 10 arrivals were still waiting when the session ended. Minutes per arrival: from handover, about 40 NM out, to touchdown. Ours runs in the simulator; no learned AI yet.</p>
