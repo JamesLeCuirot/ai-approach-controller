@@ -6,5 +6,6 @@ One entry per milestone, newest first. Each folder holds the diary entry, the ra
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-06 | `stage0-03-ils-capture` | [First landing on 26L](2026-11-06-stage0-03-ils-capture/README.md) |
 | 2026-11-06 | `stage0-02-turn-test` | [Aircraft respond to instructions](2026-11-06-stage0-02-turn-test/README.md) |
 | 2026-11-06 | `stage0-01-airport-data` | [Gatwick from the sector file](2026-11-06-stage0-01-airport-data/README.md) |

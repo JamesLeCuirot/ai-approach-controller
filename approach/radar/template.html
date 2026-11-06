@@ -211,7 +211,7 @@
         const last = pts[pts.length - 1];
         if (!aircraftAt(t).some(a => a.cs === last.cs)) {
           ctx.globalAlpha = 0.9; ctx.fillStyle = C['--muted'];
-          ctx.fillText(last.cs, sx(last.x) + 6, sy(last.y) - 6); ctx.globalAlpha = 0.55;
+          ctx.fillText(last.cs, sx(last.x) + 6, sy(last.y) + 16); ctx.globalAlpha = 0.55;
         }
       });
       ctx.globalAlpha = 1; ctx.lineWidth = 1;
