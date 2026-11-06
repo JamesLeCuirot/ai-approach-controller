@@ -16,7 +16,7 @@ Every arrival at each benchmark airport on the chosen days, from real ADS-B trac
 
 Each arrival has:
 
-- `callsign`, `hex` (the airframe's ICAO address), `type` and `wake` (RECAT-EU category, from `approach/wake.py`)
+- `callsign`, `hex` (the airframe's ICAO address), `type` and `wake` (the wake category when the day was extracted, in RECAT-EU letters; the code works out each day's category from `type` with `approach/wake.py`, so this field is for reference only)
 - `handover`: where it was the first time it was within 40 NM of Gatwick and at or below FL150. This is where the AI takes over in the simulator, and where real controllers are scored from. It holds the time, position, level, ground speed, track and vertical rate
 - `runway` and `landed_t`: the runway it landed on and when it crossed the threshold
 - `hold_fix`, `hold_minutes`, `hold_laps`, `hold_t`: holding, if any
@@ -27,7 +27,7 @@ Times are seconds since 1970 (UTC). Altitudes are barometric, as the aircraft re
 
 ## The real controllers' safety columns
 
-`real_controller_hours.csv` scores the real controllers with exactly the code that scores our controllers, including its safety columns: `separation_losses`, `wake_violations`, `left_rma`, `minutes_outside_rma` and `below_minimum_altitude`. Across the 1,377 hours they show 6 separation losses (in 5 hours), no wake infringements, 157 exits from the radar manoeuvring area (RMA) and 118 times below a minimum altitude.
+`real_controller_hours.csv` scores the real controllers with exactly the code that scores our controllers, including its safety columns: `separation_losses`, `wake_violations`, `left_rma`, `minutes_outside_rma` and `below_minimum_altitude`. Across the 1,377 hours they show 6 separation losses (in 5 hours), 2 wake infringements, 157 exits from the radar manoeuvring area (RMA) and 118 times below a minimum altitude. Wake spacing is measured with the scheme in force at Gatwick that day: the UK categories before 26 March 2025 and RECAT-EU from then (see `approach/wake.py`).
 
 **These are not evidence that the real controllers broke any rule.** They show where the benchmark's picture of Gatwick is still wrong or incomplete:
 

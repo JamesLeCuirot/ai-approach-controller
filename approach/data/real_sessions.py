@@ -147,13 +147,15 @@ def real_session(day: dict, airport: Airport, start: float, end: float, title: s
             alt = qnh_altitude_ft(alt, qnh, airport.transition_altitude_ft)
             x, y = airport.grid.to_xy(lat, lon)
             along, lateral = airport.runway_frame(a["runway"], x, y)
-            ac.append({"cs": a["callsign"], "type": a["type"], "wake": a["wake"], "x": round(x, 3), "y": round(y, 3),
+            ac.append({"cs": a["callsign"], "type": a["type"], "wake": wake.category(a["type"]), "x": round(x, 3), "y": round(y, 3),
                        "alt": round(alt), "cas": round(gs), "gs": round(gs), "hdg": round(trk, 1), "vs": round(vs),
                        "phase": _phase(a, t, along, lateral, trk, airport.runways[a["runway"]].course_true)})
         log.frames.append({"t": round(t - start, 1), "ac": ac})
         t += FRAME_S
 
-    scores = scoring.score(log, airport, runway)
+    with wake.scheme(wake.scheme_for(day["day"], airport.icao)) as scheme:
+        scores = scoring.score(log, airport, runway)
+    log.meta["wake_scheme"] = scheme
     for k in NOT_MEASURED:
         scores[k] = ""
     scores["holding_minutes_per_arrival"] = round(sum(a["hold_minutes"] for a in arrivals) / len(arrivals), 1) if arrivals else ""
@@ -240,7 +242,9 @@ def session_log(spec: str, milestone: str = "", hours: float = 1.0) -> SessionLo
         from approach.run import run_scenario
 
         scenario = real_scenario(day, airport, start, end, name=f"{kind}_{day_str}_{_utc(start).replace(':', '')}")
-        log = run_scenario(scenario, controller=kind, milestone=milestone)
+        with wake.scheme(wake.scheme_for(day_str, airport.icao)) as scheme:  # the controller and its scoring alike
+            log = run_scenario(scenario, controller=kind, milestone=milestone)
+        log.meta["wake_scheme"] = scheme
         log.meta["title"] = f"{kind.capitalize()} controller on real traffic: Gatwick {day_str}, {_utc(start)}-{_utc(end)} UTC"
         log.meta["t0_epoch"] = start
         log.meta["source"] = day["source"]

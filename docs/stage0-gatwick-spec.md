@@ -94,9 +94,24 @@ Arrivals on final must be at least 3 NM apart, and at least the RECAT-EU wake di
 | Emergency aircraft | 15 NM to the aircraft behind |
 | Low visibility | About 24 landings an hour with RVR above 1,000 m, falling to 12 or fewer below 300 m |
 
-Real Gatwick uses time-based separation, which reduces distances slightly in strong headwinds. Stage 0 uses the distance table below; time-based separation can come later.
+Real Gatwick has used time-based separation since March 2025, which reduces distances slightly in strong headwinds. Stage 0 uses distance tables; time-based separation can come later.
 
-### Wake turbulence (RECAT-EU, in NM)
+### Wake turbulence
+
+Each real day is scored with the scheme in force at Gatwick that day, and every controller on that day's traffic uses it: the UK scheme before 26 March 2025, RECAT-EU from then. Made-up scenarios use the UK scheme. Spacing is checked on final only.
+
+**UK scheme** (CAP 493 Section 1 Chapter 3, final approach, in NM). Types are categorised from the CAA's UK Wake Turbulence Categorisation list (V7, August 2025):
+
+| Follower \ Leader | Super (J) | Heavy (H) | Upper Medium (U) | Lower Medium (M) | Small (S) | Light (L) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Super (J) | 3 | 3 | 3 | 3 | 3 | 3 |
+| Heavy (H) | 5 | 4 | 3 | 3 | 3 | 3 |
+| Upper Medium (U) | 7 | 5 | 3 | 3 | 3 | 3 |
+| Lower Medium (M) | 7 | 5 | 4 | 3 | 3 | 3 |
+| Small (S) | 7 | 6 | 4 | 3 | 3 | 3 |
+| Light (L) | 8 | 7 | 6 | 5 | 4 | 3 |
+
+**RECAT-EU** (in NM), with J H U M S L standing for its categories A to F:
 
 | Follower \ Leader | Super (J) | Heavy (H) | Upper (U) | Medium (M) | Small (S) | Light (L) |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -160,7 +175,8 @@ The rules controller is a hand-written baseline that applies the procedures abov
 - [x] Load fix coordinates from the sector file's `Navaids` folder. For example, WILLO is at 50°59'05.88"N 000°11'30.30"W and TIMBA at 50°56'43.99"N 000°15'42.25"E. The STAR fix sequences per runway are in `Airports/EGKK/Stars.txt`.
 - [ ] Check the rules controller's vectoring logic with a controller or a VATSIM UK mentor.
 - [ ] Confirm the UK version of the intercept rule. The EU text (EASA AMC2 ATS.TR.155(c)(3)) says 45° or less, and the roadmap now uses that.
-- [ ] Map aircraft to RECAT-EU categories: adsb.lol's data already gives each aircraft's type, then type to category from the vMATS appendix and EUROCONTROL's RECAT-EU type list.
+- [x] Map aircraft to UK categories: done from the CAA's UK Wake Turbulence Categorisation list, which covers all 61 types in the real arrivals.
+- [ ] Map aircraft to RECAT-EU categories from EUROCONTROL's RECAT-EU type list. The current mapping is provisional, from the vMATS appendix.
 - [ ] Get historical METARs for each replayed day. Heathrow QNH sets the London stack levels. Gatwick QNH converts ADS-B pressure altitudes to real altitudes below 6,000 ft, and Gatwick wind gives the runway in use.
 - [x] Verify the threshold coordinates: the sector file's runway data matches the AIP values for 08R and 26L.
 - [ ] Decide how to handle the sector file's GPL-3 licence: download it separately at build time, or license the project repo under GPL-3.

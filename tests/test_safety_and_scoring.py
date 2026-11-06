@@ -76,7 +76,38 @@ def test_scoring_spacing_and_losses(airport):
     assert s["landed"] == 2
     assert s["separation_losses"] == 1  # 1 NM and 500 ft apart in the first frame
     assert s["min_spacing_nm"] == 4.0
-    assert s["wake_violations"] == 0  # a medium needs 4 NM behind a heavy
+    assert s["wake_violations"] == 1  # UK scheme: a lower medium needs 5 NM behind a heavy, and B was 4 NM behind
+
+
+def test_uk_wake_scheme():
+    from approach import wake
+
+    assert wake.SCHEME == "UK"
+    assert wake.separation_nm("B77W", "A320") == 5.0  # heavy then lower medium
+    assert wake.separation_nm("A388", "B77W") == 5.0  # super then heavy
+    assert wake.separation_nm("B772", "B789") == 4.0  # heavy then heavy
+    assert wake.separation_nm("B752", "A320") == 4.0  # upper medium then lower medium
+    assert wake.separation_nm("A320", "B738") == 3.0  # radar minimum only
+    assert wake.separation_nm("AT76", "C172") == 4.0  # small then light
+    assert wake.separation_nm("B77W", "A320", scheme="RECAT-EU") == 4.0
+    # A real day uses the scheme in force at Gatwick that day: RECAT-EU from March 2025.
+    assert wake.scheme_for("2024-12-07") == "UK" and wake.scheme_for("2026-05-30") == "RECAT-EU"
+    with wake.scheme("RECAT-EU"):
+        assert wake.separation_nm("B77W", "A320") == 4.0
+    assert wake.SCHEME == "UK"
+
+
+def test_every_real_arrival_type_has_a_uk_category():
+    import csv
+    from datetime import date
+
+    from approach import wake
+    from approach.data.arrivals import REAL_DIR, load_day
+
+    days = [r["day"] for r in csv.DictReader((REAL_DIR / "egkk" / "days.csv").open())]
+    types = {(a.get("type") or "").upper() for d in days for a in load_day(date.fromisoformat(d), "EGKK")["arrivals"]}
+    missing = sorted(t for t in types if t not in wake.TYPE_CATEGORY["UK"])
+    assert not missing, f"add these types from the CAA's UK Wake Turbulence Categorisation list: {missing}"
 
 
 @needs_sector_file

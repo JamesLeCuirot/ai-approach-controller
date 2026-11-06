@@ -44,7 +44,7 @@ Real Gatwick arrivals are replayed from ADS-B data until each is within 40 NM of
 | --- | --- |
 | `approach/sim/` | The simulated world: BlueSky aircraft, simulated pilots, the session runner |
 | `approach/scenarios.py` | The traffic for each scenario |
-| `approach/scoring.py`, `approach/wake.py` | The scores every controller is measured on, and RECAT-EU wake spacing |
+| `approach/scoring.py`, `approach/wake.py` | The scores every controller is measured on, and wake turbulence spacing: the UK scheme, and RECAT-EU for days from March 2025 |
 | `diary/` | The project diary: one folder per milestone |
 | `approach/airports/` | Airports as data. `egkk/` is Gatwick |
 | `approach/controllers/` | The controllers (the interface in `base.py`, the rules controller) and the safety check |
