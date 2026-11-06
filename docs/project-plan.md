@@ -180,7 +180,7 @@ Eight stages take the project from two aircraft to the full demo, then to a seco
 | Stage | What's new on screen | Gate to pass |
 | --- | --- | --- |
 | 0 · Foundations | Simulator, safety check, radar screen and rules controller; real controllers scored | The rules controller lands two arrivals safely, start to finish, on screen |
-| 1 · Speed-only spacing | 2–4 arrivals on one arrival route; the AI only adjusts their speeds | The AI's spacing on final beats the rules controller's |
+| 1 · Speed, then base turns | 1a: the AI adjusts only speeds. 1b: it also chooses when each aircraft turns base. Wind, pilot speed (±10 kt) and descent rates vary | The AI's spacing on final beats the rules controller's |
 | 2 · Vectoring onto final | Downwind, base and intercept, using headings, altitudes and speeds | 95% of approaches stable at 1,000 ft, every intercept at 45° or less |
 | 3 · Traffic and wake | A busy hour of arrivals in mixed sizes, with bigger gaps behind heavy aircraft | No separation losses and every pair at its wake minimum, over 100 sessions |
 | 4 · Holds and go-arounds | Holds stack up at peak demand and empty in order; go-arounds are re-sequenced | Stacks built and emptied in order, with no separation losses |
@@ -204,6 +204,49 @@ Entering Gatwick's procedures for step 3 can start straight away, so every works
 ## Gatwick stage 0 spec
 
 The full spec is in [stage0-gatwick-spec.md](stage0-gatwick-spec.md). Stage 0 hands each real arrival to the AI at the WILLO or TIMBA release point and ends when the aircraft is established on the ILS for 26L or 08R. It is built from VATSIM UK's Gatwick procedures and the UK AIP.
+
+## Stage 1: speed, then base turns
+
+Stage 1 puts the first learning agent in charge of one thing at a time: speed in 1a, then speed and when to turn base in 1b. The rules controller keeps the routing, altitudes, landing order and ILS clearances. The agent's job is to deliver each aircraft exactly the required gap behind the one ahead: 6 NM, or the wake minimum if larger. Speed first keeps the learning problem small and proves the training setup, but it isn't how controllers mainly space traffic: they mostly use vectors, which is why 1b follows quickly.
+
+### A less tidy world
+
+Stage 0's world had no variation, so timing was easy. Stage 1 adds the following, and the rules controller faces exactly the same conditions:
+
+| Variation | Range | Why it matters |
+| --- | --- | --- |
+| Wind | Different in each session | Changes ground speed, so timing that works in still air comes out wrong |
+| Pilot speed | Assigned speed held only within ±10 kt | Gaps drift, so the controller has to keep correcting |
+| Descent rate | Varies by aircraft type and pilot | A slow descender can reach the intercept too high and have to go around, so its descent must start earlier |
+| Release times and aircraft types | Random | The agent can't memorise one traffic pattern |
+
+The ranges for wind and descent rate are still to be set. Start with realistic values, then widen them once the agent copes.
+
+### 1a: speed only
+
+- **What the agent does:** every 10 seconds, for each aircraft, speed up or slow down by 10 or 20 kt, or hold. Speeds stay within the published bands (up to 250 kt on the downwind, 160–180 kt on base and intercept, 160 kt by 7 NM), and everything goes through the safety check.
+- **What it sees:** for each aircraft, distance and time to go, current speed, wake category, how far above or below its planned descent it is, the gap to the aircraft ahead and the gap it needs.
+- **Paths are fixed,** so speed is the only lever. The traffic is arranged so that speed alone can make the gaps, which is up to about 2 minutes of delay per aircraft.
+- **Competitor:** a speed-only rules controller on the same paths.
+
+### 1b: speed plus when to turn base
+
+- **Adds one decision per aircraft:** when to turn from the downwind onto base, which lengthens or shortens its path. That is how controllers absorb larger delays.
+- **Allows real bunches of arrivals,** up to the busy-hour stress tests.
+- **Competitor:** the full stage 0 rules controller, which stretches the downwind.
+
+### Training and testing
+
+1. A head start: the agent first copies the rules controller.
+2. Practice with PPO, many simulations in parallel.
+3. Scoring: a reward per landing; a penalty for how far each gap is from the target, much larger if too close; small costs per instruction and per minute in the sector; large penalties for separation losses, blocked instructions and go-arounds, including those caused by arriving too high.
+4. Testing on about 200 sessions the agent never practised on.
+
+**Gates.** 1a: across the test sessions, gaps closer to the target than the speed-only rules controller, with no separation losses, no wake infringements and no more speed instructions. 1b: the same against the full rules controller, plus more landings per hour on the busy-hour stress tests.
+
+**Diary.** "Watching it learn": the same scenario recorded at 0, 10,000, 100,000 and 1 million practice decisions, from near-random speed changes to clean, even gaps.
+
+**Unknowns.** Training time: about a million decisions might take 3–4 hours across 8 parallel simulations on a normal computer, and BlueSky can run with a coarser time step if that's too slow. Also, how much the descent-rate variation hurts the rules controller before the agent is even involved.
 
 ## Tools and data
 
