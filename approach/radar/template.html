@@ -200,8 +200,8 @@
     ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
     if (fullTrail && i >= 0) {
       // Every aircraft's whole track so far, including ones that have landed, coloured by phase.
-      const tracks = {};
-      for (let k = 0; k <= i; k++) frames[k].ac.forEach(a => (tracks[a.cs] = tracks[a.cs] || []).push(a));
+      const tracks = {}, lastSeen = {};
+      for (let k = 0; k <= i; k++) frames[k].ac.forEach(a => { (tracks[a.cs] = tracks[a.cs] || []).push(a); lastSeen[a.cs] = frames[k].t; });
       ctx.lineWidth = 1.5; ctx.globalAlpha = 0.55;
       const flying = new Set(aircraftAt(t).map(a => a.cs));
       const landed = [];
@@ -215,6 +215,7 @@
       });
       // Aircraft that have landed: one stacked label list below the runway, in landing order.
       if (landed.length) {
+        landed.sort((a, b) => lastSeen[a.cs] - lastSeen[b.cs]);
         const t0 = M.active.threshold;
         ctx.globalAlpha = 0.9; ctx.fillStyle = C['--muted'];
         landed.forEach((a, k) => ctx.fillText((k === 0 ? 'landed: ' : '        ') + a.cs, sx(t0[0]) + 6, sy(t0[1]) + 18 + 14 * k));
