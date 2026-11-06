@@ -18,11 +18,11 @@ td.bad{color:#c2412d;font-weight:700}
 .gap{border-left:12px solid #fff}
 </style></head><body><div class="wrap">
 <h1>Same real traffic, two controllers</h1>
-<p class="sub">Real Gatwick controllers against a hand-written rules controller, same arrivals, same winds</p>
+<p class="sub">Real Gatwick controllers against ours, a hand-written rules controller: same arrivals, same winds</p>
 <table><thead>
 <tr class="group"><th class="left" rowspan="2">Real hour</th><th rowspan="2">Arrivals</th><th colspan="2">Landed</th><th colspan="2">Separation losses</th><th colspan="2">Go-arounds</th><th colspan="2">Minutes per arrival</th></tr>
-<tr class="who"><th>Real</th><th>Rules</th><th>Real</th><th>Rules</th><th>Real</th><th>Rules</th><th>Real</th><th>Rules</th></tr>
+<tr class="who"><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th><th>Real</th><th>Ours</th></tr>
 </thead><tbody><tr><td class="left"><b>Busy hour, runway 26L</b><span class="when">30 May 2026, 12:00–13:00 UTC</span></td><td>28</td><td class="real">28</td><td class="rules">28</td><td class="real">0</td><td class="bad">5</td><td class="real">0</td><td class="bad">4</td><td class="real">17.5</td><td class="rules">21.7</td></tr><tr><td class="left"><b>Busy hour, runway 08R</b><span class="when">1 June 2024, 12:00–13:00 UTC</span></td><td>28</td><td class="real">28</td><td class="rules">18*</td><td class="real">0</td><td class="bad">7</td><td class="real">0</td><td class="bad">3</td><td class="real">19.8</td><td class="rules">40.4</td></tr><tr><td class="left"><b>Storm Darragh, runway 26L</b><span class="when">7 December 2024, 14:00–15:00 UTC</span></td><td>17</td><td class="real">17</td><td class="rules">17</td><td class="real">0</td><td class="bad">1</td><td class="real">0</td><td class="rules">0</td><td class="real">16.9</td><td class="rules">17.7</td></tr></tbody></table>
-<p class="note">Red: a safety event. * 10 arrivals were still waiting when the session ended. Minutes per arrival: from handover, about 40 NM out, to touchdown. The rules controller is a simulated baseline; no learned AI yet.</p>
+<p class="note">Red: a safety event. * 10 arrivals were still waiting when the session ended. Minutes per arrival: from handover, about 40 NM out, to touchdown. Ours runs in the simulator; no learned AI yet.</p>
 <p class="src">Traffic from adsb.lol (ODbL) · winds from NOAA GFS · AI Approach Controller project</p>
 </div></body></html>
