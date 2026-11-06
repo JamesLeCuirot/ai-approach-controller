@@ -132,6 +132,7 @@ def write_index() -> None:
         "One entry per milestone, newest first. Each folder holds the diary entry, the radar replays",
         "(open them in a browser), MP4 videos of each replay, screenshots and the session logs.",
         "`scores.csv` collects every milestone's scores. Each entry names the commit it was recorded at.",
+        "Videos and screenshots from before 6 November 2026 show an older commit ID: see [Old commit IDs](old-commit-ids.md).",
         "",
         "| Date | Milestone | Entry |",
         "| --- | --- | --- |",
