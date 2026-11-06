@@ -113,6 +113,28 @@ def write_entry(entry: Path, title: str, day: str, slug: str, summary: str, rows
     entry.write_text("\n".join(body))
 
 
+def write_index() -> None:
+    """diary/README.md: one line per milestone, newest first."""
+    lines = [
+        "# Project diary",
+        "",
+        "One entry per milestone, newest first. Each folder holds the diary entry, the radar replays",
+        "(open them in a browser), screenshots and the session logs. Videos are attached to the GitHub",
+        "release with the same name as the milestone. `scores.csv` collects every milestone's scores.",
+        "",
+        "| Date | Milestone | Entry |",
+        "| --- | --- | --- |",
+    ]
+    for d in sorted((p for p in DIARY.iterdir() if p.is_dir()), reverse=True):
+        entry = d / "README.md"
+        if not entry.exists():
+            continue
+        title = entry.read_text().splitlines()[0].lstrip("# ").strip()
+        day, slug = d.name[:10], d.name[11:]
+        lines.append(f"| {day} | `{slug}` | [{title}]({d.name}/README.md) |")
+    (DIARY / "README.md").write_text("\n".join(lines) + "\n")
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("slug", help="milestone name, e.g. stage0-02-turn-test")
@@ -154,6 +176,7 @@ def main(argv: list[str] | None = None) -> None:
             w.writeheader()
         w.writerows(csv_rows)
     write_entry(out / "README.md", args.title, args.date, args.slug, args.summary, rows)
+    write_index()
     (media / "milestone.json").write_text(json.dumps({"slug": args.slug, "title": args.title, "folder": folder}))
     print(f"Diary entry: {out / 'README.md'}")
 
