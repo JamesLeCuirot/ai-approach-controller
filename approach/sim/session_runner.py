@@ -41,8 +41,10 @@ def _frame(t: float, views) -> dict:
 def run_session(airport: Airport, scenario: Scenario, controller_name: str, log: SessionLog, seed: int = 1) -> SessionLog:
     world = World(airport, scenario.runway, seed=seed)
     controller = make_controller(controller_name, airport, scenario, seed)
-    # Scripted tests and demos send their instructions straight to the pilots.
-    safety = SafetyCheck(airport, scenario.runway) if controller_name != "script" else None
+    # Scripted tests send their instructions straight to the pilots unless the scenario asks
+    # for the safety check (as the safety demo does).
+    use_safety = scenario.safety if scenario.safety is not None else controller_name != "script"
+    safety = SafetyCheck(airport, scenario.runway) if use_safety else None
     pending = sorted(scenario.arrivals, key=lambda a: a.release_s)
     released = 0
     t = 0
