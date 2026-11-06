@@ -6,6 +6,7 @@ One entry per milestone, newest first. Each folder holds the diary entry, the ra
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-06 | `stage0-06-stage0-gate` | [Stage 0 complete: the gate is passed](2026-11-06-stage0-06-stage0-gate/README.md) |
 | 2026-11-06 | `stage0-05-safety-check` | [The safety check blocks unsafe instructions](2026-11-06-stage0-05-safety-check/README.md) |
 | 2026-11-06 | `stage0-04-rules-controller` | [The rules controller lands traffic on its own](2026-11-06-stage0-04-rules-controller/README.md) |
 | 2026-11-06 | `stage0-03-ils-capture` | [First landing on 26L](2026-11-06-stage0-03-ils-capture/README.md) |
