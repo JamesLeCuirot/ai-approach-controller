@@ -116,6 +116,37 @@ register(
     )
 )
 
+
+def _busy(count: int, every_s: float) -> list[Arrival]:
+    """Arrivals alternating WILLO (FL80) and TIMBA (FL90) at a steady rate."""
+    types = ["A320", "B738", "A20N", "B77W", "A321", "B38M", "E190", "A319"]
+    return [
+        Arrival(f"TST{i:02d}", types[i % len(types)], "WILLO" if i % 2 == 0 else "TIMBA", release_s=i * every_s,
+                level_ft=8000 if i % 2 == 0 else 9000)
+        for i in range(count)
+    ]
+
+
+register(
+    Scenario(
+        name="busy_30_per_hour",
+        title="Stress test: 8 arrivals, one every 2 minutes",
+        arrivals=_busy(8, 120),
+        duration_s=3600,
+        notes="About Gatwick's busiest arrival rate. The stage 0 rules controller copes: all land, no losses.",
+    )
+)
+
+register(
+    Scenario(
+        name="busy_40_per_hour",
+        title="Stress test: 12 arrivals, one every 90 seconds",
+        arrivals=_busy(12, 90),
+        duration_s=3600,
+        notes="Faster than the stage 0 rules controller can handle without holds: it runs out of altitudes and spacing.",
+    )
+)
+
 register(
     Scenario(
         name="safety_demo",

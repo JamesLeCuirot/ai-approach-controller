@@ -24,6 +24,25 @@ Stage 0's gate was that the rules controller lands two arrivals safely, start to
 - The "landed" list on the final screenshot showed aircraft in the order they first appeared, not the order they landed. It now follows landing order.
 - Nothing else broke at this milestone. The fixes that got here are in the earlier entries: realistic turn rates, the timing model's corner-cutting and true airspeed, and the safety check comparing the future with and without each instruction.
 
+## Where the rules controller breaks
+
+Run with `python -m approach.run busy_30_per_hour` (or `busy_40_per_hour`). Arrivals alternate between WILLO and TIMBA.
+
+| Arrivals | Rate | Landed | Separation losses | Closest spacing | Minutes per arrival |
+| --- | --- | --- | --- | --- | --- |
+| 8 | one every 2 min (30 an hour) | 8/8 | 0 | 6.4 NM | 14.1 |
+| 12 | one every 90 s (40 an hour) | 11/12 | 3 | 5.9 NM | 15.8 |
+
+At 40 an hour it runs out of ways to delay aircraft (it has no holds, and the downwind can only stretch so far) and out of altitudes (a fourth arrival gets the same 6,000 ft as the third).
+
+## Why move on from stage 0: why have an agent if code can do it?
+
+It's a fair question, and it's the central question of the project. Hand-written rules work well for the situations you think of in advance. The trouble is that each new thing needs its own rules, and those rules start interfering with each other:
+
+- The stress test broke for two reasons, no holds and running out of altitudes. Each fix is another rule.
+- Then add wind, go-arounds that need slotting back in, a runway change mid-session, a storm across the downwind, a heavy that needs a bigger gap, and an aircraft that's slow to respond. Every combination needs handling, and in practice rule-based systems get brittle and full of special cases.
+- Rules are also "good enough" rather than best: first come, first served, a fixed pattern and a fixed safety margin. A learned controller might find tighter spacing, a better landing order or fewer track miles. At Gatwick, even one or two extra landings an hour would matter a lot.
+
 ## What stage 0 still leaves out
 
 - Arrivals are made up. Real OpenSky arrivals, handed over at WILLO and TIMBA, come once historical data access is approved.
