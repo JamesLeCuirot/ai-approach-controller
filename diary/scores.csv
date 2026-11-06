@@ -19,3 +19,9 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-06,stage1-02-real-traffic,rules_2024-06-01T12,rules,e2fca51,28,28,11,1,2.4,6.4,81.2,16.0,32,5,100
 2026-11-06,stage1-02-real-traffic,real_2024-12-07T14,real,e2fca51,17,17,0,0,4.9,6.0,56.6,,,0,
 2026-11-06,stage1-02-real-traffic,rules_2024-12-07T14,rules,e2fca51,17,17,0,0,4.4,7.1,55.7,12.8,0,0,100
+2026-11-06,stage1-03-rma-and-holds,real_2026-05-30T12,real,1364157,28,28,0,0,3.1,5.5,68.1,,,0,
+2026-11-06,stage1-03-rma-and-holds,rules_2026-05-30T12,rules,1364157,28,27,1,0,3.1,7.0,102.4,21.2,29,0,100
+2026-11-06,stage1-03-rma-and-holds,rules_2024-06-01T12,rules,1364157,28,18,0,0,6.7,7.9,143.8,16.1,42,1,100
+2026-11-06,stage1-03-rma-and-holds,rules_2024-12-07T14,rules,1364157,17,17,1,1,2.8,6.2,72.5,19.4,30,0,100
+2026-11-06,stage1-03-rma-and-holds,busy_30_per_hour,rules,1364157,8,8,0,0,6.5,7.5,53.2,15.8,24,0,100
+2026-11-06,stage1-03-rma-and-holds,safety_demo,script,1364157,2,0,0,0,,,,1.5,5,0,

@@ -6,6 +6,7 @@ One entry per milestone, newest first. Each folder holds the diary entry, the ra
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-06 | `stage1-03-rma-and-holds` | [Staying inside the RMA: holds instead of long downwinds](2026-11-06-stage1-03-rma-and-holds/README.md) |
 | 2026-11-06 | `stage1-02-real-traffic` | [Real Gatwick traffic: the rules controller against real controllers](2026-11-06-stage1-02-real-traffic/README.md) |
 | 2026-11-06 | `stage1-01-real-wind` | [Real winds from NOAA's weather model](2026-11-06-stage1-01-real-wind/README.md) |
 | 2026-11-06 | `stage0-06-stage0-gate` | [Stage 0 complete: the gate is passed](2026-11-06-stage0-06-stage0-gate/README.md) |
