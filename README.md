@@ -6,10 +6,11 @@ An open benchmark for AI approach control, and a simulated approach radar where 
 
 The AI starts with two aircraft and speed control only, then grows stage by stage to full vectoring, wake turbulence spacing, holds, go-arounds, runway changes and storms. It is a small neural network trained with reinforcement learning in the simulator, on a laptop, with no paid APIs.
 
-**Status:** planning done, stage 0 prototype next. Nothing runs yet beyond the data download script.
+**Status:** stage 0 prototype working. The rules controller lands arrivals released at WILLO and TIMBA on runway 26L, with no separation losses and at least 6 NM between landings, and the safety check blocks unsafe instructions. Arrivals are still made up; real OpenSky arrivals come next. There is no learned AI yet: that starts in stage 1.
 
 ## Documents
 
+- [Project diary](diary/README.md): one entry per milestone, each with radar replays, videos, screenshots and scores
 - [Project plan](docs/project-plan.md): the vision, prior work, how it works, roadmap, risks and team
 - [Stage 0 spec: Gatwick](docs/stage0-gatwick-spec.md): airspace, arrival routes, holds, spacing, speeds and the rules controller
 
@@ -29,7 +30,10 @@ Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA hol
 
 | Folder | What goes there |
 | --- | --- |
-| `approach/sim/` | The simulated world: BlueSky aircraft, the replay hand-over, scripted pilots |
+| `approach/sim/` | The simulated world: BlueSky aircraft, simulated pilots, the session runner |
+| `approach/scenarios.py` | The traffic for each scenario |
+| `approach/scoring.py`, `approach/wake.py` | The scores every controller is measured on, and RECAT-EU wake spacing |
+| `diary/` | The project diary: one folder per milestone |
 | `approach/airports/` | Airports as data. `egkk/` is Gatwick |
 | `approach/controllers/` | Baseline controllers: rules, imitation and random, plus the safety check |
 | `approach/ai/` | The learned controller: network, scoring, training, evaluation |
@@ -64,6 +68,26 @@ pytest
 ```
 
 The fetch script downloads the Gatwick and navaid data from VATSIM UK's sector file into `data/external/`.
+
+### Run a scenario
+
+```bash
+python -m approach.run --list
+```
+
+```bash
+python -m approach.run two_arrivals
+```
+
+This writes `outputs/two_arrivals.html`, a radar replay you open in any browser (no server needed), plus the session log as JSON. Scroll to zoom, drag to pan.
+
+### Record a milestone for the diary
+
+```bash
+python -m approach.milestone stage1-01-speed-only --title "Speed-only spacing" --scenarios two_arrivals --summary "What was built."
+```
+
+This runs the scenarios and saves into `diary/<date>-<name>/`: the replays, an MP4 video of each (needs Node with Playwright, and ffmpeg), a screenshot, the session logs and a diary entry draft. It also adds the scores to `diary/scores.csv` and updates the diary index. From your own computer, `./scripts/publish_milestone.sh <diary folder>` then tags the milestone and creates a GitHub release with its videos.
 
 ## Data and licences
 
