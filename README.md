@@ -16,12 +16,12 @@ The world the AI will learn in is built and running on real Gatwick traffic. **T
 - **The real controllers are scored** on every hour of the 60 days with the same code as ours: about 18 minutes and 70 track miles per arrival from 40 NM out. On the busiest real hours the rules controller falls well behind them.
 - **Next:** stage 1a, the first learned controller, which adjusts only speeds and has to beat a speed-only rules controller on the same hours.
 
-The [project diary](diary/README.md) has a replay, a video and the scores for every milestone so far.
+The [November 2026 status report](https://www.lecuirot.je/projects/approach-controller/) tells the story so far, and the [project diary](diary/README.md) has a replay, a video and the scores for every milestone.
 
 ## Documents
 
 - [Project diary](diary/README.md): one entry per milestone, each with radar replays, videos, screenshots and scores
-- [Status report, November 2026](docs/status-report-2026-11/blog-post.md): where the project is, with pictures and a video
+- [Status report, November 2026](https://www.lecuirot.je/projects/approach-controller/): where the project is, with pictures and a video (the text and pictures are also in [`docs/status-report-2026-11/`](docs/status-report-2026-11/))
 - [Project plan](docs/project-plan.md): the vision, prior work, how it works, roadmap, risks and team
 - [Stage 0 spec: Gatwick](docs/stage0-gatwick-spec.md): airspace, arrival routes, holds, spacing, speeds and the rules controller
 - [Questions for a Gatwick controller](docs/questions-for-a-gatwick-controller.md): what the simulator still guesses at
