@@ -4,3 +4,5 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-06,stage0-03-ils-capture,ils_capture,script,7204a99,1,1,0,0,,,49.3,7.0,0,0,100
 2026-11-06,stage0-04-rules-controller,one_arrival,rules,70eb370,1,1,0,0,,,39.0,12.0,0,0,100
 2026-11-06,stage0-04-rules-controller,two_arrivals,rules,70eb370,2,2,0,0,6.8,6.8,33.7,12.5,0,0,100
+2026-11-06,stage0-05-safety-check,safety_demo,script,bbbe8a1,2,0,0,0,,,,1.5,4,0,
+2026-11-06,stage0-05-safety-check,random_controller,random,bbbe8a1,2,0,0,0,,,,26.5,8,0,
