@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rules controller: one arrival from WILLO</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: #111a2b; --line: #22304a; --text: #e5e7eb; --muted: #94a3b8;
+    --ring: #1e2b42; --map: #3b4a63; --rma: #2f6f68; --smaa: #4b3f66; --runway: #e2e8f0;
+    --centreline: #6b7a90; --fix: #8fa3bf; --hold: #5d7190;
+    --vectoring: #7dd3fc; --established: #86efac; --goaround: #fbbf24; --blocked: #fbbf24; --held: #c4b5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #app { display: flex; height: 100%; }
+  #scope { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  #panel { width: 340px; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0; }
+  #panel header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+  #panel h1 { font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 11.5px; }
+  #controls { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  button, select { background: #1b2740; color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; }
+  #clock { font-size: 15px; font-weight: 600; margin-left: auto; }
+  #slider { width: 100%; margin: 0; }
+  #sliderrow { padding: 4px 14px 8px; border-bottom: 1px solid var(--line); }
+  h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 10px 14px 6px; font-weight: 600; }
+  #transcript { flex: 1; overflow-y: auto; padding: 0 14px 8px; min-height: 80px; }
+  .ev { padding: 3px 0; border-bottom: 1px solid #172238; }
+  .ev .t { color: var(--muted); margin-right: 6px; }
+  .ev.blocked { color: var(--blocked); }
+  .ev.landed { color: var(--established); }
+  .ev.goaround, .ev.loss { color: var(--goaround); }
+  .ev.note, .ev.takeover { color: var(--muted); }
+  #scores { padding: 0 14px 12px; border-top: 1px solid var(--line); }
+  #scores table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #scores td { padding: 2px 0; }
+  #scores td:last-child { text-align: right; }
+  #legend { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 11.5px;
+    background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; }
+  #legend span { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 10px; vertical-align: -1px; }
+  #legend span:first-child { margin-left: 0; }
+  #banner { position: absolute; left: 12px; top: 10px; font-size: 12px; color: var(--muted);
+    background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; }
+  @media (max-width: 760px) {
+    #app { flex-direction: column; }
+    #scope { height: 60vh; flex: none; }
+    #panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); flex: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scope">
+    <canvas id="c"></canvas>
+    <div id="banner"></div>
+    <div id="legend"><span style="background:var(--vectoring)"></span>vectoring<span style="background:var(--established)"></span>established<span style="background:var(--held)"></span>holding<span style="background:var(--goaround)"></span>go-around</div>
+  </div>
+  <aside id="panel">
+    <header><h1 id="title"></h1><div class="sub" id="subtitle"></div></header>
+    <div id="controls">
+      <button id="play">Play</button>
+      <select id="speed"><option>1</option><option>5</option><option selected>10</option><option>30</option><option>60</option></select><span class="sub">× speed</span>
+      <span id="clock">00:00</span>
+    </div>
+    <div id="sliderrow"><input id="slider" type="range" min="0" max="1000" value="0"></div>
+    <h2>Transcript</h2>
+    <div id="transcript"></div>
+    <div id="scores"><h2 style="margin-left:0">Scores</h2><table id="scoretable"></table></div>
+  </aside>
+</div>
+<script id="session" type="application/json">{"meta":{"title":"Rules controller: one arrival from WILLO","scenario":"one_arrival","controller":"rules","runway":"26L","duration":719,"milestone":"stage0-04-rules-controller","code_version":"70eb370","generated":"2026-11-06 10:24 UTC","notes":"","seed":1,"scores_labels":{"arrivals":"Arrivals","landed":"Landed","separation_losses":"Separation losses","wake_violations":"Wake spacing below minimum","min_spacing_nm":"Closest spacing at runway (NM)","mean_spacing_nm":"Average spacing at runway (NM)","track_miles_per_arrival":"Track miles per arrival","minutes_per_arrival":"Minutes from release to landing","instructions":"Instructions","instructions_per_arrival":"Instructions per arrival","safety_blocks":"Blocked by safety check","go_arounds":"Go-arounds","stable_at_1000ft_pct":"Stable at 1,000 ft (%)"}},"map":{"airport":"EGKK","name":"London Gatwick","runway":"26L","runways":[{"name":"26L","threshold":[0.69,0.157],"course_true":257.62},{"name":"08R","threshold":[-0.622,-0.131],"course_true":77.59}],"active":{"name":"26L","threshold":[0.69,0.157],"course_true":257.62},"holds":[{"fix":"WILLO","xy":[-0.055,-9.785],"inbound_true":285.3,"turn":"left"},{"fix":"TIMBA","xy":[17.013,-12.15],"inbound_true":310.3,"turn":"right"},{"fix":"MAY","xy":[11.532,-7.852],"inbound_true":88.3,"turn":"left"}],"fixes":[{"name":"WILLO","xy":[-0.055,-9.785]},{"name":"TIMBA","xy":[17.013,-12.15]},{"name":"HOLLY","xy":[3.584,-15.68]},{"name":"LARCK","xy":[23.973,-14.186]},{"name":"KKE63","xy":[32.796,-9.938]},{"name":"KKE64","xy":[26.3,-19.62]},{"name":"MAY","xy":[11.532,-7.852]},{"name":"SFD","xy":[11.75,-23.242]},{"name":"OCK","xy":[-9.67,9.419]},{"name":"MID","xy":[-16.362,-5.646]},{"name":"BIG","xy":[8.472,10.969]},{"name":"DET","xy":[29.642,9.357]},{"name":"GWC","xy":[-21.321,-17.57]},{"name":"TELTU","xy":[-21.252,-20.218]},{"name":"HASTY","xy":[27.24,-25.176]},{"name":"OLEVI","xy":[11.044,2.407]},{"name":"ABIBI","xy":[-10.967,-2.431]}],"airspace":{"Gatwick RMA Westerlies":[[4.464,6.083,29.951,-0.044],[23.913,1.407,22.889,-19.189],[15.731,-25.318,-4.757,-15.133],[-4.757,-15.133,-8.239,3.283],[-8.239,3.283,4.464,6.083],[23.517,-6.562,20.33,-8.271],[20.33,-8.271,15.067,0.268],[15.067,0.268,-6.373,-6.584],[17.628,-3.887,23.851,0.158],[29.951,-0.044,29.95,-0.222],[29.948,-0.4,29.945,-0.578],[29.941,-0.756,29.936,-0.934],[29.93,-1.111,29.923,-1.289],[29.915,-1.467,29.905,-1.644],[29.895,-1.822,29.883,-1.999],[29.871,-2.177,29.857,-2.354],[29.843,-2.532,29.827,-2.709],[29.81,-2.886,29.792,-3.063],[29.773,-3.24,29.753,-3.416],[29.732,-3.593,29.71,-3.77],[29.687,-3.946,29.662,-4.122],[29.637,-4.298,29.611,-4.474],[29.583,-4.65,29.555,-4.825],[29.525,-5.001,29.494,-5.176],[29.463,-5.351,29.43,-5.526],[29.396,-5.701,29.361,-5.875],[29.325,-6.049,29.289,-6.224],[29.251,-6.397,29.212,-6.571],[29.171,-6.744,29.13,-6.917],[29.088,-7.09,29.045,-7.263],[29.001,-7.435,28.956,-7.607],[28.909,-7.779,28.862,-7.951],[28.814,-8.122,28.764,-8.293],[28.714,-8.464,28.662,-8.634],[28.61,-8.804,28.556,-8.974],[28.502,-9.143,28.446,-9.312],[28.39,-9.481,28.332,-9.649],[28.274,-9.818,28.214,-9.985],[28.153,-10.153,28.092,-10.32],[28.029,-10.486,27.966,-10.653],[27.901,-10.818,27.835,-10.984],[27.769,-11.149,27.701,-11.314],[27.633,-11.478,27.563,-11.642],[27.492,-11.805,27.421,-11.968],[27.348,-12.131,27.275,-12.293],[27.2,-12.455,27.125,-12.616],[27.049,-12.777,26.971,-12.938],[26.893,-13.098,26.814,-13.257],[26.733,-13.416,26.652,-13.574],[26.57,-13.733,26.487,-13.89],[26.403,-14.047,26.318,-14.204],[26.232,-14.36,26.145,-14.515],[26.057,-14.67,25.968,-14.825],[25.879,-14.979,25.788,-15.132],[25.696,-15.285,25.604,-15.437],[25.511,-15.589,25.416,-15.74],[25.321,-15.891,25.225,-16.041],[25.128,-16.19,25.03,-16.339],[24.931,-16.488,24.832,-16.636],[24.731,-16.783,24.63,-16.929],[24.527,-17.075,24.424,-17.221],[24.32,-17.365,24.215,-17.509],[24.109,-17.653,24.003,-17.796],[23.895,-17.938,23.787,-18.08],[23.678,-18.22,23.567,-18.361],[23.457,-18.5,23.345,-18.639],[23.232,-18.778,23.119,-18.915],[23.005,-19.052,22.889,-19.189],[22.774,-19.324,22.657,-19.459],[22.539,-19.593,22.421,-19.727],[22.302,-19.86,22.182,-19.992],[22.061,-20.123,21.94,-20.254],[21.818,-20.384,21.694,-20.513],[21.571,-20.641,21.446,-20.769],[21.321,-20.896,21.194,-21.022],[21.068,-21.148,20.94,-21.272],[20.812,-21.396,20.682,-21.52],[20.553,-21.642,20.422,-21.764],[20.291,-21.885,20.158,-22.005],[20.026,-22.124,19.892,-22.243],[19.758,-22.36,19.623,-22.477],[19.487,-22.593,19.351,-22.709],[19.214,-22.823,19.076,-22.937],[18.938,-23.05,18.799,-23.162],[18.659,-23.273,18.519,-23.383],[18.378,-23.493,18.236,-23.602],[18.094,-23.71,17.951,-23.817],[17.807,-23.923,17.663,-24.028],[17.518,-24.133,17.372,-24.236],[17.226,-24.339,17.079,-24.441],[16.932,-24.542,16.784,-24.642],[16.635,-24.741,16.486,-24.839],[16.336,-24.937,16.186,-25.033],[16.035,-25.129,15.883,-25.224]],"Gatwick Westerlies A4 South":[[15.651,3.394,-7.305,-1.658]],"EGKK Gatwick SMAA":[[-7.455,10.633,1.516,12.6],[1.516,12.6,3.262,6.917],[3.262,6.917,3.34,6.599],[3.34,6.599,3.474,6.276],[3.474,6.276,3.635,5.967],[3.635,5.967,3.823,5.672],[3.823,5.672,4.036,5.396],[4.036,5.396,4.273,5.138],[4.273,5.138,4.531,4.902],[4.531,4.902,4.809,4.69],[4.809,4.69,5.104,4.503],[5.104,4.503,5.414,4.341],[5.414,4.341,5.737,4.208],[5.737,4.208,6.071,4.103],[6.071,4.103,6.413,4.027],[6.413,4.027,6.76,3.982],[6.76,3.982,7.11,3.967],[7.11,3.967,7.459,3.982],[7.459,3.982,7.806,4.027],[7.806,4.027,8.148,4.103],[8.148,4.103,8.482,4.208],[8.482,4.208,8.805,4.341],[8.805,4.341,9.115,4.503],[9.115,4.503,9.41,4.69],[9.41,4.69,9.688,4.902],[9.688,4.902,9.946,5.138],[9.946,5.138,10.183,5.396],[10.183,5.396,10.396,5.672],[10.396,5.672,10.584,5.967],[10.584,5.967,10.745,6.276],[10.745,6.276,10.879,6.599],[10.879,6.599,10.984,6.931],[10.984,6.931,11.06,7.272],[11.06,7.272,11.106,7.618],[11.106,7.618,11.121,7.967],[11.121,7.967,11.106,8.315],[11.106,8.315,11.06,8.661],[11.06,8.661,10.984,9.002],[10.984,9.002,10.879,9.335],[10.879,9.335,10.769,9.6],[10.769,9.6,9.702,12.033],[9.702,12.033,9.945,11.942],[9.945,11.942,10.874,11.459],[10.874,11.459,11.758,10.896],[11.758,10.896,12.589,10.259],[12.589,10.259,13.361,9.552],[13.361,9.552,14.068,8.78],[14.068,8.78,14.706,7.95],[14.706,7.95,15.268,7.067],[15.268,7.067,15.752,6.138],[15.752,6.138,16.153,5.171],[16.153,5.171,16.468,4.172],[16.468,4.172,16.694,3.15],[16.694,3.15,16.831,2.113],[16.831,2.113,16.877,1.067],[16.877,1.067,16.831,0.021],[16.831,0.021,16.694,-1.017],[16.694,-1.017,16.468,-2.039],[16.468,-2.039,16.153,-3.038],[16.153,-3.038,15.752,-4.005],[15.752,-4.005,15.268,-4.933],[15.268,-4.933,14.706,-5.816],[14.706,-5.816,14.068,-6.647],[14.068,-6.647,13.361,-7.419],[13.361,-7.419,12.589,-8.126],[12.589,-8.126,11.758,-8.763],[11.758,-8.763,10.874,-9.326],[10.874,-9.326,9.945,-9.809],[9.945,-9.809,8.978,-10.21],[8.978,-10.21,7.979,-10.524],[7.979,-10.524,7.402,-10.633],[7.402,-10.633,-2.3,-12.767],[-2.3,-12.767,-2.779,-12.884],[-2.779,-12.884,-3.816,-13.021],[-3.816,-13.021,-4.862,-13.067],[-4.862,-13.067,-5.907,-13.021],[-5.907,-13.021,-6.945,-12.884],[-6.945,-12.884,-7.966,-12.658],[-7.966,-12.658,-8.964,-12.343],[-8.964,-12.343,-9.931,-11.942],[-9.931,-11.942,-10.859,-11.459],[-10.859,-11.459,-11.742,-10.896],[-11.742,-10.896,-12.572,-10.259],[-12.572,-10.259,-13.344,-9.552],[-13.344,-9.552,-14.051,-8.78],[-14.051,-8.78,-14.688,-7.95],[-14.688,-7.95,-15.25,-7.067],[-15.25,-7.067,-15.733,-6.138],[-15.733,-6.138,-16.134,-5.171],[-16.134,-5.171,-16.448,-4.172],[-16.448,-4.172,-16.675,-3.15],[-16.675,-3.15,-16.811,-2.113],[-16.811,-2.113,-16.857,-1.067],[-16.857,-1.067,-16.811,-0.021],[-16.811,-0.021,-16.675,1.017],[-16.675,1.017,-16.448,2.039],[-16.448,2.039,-16.134,3.038],[-16.134,3.038,-15.733,4.005],[-15.733,4.005,-15.25,4.933],[-15.25,4.933,-14.688,5.816],[-14.688,5.816,-14.051,6.647],[-14.051,6.647,-13.344,7.419],[-13.344,7.419,-12.572,8.126],[-12.572,8.126,-11.742,8.763],[-11.742,8.763,-10.859,9.326],[-10.859,9.326,-9.931,9.809],[-9.931,9.809,-8.964,10.21],[-8.964,10.21,-7.966,10.524],[-7.966,10.524,-7.455,10.633],[1.516,12.6,2.332,12.783],[2.332,12.783,2.788,12.884],[2.788,12.884,3.826,13.021],[3.826,13.021,4.872,13.067],[4.872,13.067,5.918,13.021],[5.918,13.021,6.957,12.884],[6.957,12.884,7.979,12.658],[7.979,12.658,8.978,12.343],[8.978,12.343,9.702,12.033],[9.702,12.033,10.769,9.6],[10.769,9.6,10.879,9.335],[10.879,9.335,10.984,9.002],[10.984,9.002,11.06,8.661],[11.06,8.661,11.106,8.315],[11.106,8.315,11.121,7.967],[11.121,7.967,11.106,7.618],[11.106,7.618,11.06,7.272],[11.06,7.272,10.984,6.931],[10.984,6.931,10.879,6.599],[10.879,6.599,10.745,6.276],[10.745,6.276,10.584,5.967],[10.584,5.967,10.396,5.672],[10.396,5.672,10.183,5.396],[10.183,5.396,9.946,5.138],[9.946,5.138,9.688,4.902],[9.688,4.902,9.41,4.69],[9.41,4.69,9.115,4.503],[9.115,4.503,8.805,4.341],[8.805,4.341,8.482,4.208],[8.482,4.208,8.148,4.103],[8.148,4.103,7.806,4.027],[7.806,4.027,7.459,3.982],[7.459,3.982,7.11,3.967],[7.11,3.967,6.76,3.982],[6.76,3.982,6.413,4.027],[6.413,4.027,6.071,4.103],[6.071,4.103,5.737,4.208],[5.737,4.208,5.414,4.341],[5.414,4.341,5.104,4.503],[5.104,4.503,4.809,4.69],[4.809,4.69,4.531,4.902],[4.531,4.902,4.273,5.138],[4.273,5.138,4.036,5.396],[4.036,5.396,3.823,5.672],[3.823,5.672,3.635,5.967],[3.635,5.967,3.474,6.276],[3.474,6.276,3.34,6.599],[3.34,6.599,3.262,6.917],[3.262,6.917,1.516,12.6]]},"variation_east":1.33},"frames":[{"t":0,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.055,"y":-9.785,"alt":8000,"cas":220,"gs":247,"hdg":285.3,"vs":0,"phase":"vectoring"}]},{"t":4,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.319,"y":-9.713,"alt":8000,"cas":220,"gs":247,"hdg":285.3,"vs":0,"phase":"vectoring"}]},{"t":8,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.581,"y":-9.636,"alt":7960,"cas":220,"gs":247,"hdg":289.4,"vs":-1200,"phase":"vectoring"}]},{"t":12,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.831,"y":-9.526,"alt":7860,"cas":220,"gs":247,"hdg":297.7,"vs":-1500,"phase":"vectoring"}]},{"t":16,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.062,"y":-9.382,"alt":7760,"cas":220,"gs":246,"hdg":306.0,"vs":-1500,"phase":"vectoring"}]},{"t":20,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.27,"y":-9.206,"alt":7660,"cas":220,"gs":246,"hdg":314.2,"vs":-1500,"phase":"vectoring"}]},{"t":24,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.45,"y":-9.002,"alt":7560,"cas":220,"gs":245,"hdg":322.5,"vs":-1500,"phase":"vectoring"}]},{"t":28,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.599,"y":-8.775,"alt":7460,"cas":220,"gs":245,"hdg":330.8,"vs":-1500,"phase":"vectoring"}]},{"t":32,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.713,"y":-8.528,"alt":7360,"cas":220,"gs":245,"hdg":339.2,"vs":-1500,"phase":"vectoring"}]},{"t":36,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.791,"y":-8.268,"alt":7260,"cas":220,"gs":244,"hdg":347.5,"vs":-1500,"phase":"vectoring"}]},{"t":40,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.83,"y":-8.0,"alt":7160,"cas":220,"gs":244,"hdg":355.8,"vs":-1500,"phase":"vectoring"}]},{"t":44,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.829,"y":-7.73,"alt":7060,"cas":220,"gs":244,"hdg":4.2,"vs":-1500,"phase":"vectoring"}]},{"t":48,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.79,"y":-7.463,"alt":6960,"cas":220,"gs":243,"hdg":12.6,"vs":-1500,"phase":"vectoring"}]},{"t":52,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.712,"y":-7.205,"alt":6860,"cas":220,"gs":243,"hdg":20.9,"vs":-1500,"phase":"vectoring"}]},{"t":56,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.598,"y":-6.961,"alt":6760,"cas":220,"gs":243,"hdg":29.3,"vs":-1500,"phase":"vectoring"}]},{"t":60,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.45,"y":-6.737,"alt":6660,"cas":220,"gs":242,"hdg":37.7,"vs":-1500,"phase":"vectoring"}]},{"t":64,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.27,"y":-6.537,"alt":6560,"cas":220,"gs":242,"hdg":46.2,"vs":-1500,"phase":"vectoring"}]},{"t":68,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-1.064,"y":-6.367,"alt":6460,"cas":220,"gs":241,"hdg":54.6,"vs":-1500,"phase":"vectoring"}]},{"t":72,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.836,"y":-6.228,"alt":6360,"cas":220,"gs":241,"hdg":63.0,"vs":-1500,"phase":"vectoring"}]},{"t":76,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.59,"y":-6.125,"alt":6260,"cas":220,"gs":241,"hdg":71.5,"vs":-1500,"phase":"vectoring"}]},{"t":80,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.332,"y":-6.056,"alt":6160,"cas":220,"gs":240,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":84,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":-0.074,"y":-5.993,"alt":6060,"cas":220,"gs":240,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":88,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.185,"y":-5.93,"alt":5960,"cas":220,"gs":240,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":92,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.442,"y":-5.867,"alt":5860,"cas":220,"gs":239,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":96,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.7,"y":-5.804,"alt":5760,"cas":220,"gs":239,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":100,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.957,"y":-5.741,"alt":5660,"cas":220,"gs":239,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":104,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.214,"y":-5.678,"alt":5560,"cas":220,"gs":238,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":108,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.47,"y":-5.616,"alt":5460,"cas":220,"gs":238,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":112,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.726,"y":-5.553,"alt":5360,"cas":220,"gs":238,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":116,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.982,"y":-5.491,"alt":5260,"cas":220,"gs":237,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":120,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.237,"y":-5.428,"alt":5160,"cas":220,"gs":237,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":124,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.492,"y":-5.366,"alt":5060,"cas":220,"gs":237,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":128,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.746,"y":-5.304,"alt":4960,"cas":220,"gs":236,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":132,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.001,"y":-5.242,"alt":4860,"cas":220,"gs":236,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":136,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.254,"y":-5.18,"alt":4760,"cas":220,"gs":236,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":140,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.508,"y":-5.118,"alt":4660,"cas":220,"gs":235,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":144,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.761,"y":-5.056,"alt":4560,"cas":220,"gs":235,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":148,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.014,"y":-4.994,"alt":4460,"cas":220,"gs":235,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":152,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.266,"y":-4.933,"alt":4360,"cas":220,"gs":234,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":156,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.518,"y":-4.871,"alt":4260,"cas":220,"gs":234,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":160,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.77,"y":-4.81,"alt":4160,"cas":220,"gs":234,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":164,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.021,"y":-4.748,"alt":4060,"cas":220,"gs":233,"hdg":76.3,"vs":-1500,"phase":"vectoring"}]},{"t":168,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.272,"y":-4.687,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":-1005,"phase":"vectoring"}]},{"t":172,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.523,"y":-4.626,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":176,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.774,"y":-4.565,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":180,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.025,"y":-4.503,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":184,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.276,"y":-4.442,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":188,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.526,"y":-4.381,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":192,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.777,"y":-4.319,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":196,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.028,"y":-4.258,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":200,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.279,"y":-4.197,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":204,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.53,"y":-4.136,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":208,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.781,"y":-4.074,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":212,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.032,"y":-4.013,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":216,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.283,"y":-3.952,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":220,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.534,"y":-3.891,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":224,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.785,"y":-3.829,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":228,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.036,"y":-3.768,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":232,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.287,"y":-3.707,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":236,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.538,"y":-3.646,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":240,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.789,"y":-3.584,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":244,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.04,"y":-3.523,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":248,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.291,"y":-3.462,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":252,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.542,"y":-3.401,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":256,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.793,"y":-3.339,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":260,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.044,"y":-3.278,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":264,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.295,"y":-3.217,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":268,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.546,"y":-3.155,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":272,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.797,"y":-3.094,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":276,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.048,"y":-3.033,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":280,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.299,"y":-2.972,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":284,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.55,"y":-2.91,"alt":4000,"cas":220,"gs":233,"hdg":76.3,"vs":0,"phase":"vectoring"}]},{"t":288,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.805,"y":-2.869,"alt":4000,"cas":220,"gs":233,"hdg":85.0,"vs":0,"phase":"vectoring"}]},{"t":292,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.063,"y":-2.852,"alt":4000,"cas":220,"gs":233,"hdg":86.3,"vs":0,"phase":"vectoring"}]},{"t":296,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.321,"y":-2.835,"alt":4000,"cas":220,"gs":233,"hdg":86.3,"vs":0,"phase":"vectoring"}]},{"t":300,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.578,"y":-2.818,"alt":4000,"cas":220,"gs":233,"hdg":86.3,"vs":0,"phase":"vectoring"}]},{"t":304,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.836,"y":-2.802,"alt":4000,"cas":220,"gs":233,"hdg":86.3,"vs":0,"phase":"vectoring"}]},{"t":308,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.09,"y":-2.774,"alt":3977,"cas":213,"gs":226,"hdg":79.6,"vs":-900,"phase":"vectoring"}]},{"t":312,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.326,"y":-2.711,"alt":3885,"cas":204,"gs":216,"hdg":70.4,"vs":-1500,"phase":"vectoring"}]},{"t":316,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.538,"y":-2.614,"alt":3785,"cas":194,"gs":205,"hdg":60.7,"vs":-1500,"phase":"vectoring"}]},{"t":320,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.721,"y":-2.49,"alt":3685,"cas":184,"gs":194,"hdg":50.5,"vs":-1500,"phase":"vectoring"}]},{"t":324,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.87,"y":-2.34,"alt":3585,"cas":180,"gs":190,"hdg":39.8,"vs":-1500,"phase":"vectoring"}]},{"t":328,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.989,"y":-2.167,"alt":3485,"cas":180,"gs":189,"hdg":29.0,"vs":-1500,"phase":"vectoring"}]},{"t":332,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.073,"y":-1.975,"alt":3385,"cas":180,"gs":189,"hdg":18.3,"vs":-1500,"phase":"vectoring"}]},{"t":336,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.119,"y":-1.771,"alt":3285,"cas":180,"gs":189,"hdg":7.5,"vs":-1500,"phase":"vectoring"}]},{"t":340,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.126,"y":-1.562,"alt":3185,"cas":180,"gs":188,"hdg":356.7,"vs":-1500,"phase":"vectoring"}]},{"t":344,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.099,"y":-1.354,"alt":3085,"cas":180,"gs":188,"hdg":351.3,"vs":-1500,"phase":"vectoring"}]},{"t":348,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.068,"y":-1.148,"alt":3000,"cas":180,"gs":188,"hdg":351.3,"vs":-1305,"phase":"vectoring"}]},{"t":352,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.036,"y":-0.942,"alt":3000,"cas":180,"gs":188,"hdg":351.3,"vs":0,"phase":"vectoring"}]},{"t":356,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":15.005,"y":-0.735,"alt":3000,"cas":180,"gs":188,"hdg":351.3,"vs":0,"phase":"vectoring"}]},{"t":360,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.972,"y":-0.529,"alt":3000,"cas":180,"gs":188,"hdg":348.6,"vs":0,"phase":"vectoring"}]},{"t":364,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.913,"y":-0.329,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":368,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.847,"y":-0.131,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":372,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.78,"y":0.066,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":376,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.713,"y":0.264,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":380,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.646,"y":0.462,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":384,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.579,"y":0.659,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":388,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.512,"y":0.857,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":392,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.445,"y":1.055,"alt":3000,"cas":180,"gs":188,"hdg":341.3,"vs":0,"phase":"vectoring"}]},{"t":396,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.373,"y":1.25,"alt":3000,"cas":177,"gs":185,"hdg":335.9,"vs":0,"phase":"vectoring"}]},{"t":400,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.274,"y":1.423,"alt":3000,"cas":167,"gs":175,"hdg":324.5,"vs":0,"phase":"vectoring"}]},{"t":404,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.15,"y":1.564,"alt":3000,"cas":160,"gs":167,"hdg":312.5,"vs":0,"phase":"vectoring"}]},{"t":408,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":14.001,"y":1.674,"alt":3000,"cas":160,"gs":167,"hdg":300.3,"vs":0,"phase":"vectoring"}]},{"t":412,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.831,"y":1.75,"alt":3000,"cas":160,"gs":167,"hdg":288.1,"vs":0,"phase":"vectoring"}]},{"t":416,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.653,"y":1.803,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":420,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.475,"y":1.855,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":424,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.297,"y":1.907,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":428,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":13.119,"y":1.959,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":432,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.94,"y":2.011,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":436,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.762,"y":2.063,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":440,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.584,"y":2.115,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":444,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.406,"y":2.167,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":448,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.228,"y":2.219,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":452,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":12.049,"y":2.271,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":456,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.871,"y":2.323,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":460,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.693,"y":2.375,"alt":3000,"cas":160,"gs":167,"hdg":286.3,"vs":0,"phase":"vectoring"}]},{"t":464,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.513,"y":2.423,"alt":3000,"cas":160,"gs":167,"hdg":280.2,"vs":0,"phase":"vectoring"}]},{"t":468,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.328,"y":2.436,"alt":3000,"cas":160,"gs":167,"hdg":268.0,"vs":0,"phase":"vectoring"}]},{"t":472,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":11.144,"y":2.412,"alt":3000,"cas":160,"gs":167,"hdg":260.1,"vs":0,"phase":"established"}]},{"t":476,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.962,"y":2.379,"alt":3000,"cas":160,"gs":167,"hdg":259.6,"vs":0,"phase":"established"}]},{"t":480,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.779,"y":2.345,"alt":3000,"cas":160,"gs":167,"hdg":259.3,"vs":0,"phase":"established"}]},{"t":484,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.597,"y":2.309,"alt":3000,"cas":160,"gs":167,"hdg":259.0,"vs":0,"phase":"established"}]},{"t":488,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.415,"y":2.273,"alt":3000,"cas":160,"gs":167,"hdg":258.7,"vs":0,"phase":"established"}]},{"t":492,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.232,"y":2.237,"alt":3000,"cas":160,"gs":167,"hdg":258.5,"vs":0,"phase":"established"}]},{"t":496,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":10.051,"y":2.199,"alt":3000,"cas":160,"gs":167,"hdg":258.4,"vs":0,"phase":"established"}]},{"t":500,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.869,"y":2.162,"alt":3000,"cas":160,"gs":167,"hdg":258.2,"vs":0,"phase":"established"}]},{"t":504,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.687,"y":2.124,"alt":3000,"cas":160,"gs":167,"hdg":258.1,"vs":0,"phase":"established"}]},{"t":508,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.505,"y":2.085,"alt":3000,"cas":160,"gs":167,"hdg":258.0,"vs":0,"phase":"established"}]},{"t":512,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.324,"y":2.047,"alt":3000,"cas":160,"gs":167,"hdg":257.9,"vs":0,"phase":"established"}]},{"t":516,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":9.142,"y":2.008,"alt":2997,"cas":160,"gs":167,"hdg":257.9,"vs":-300,"phase":"established"}]},{"t":520,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.961,"y":1.969,"alt":2945,"cas":160,"gs":167,"hdg":257.8,"vs":-892,"phase":"established"}]},{"t":524,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.779,"y":1.929,"alt":2885,"cas":160,"gs":167,"hdg":257.8,"vs":-891,"phase":"established"}]},{"t":528,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.598,"y":1.89,"alt":2826,"cas":160,"gs":167,"hdg":257.8,"vs":-889,"phase":"established"}]},{"t":532,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.417,"y":1.851,"alt":2767,"cas":160,"gs":167,"hdg":257.7,"vs":-887,"phase":"established"}]},{"t":536,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.237,"y":1.812,"alt":2708,"cas":160,"gs":166,"hdg":257.7,"vs":-886,"phase":"established"}]},{"t":540,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":8.056,"y":1.772,"alt":2649,"cas":160,"gs":166,"hdg":257.7,"vs":-885,"phase":"established"}]},{"t":544,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.876,"y":1.733,"alt":2590,"cas":160,"gs":166,"hdg":257.7,"vs":-883,"phase":"established"}]},{"t":548,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.695,"y":1.694,"alt":2531,"cas":160,"gs":166,"hdg":257.7,"vs":-882,"phase":"established"}]},{"t":552,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.515,"y":1.654,"alt":2472,"cas":160,"gs":166,"hdg":257.7,"vs":-881,"phase":"established"}]},{"t":556,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.335,"y":1.615,"alt":2414,"cas":160,"gs":166,"hdg":257.6,"vs":-880,"phase":"established"}]},{"t":560,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":7.156,"y":1.576,"alt":2355,"cas":160,"gs":166,"hdg":257.6,"vs":-879,"phase":"established"}]},{"t":564,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.976,"y":1.536,"alt":2296,"cas":160,"gs":165,"hdg":257.7,"vs":-879,"phase":"established"}]},{"t":568,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.797,"y":1.497,"alt":2238,"cas":160,"gs":165,"hdg":257.6,"vs":-878,"phase":"established"}]},{"t":572,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.617,"y":1.457,"alt":2179,"cas":160,"gs":165,"hdg":257.6,"vs":-877,"phase":"established"}]},{"t":576,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.438,"y":1.418,"alt":2121,"cas":160,"gs":165,"hdg":257.6,"vs":-876,"phase":"established"}]},{"t":580,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.259,"y":1.379,"alt":2063,"cas":160,"gs":165,"hdg":257.6,"vs":-875,"phase":"established"}]},{"t":584,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":6.081,"y":1.34,"alt":2004,"cas":160,"gs":165,"hdg":257.6,"vs":-874,"phase":"established"}]},{"t":588,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.902,"y":1.3,"alt":1946,"cas":160,"gs":165,"hdg":257.6,"vs":-874,"phase":"established"}]},{"t":592,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.723,"y":1.261,"alt":1888,"cas":160,"gs":164,"hdg":257.6,"vs":-873,"phase":"established"}]},{"t":596,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.545,"y":1.222,"alt":1830,"cas":160,"gs":164,"hdg":257.7,"vs":-872,"phase":"established"}]},{"t":600,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.367,"y":1.183,"alt":1772,"cas":160,"gs":164,"hdg":257.6,"vs":-871,"phase":"established"}]},{"t":604,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.189,"y":1.144,"alt":1713,"cas":160,"gs":164,"hdg":257.6,"vs":-870,"phase":"established"}]},{"t":608,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":5.011,"y":1.105,"alt":1655,"cas":160,"gs":164,"hdg":257.7,"vs":-870,"phase":"established"}]},{"t":612,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.833,"y":1.066,"alt":1598,"cas":160,"gs":164,"hdg":257.6,"vs":-869,"phase":"established"}]},{"t":616,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.656,"y":1.027,"alt":1540,"cas":160,"gs":164,"hdg":257.6,"vs":-868,"phase":"established"}]},{"t":620,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.48,"y":0.988,"alt":1482,"cas":154,"gs":158,"hdg":257.6,"vs":-852,"phase":"established"}]},{"t":624,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.315,"y":0.952,"alt":1428,"cas":143,"gs":146,"hdg":257.6,"vs":-788,"phase":"established"}]},{"t":628,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.16,"y":0.918,"alt":1377,"cas":140,"gs":143,"hdg":257.6,"vs":-755,"phase":"established"}]},{"t":632,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":4.005,"y":0.884,"alt":1327,"cas":140,"gs":143,"hdg":257.6,"vs":-755,"phase":"established"}]},{"t":636,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.85,"y":0.85,"alt":1277,"cas":140,"gs":143,"hdg":257.7,"vs":-755,"phase":"established"}]},{"t":640,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.696,"y":0.816,"alt":1226,"cas":140,"gs":143,"hdg":257.6,"vs":-755,"phase":"established"}]},{"t":644,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.541,"y":0.782,"alt":1176,"cas":140,"gs":142,"hdg":257.6,"vs":-755,"phase":"established"}]},{"t":648,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.387,"y":0.748,"alt":1126,"cas":140,"gs":142,"hdg":257.6,"vs":-754,"phase":"established"}]},{"t":652,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.232,"y":0.714,"alt":1075,"cas":140,"gs":142,"hdg":257.6,"vs":-754,"phase":"established"}]},{"t":656,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":3.078,"y":0.681,"alt":1025,"cas":140,"gs":142,"hdg":257.6,"vs":-753,"phase":"established"}]},{"t":660,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.924,"y":0.647,"alt":975,"cas":140,"gs":142,"hdg":257.6,"vs":-753,"phase":"established"}]},{"t":664,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.77,"y":0.613,"alt":925,"cas":140,"gs":142,"hdg":257.6,"vs":-752,"phase":"established"}]},{"t":668,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.616,"y":0.579,"alt":875,"cas":140,"gs":142,"hdg":257.7,"vs":-752,"phase":"established"}]},{"t":672,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.462,"y":0.546,"alt":825,"cas":140,"gs":142,"hdg":257.6,"vs":-751,"phase":"established"}]},{"t":676,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.309,"y":0.512,"alt":774,"cas":140,"gs":142,"hdg":257.6,"vs":-751,"phase":"established"}]},{"t":680,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.155,"y":0.478,"alt":724,"cas":140,"gs":141,"hdg":257.6,"vs":-750,"phase":"established"}]},{"t":684,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":2.002,"y":0.444,"alt":674,"cas":140,"gs":141,"hdg":257.7,"vs":-750,"phase":"established"}]},{"t":688,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.849,"y":0.411,"alt":624,"cas":140,"gs":141,"hdg":257.6,"vs":-749,"phase":"established"}]},{"t":692,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.695,"y":0.377,"alt":574,"cas":140,"gs":141,"hdg":257.6,"vs":-749,"phase":"established"}]},{"t":696,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.542,"y":0.344,"alt":525,"cas":140,"gs":141,"hdg":257.6,"vs":-748,"phase":"established"}]},{"t":700,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.389,"y":0.31,"alt":475,"cas":140,"gs":141,"hdg":257.6,"vs":-748,"phase":"established"}]},{"t":704,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.237,"y":0.276,"alt":425,"cas":140,"gs":141,"hdg":257.6,"vs":-747,"phase":"established"}]},{"t":708,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":1.084,"y":0.243,"alt":375,"cas":140,"gs":141,"hdg":257.7,"vs":-747,"phase":"established"}]},{"t":712,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.931,"y":0.209,"alt":325,"cas":140,"gs":141,"hdg":257.6,"vs":-746,"phase":"established"}]},{"t":716,"ac":[{"cs":"EZY12AB","type":"A320","wake":"M","x":0.779,"y":0.176,"alt":276,"cas":140,"gs":141,"hdg":257.6,"vs":-746,"phase":"established"}]},{"t":719,"ac":[]}],"events":[{"t":0,"kind":"note","cs":null,"text":"rules controller, runway 26L"},{"t":0,"kind":"takeover","cs":"EZY12AB","text":"EZY12AB (A320) released at WILLO, FL80, 220 kt","actype":"A320","fix":"WILLO"},{"t":0,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, descend altitude 4,000 ft","instr":"altitude","value":4000},{"t":0,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn right heading 065","instr":"heading","value":66.33},{"t":45,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn right heading 075","instr":"heading","value":76.33},{"t":280,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn right heading 085","instr":"heading","value":86.33},{"t":300,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn left heading 010","instr":"heading","value":11.33},{"t":300,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, descend altitude 3,000 ft","instr":"altitude","value":3000},{"t":300,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, speed 180 knots","instr":"speed","value":180},{"t":325,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn left heading 350","instr":"heading","value":351.33},{"t":355,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn left heading 340","instr":"heading","value":341.33},{"t":390,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, turn left heading 285","instr":"heading","value":286.33},{"t":390,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, cleared ILS approach runway 26L","instr":"cleared_ils","value":"26L"},{"t":390,"kind":"instruction","cs":"EZY12AB","text":"EZY12AB, speed 160 knots","instr":"speed","value":160},{"t":462.0,"kind":"pilot","cs":"EZY12AB","text":"EZY12AB localiser captured 11.1 NM out"},{"t":515.0,"kind":"pilot","cs":"EZY12AB","text":"EZY12AB glide path captured 8.7 NM out"},{"t":643.0,"kind":"stable_check","cs":"EZY12AB","text":"EZY12AB stable at 1,000 ft (140 kt)","stable":true},{"t":719.0,"kind":"landed","cs":"EZY12AB","text":"EZY12AB landed runway 26L","actype":"A320"}],"scores":{"arrivals":1,"landed":1,"separation_losses":0,"wake_violations":0,"min_spacing_nm":"","mean_spacing_nm":"","track_miles_per_arrival":39.0,"minutes_per_arrival":12.0,"instructions":12,"instructions_per_arrival":12.0,"safety_blocks":0,"go_arounds":0,"stable_at_1000ft_pct":100}}</script>
+<script>
+(() => {
+  const S = JSON.parse(document.getElementById('session').textContent);
+  const M = S.map, frames = S.frames, events = S.events;
+  const params = new URLSearchParams(location.search);
+  const fullTrail = params.get('trail') === 'all', trailLen = Number(params.get('trail')) || 10;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = {};
+  ['--ring','--map','--rma','--smaa','--runway','--centreline','--fix','--hold','--vectoring','--established','--goaround','--held','--text','--muted'].forEach(k => C[k] = css(k));
+  const duration = Math.max(S.meta.duration || 0, frames.length ? frames[frames.length - 1].t : 0, 1);
+
+  document.title = S.meta.title || 'Radar replay';
+  document.getElementById('title').textContent = S.meta.title || 'Radar replay';
+  document.getElementById('subtitle').textContent = [S.meta.scenario, S.meta.controller, M.airport + ' ' + M.runway, S.meta.milestone].filter(Boolean).join(' · ');
+  document.getElementById('banner').textContent = M.name + ' · runway ' + M.runway + (S.meta.code_version ? ' · code ' + S.meta.code_version : '');
+
+  // Scores table
+  const st = document.getElementById('scoretable');
+  const labels = (S.meta && S.meta.scores_labels) || {};
+  Object.entries(S.scores || {}).forEach(([k, v]) => {
+    if (typeof v === 'object' || v === '' || v === null) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td>';
+    tr.children[0].textContent = (labels[k] || k.replace(/_/g, ' '));
+    tr.children[1].textContent = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(1)) : String(v);
+    st.appendChild(tr);
+  });
+  if (!st.children.length) document.getElementById('scores').style.display = 'none';
+
+  // View
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+  const pts = [[0, 0], M.active.threshold].concat(M.holds.map(h => h.xy));
+  const c26 = M.active.course_true * Math.PI / 180;
+  pts.push([M.active.threshold[0] - 20 * Math.sin(c26), M.active.threshold[1] - 20 * Math.cos(c26)]);
+  let xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  let cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 14;
+  let zoom = 1;
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1; W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    zoom = zoom === 1 ? Math.min(W, H) / span : zoom;
+  }
+  const sx = x => W / 2 + (x - cx) * zoom, sy = y => H / 2 - (y - cy) * zoom;
+  window.addEventListener('resize', () => { const z = zoom; resize(); zoom = z; draw(); });
+  let drag = null;
+  canvas.addEventListener('mousedown', e => drag = [e.clientX, e.clientY, cx, cy]);
+  window.addEventListener('mouseup', () => drag = null);
+  window.addEventListener('mousemove', e => { if (!drag) return; cx = drag[2] - (e.clientX - drag[0]) / zoom; cy = drag[3] + (e.clientY - drag[1]) / zoom; draw(); });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); zoom *= e.deltaY < 0 ? 1.15 : 1 / 1.15; draw(); }, { passive: false });
+
+  function line(x0, y0, x1, y1) { ctx.beginPath(); ctx.moveTo(sx(x0), sy(y0)); ctx.lineTo(sx(x1), sy(y1)); ctx.stroke(); }
+
+  function drawMap() {
+    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+    // Range rings around the airport
+    ctx.strokeStyle = C['--ring']; ctx.lineWidth = 1; ctx.fillStyle = C['--muted'];
+    [10, 20, 30, 40].forEach(r => { ctx.beginPath(); ctx.arc(sx(0), sy(0), r * zoom, 0, 2 * Math.PI); ctx.stroke(); ctx.fillText(r + ' NM', sx(0) + 4, sy(r) - 3); });
+    // Airspace
+    Object.entries(M.airspace).forEach(([name, segs]) => {
+      ctx.strokeStyle = /SMAA/.test(name) ? C['--smaa'] : C['--rma']; ctx.lineWidth = 1;
+      segs.forEach(s => line(s[0], s[1], s[2], s[3]));
+    });
+    // Extended centreline with a tick every mile, longer every 5
+    const t = M.active.threshold, c = M.active.course_true * Math.PI / 180;
+    const ux = -Math.sin(c), uy = -Math.cos(c), px = Math.cos(c), py = -Math.sin(c);
+    ctx.strokeStyle = C['--centreline']; ctx.setLineDash([6, 6]); line(t[0], t[1], t[0] + 20 * ux, t[1] + 20 * uy); ctx.setLineDash([]);
+    for (let d = 1; d <= 20; d++) { const k = d % 5 ? 0.25 : 0.6; line(t[0] + d * ux - k * px, t[1] + d * uy - k * py, t[0] + d * ux + k * px, t[1] + d * uy + k * py); }
+    // Runways
+    ctx.strokeStyle = C['--runway']; ctx.lineWidth = 3;
+    const byName = Object.fromEntries(M.runways.map(r => [r.name, r]));
+    if (byName['26L'] && byName['08R']) line(byName['26L'].threshold[0], byName['26L'].threshold[1], byName['08R'].threshold[0], byName['08R'].threshold[1]);
+    ctx.lineWidth = 1;
+    // Holds as racetracks: one-minute inbound leg ending at the fix
+    ctx.strokeStyle = C['--hold'];
+    M.holds.forEach(h => {
+      const ib = h.inbound_true * Math.PI / 180, leg = 3.7, r = 1.5, side = h.turn === 'right' ? 1 : -1;
+      const fx = h.xy[0], fy = h.xy[1];
+      const bx = fx - leg * Math.sin(ib), by = fy - leg * Math.cos(ib);           // start of the inbound leg
+      const ox = 2 * r * Math.cos(ib) * side, oy = -2 * r * Math.sin(ib) * side;  // offset to the outbound leg
+      line(bx, by, fx, fy); line(bx + ox, by + oy, fx + ox, fy + oy);
+      // Turn at the fix onto the outbound leg, and at the far end back onto the inbound leg.
+      [[fx, fy, fx + ox / 2, fy + oy / 2], [bx + ox, by + oy, bx + ox / 2, by + oy / 2]].forEach(([x, y, mx, my]) => {
+        ctx.beginPath();
+        const start = Math.atan2(-(y - my), x - mx);
+        ctx.arc(sx(mx), sy(my), r * zoom, start, start + Math.PI * side, side < 0);
+        ctx.stroke();
+      });
+    });
+    // Fixes
+    ctx.fillStyle = C['--fix']; ctx.strokeStyle = C['--fix'];
+    M.fixes.forEach(f => {
+      const x = sx(f.xy[0]), y = sy(f.xy[1]);
+      ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x + 4, y + 3); ctx.lineTo(x - 4, y + 3); ctx.closePath(); ctx.stroke();
+      ctx.fillText(f.name, x + 6, y + 4);
+    });
+    ctx.fillStyle = C['--runway']; ctx.fillText(M.airport, sx(0) + 6, sy(0) - 8);
+  }
+
+  // Frames
+  function frameIndex(t) {
+    let lo = 0, hi = frames.length - 1;
+    if (hi < 0 || t < frames[0].t) return -1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (frames[mid].t <= t) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
+  function aircraftAt(t) {
+    const i = frameIndex(t); if (i < 0) return [];
+    const a = frames[i], b = frames[Math.min(i + 1, frames.length - 1)];
+    const f = b.t > a.t ? Math.min(1, (t - a.t) / (b.t - a.t)) : 0;
+    const next = Object.fromEntries(b.ac.map(p => [p.cs, p]));
+    return a.ac.map(p => {
+      const q = next[p.cs]; if (!q) return p;
+      return Object.assign({}, p, { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, alt: p.alt + (q.alt - p.alt) * f, cas: p.cas + (q.cas - p.cas) * f });
+    });
+  }
+  const colour = ph => ph === 'established' || ph === 'final' ? C['--established'] : ph === 'go_around' ? C['--goaround'] : ph === 'holding' ? C['--held'] : C['--vectoring'];
+
+  function drawAircraft(t) {
+    const i = frameIndex(t);
+    ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
+    if (fullTrail && i >= 0) {
+      // Every aircraft's whole track so far, including ones that have landed, coloured by phase.
+      const tracks = {};
+      for (let k = 0; k <= i; k++) frames[k].ac.forEach(a => (tracks[a.cs] = tracks[a.cs] || []).push(a));
+      ctx.lineWidth = 1.5; ctx.globalAlpha = 0.55;
+      const flying = new Set(aircraftAt(t).map(a => a.cs));
+      const landed = [];
+      Object.values(tracks).forEach(pts => {
+        for (let k = 1; k < pts.length; k++) {
+          ctx.strokeStyle = colour(pts[k].phase);
+          line(pts[k - 1].x, pts[k - 1].y, pts[k].x, pts[k].y);
+        }
+        const last = pts[pts.length - 1];
+        if (!flying.has(last.cs)) landed.push(last);
+      });
+      // Aircraft that have landed: one stacked label list below the runway, in landing order.
+      if (landed.length) {
+        const t0 = M.active.threshold;
+        ctx.globalAlpha = 0.9; ctx.fillStyle = C['--muted'];
+        landed.forEach((a, k) => ctx.fillText((k === 0 ? 'landed: ' : '        ') + a.cs, sx(t0[0]) + 6, sy(t0[1]) + 18 + 14 * k));
+      }
+      ctx.globalAlpha = 1; ctx.lineWidth = 1;
+    }
+    aircraftAt(t).forEach(p => {
+      const col = colour(p.phase);
+      // Trail: dots for recent positions; with ?trail=all the whole track as a faint line
+      ctx.fillStyle = col; ctx.globalAlpha = 0.45;
+      for (let k = 1; k <= trailLen && i - k >= 0; k++) {
+        const q = frames[i - k].ac.find(a => a.cs === p.cs); if (!q) break;
+        ctx.fillRect(sx(q.x) - 1.5, sy(q.y) - 1.5, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+      const x = sx(p.x), y = sy(p.y);
+      // One-minute leader line along the heading
+      const h = p.hdg * Math.PI / 180, d = (p.gs || p.cas) / 60;
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      line(p.x, p.y, p.x + d * Math.sin(h), p.y + d * Math.cos(h));
+      ctx.fillStyle = col; ctx.fillRect(x - 4, y - 4, 8, 8);
+      // Data block
+      const lx = x + 14, ly = y - 18;
+      ctx.beginPath(); ctx.moveTo(x + 4, y - 4); ctx.lineTo(lx - 2, ly + 6); ctx.stroke();
+      ctx.fillText(p.cs, lx, ly);
+      const alt = p.alt >= 6000 ? 'F' + String(Math.round(p.alt / 100)).padStart(3, '0') : 'A' + String(Math.round(p.alt / 100)).padStart(3, '0');
+      ctx.fillText(alt + ' ' + String(Math.round(p.cas / 10)).padStart(2, '0'), lx, ly + 13);
+      ctx.fillText(p.type + ' ' + (p.wake || ''), lx, ly + 26);
+    });
+  }
+
+  let t = 0, playing = false, speed = Number(params.get('speed') || 10), last = null;
+  document.getElementById('speed').value = String([1, 5, 10, 30, 60].includes(speed) ? speed : 10);
+  const tr = document.getElementById('transcript'), slider = document.getElementById('slider'), clock = document.getElementById('clock');
+  let shown = 0;
+  function fmt(s) { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0'); }
+  function updateTranscript() {
+    const upto = events.filter(e => e.t <= t).length;
+    if (upto < shown) { tr.innerHTML = ''; shown = 0; }
+    for (; shown < upto; shown++) {
+      const e = events[shown], div = document.createElement('div');
+      div.className = 'ev ' + ({ blocked: 'blocked', landed: 'landed', go_around: 'goaround', separation_loss: 'loss', note: 'note', takeover: 'takeover' }[e.kind] || '');
+      const span = document.createElement('span'); span.className = 't'; span.textContent = fmt(e.t);
+      div.appendChild(span); div.appendChild(document.createTextNode(e.text));
+      tr.appendChild(div);
+    }
+    tr.scrollTop = tr.scrollHeight;
+  }
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, W, H);
+    drawMap(); drawAircraft(t);
+    clock.textContent = fmt(t) + ' / ' + fmt(duration);
+    slider.value = String(Math.round(1000 * t / duration));
+    updateTranscript();
+  }
+  function tick(now) {
+    if (playing) {
+      if (last !== null) t = Math.min(duration, t + (now - last) / 1000 * speed);
+      last = now;
+      if (t >= duration) { playing = false; document.getElementById('play').textContent = 'Play'; window.replayDone = true; }
+    }
+    draw();
+    requestAnimationFrame(tick);
+  }
+  document.getElementById('play').onclick = () => { if (t >= duration) t = 0; playing = !playing; last = null; document.getElementById('play').textContent = playing ? 'Pause' : 'Play'; };
+  document.getElementById('speed').onchange = e => speed = Number(e.target.value);
+  slider.oninput = () => { t = duration * Number(slider.value) / 1000; };
+  resize();
+  if (params.get('autoplay') === '1') { setTimeout(() => { playing = true; last = null; document.getElementById('play').textContent = 'Pause'; }, Number(params.get('delay') || 800)); }
+  window.replayDuration = duration;
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
