@@ -209,11 +209,12 @@ register(
         script=[
             (10, Instruction("BAW2GE", "altitude", 8000)),  # straight down onto EZY12AB: blocked
             (20, Instruction("EZY12AB", "altitude", 9000)),  # straight up into BAW2GE: blocked
-            (30, Instruction("EZY12AB", "heading", 200.0)),  # turn away: allowed
+            (30, Instruction("EZY12AB", "heading", 150.0)),  # turn away, into the RMA: allowed
             (40, Instruction("EZY12AB", "altitude", 1500)),  # below the 2,000 ft minimum: blocked
             (50, Instruction("BAW2GE", "speed", 280)),  # above 250 kt: blocked
-            (60, Instruction("BAW2GE", "heading", 250.0)),  # turn the other way: allowed
-            (150, Instruction("BAW2GE", "altitude", 7000)),  # now 6 NM apart: the same descent is allowed
+            (60, Instruction("BAW2GE", "heading", 60.0)),  # turn the other way: allowed
+            (90, Instruction("EZY12AB", "heading", 240.0)),  # out of the RMA's south-west edge: blocked
+            (150, Instruction("BAW2GE", "altitude", 7000)),  # now well apart: the same descent is allowed
         ],
         notes="Two aircraft stacked at WILLO. Scripted instructions, some unsafe on purpose, all passed through the safety check.",
     )

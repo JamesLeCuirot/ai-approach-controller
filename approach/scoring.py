@@ -22,6 +22,9 @@ LABELS = {
     "instructions_per_arrival": "Instructions per arrival",
     "safety_blocks": "Blocked by safety check",
     "go_arounds": "Go-arounds",
+    "left_rma": "Aircraft that left the RMA",
+    "minutes_outside_rma": "Minutes outside the RMA after entering it",
+    "below_minimum_altitude": "Aircraft below the minimum altitude",
     "stable_at_1000ft_pct": "Stable at 1,000 ft (%)",
 }
 
@@ -31,6 +34,7 @@ FINAL_MIN_NM = 2.5  # same final approach track within 10 NM of the threshold (U
 FINAL_RANGE_NM = 10.0
 VERTICAL_MIN_FT = 1000
 VERTICAL_TOLERANCE_FT = 100  # ADS-B altitudes come in 25 ft steps and aircraft settle onto a level: allow for it
+RMA_TOLERANCE_NM = 1.0  # outside the RMA by more than this counts as leaving it
 
 
 def _minimum_nm(a: dict, b: dict, airport: Airport, runway: str) -> float:
@@ -67,6 +71,28 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
                         new_events.append({"t": f["t"], "kind": "separation_loss", "cs": pair[0],
                                            "text": f"Separation lost: {pair[0]} and {pair[1]}, {h:.1f} NM and {v:,.0f} ft"})
         in_loss = now
+
+    # The RMA: aircraft-minutes spent more than 1 NM outside it after first entering it (going around excluded),
+    # and aircraft that went below the minimum altitude for where they were while not established on final.
+    rma = airport.rma(runway)
+    entered: set[str] = set()
+    left: set[str] = set()
+    low: set[str] = set()
+    outside_s = 0.0
+    for f, nxt in zip(frames, frames[1:] + frames[-1:]):
+        dt = max(0.0, nxt["t"] - f["t"])
+        for a in f["ac"]:
+            if a.get("phase") in ("established", "go_around"):
+                continue
+            if a["alt"] < airport.minimum_altitude_ft(a["x"], a["y"]) - VERTICAL_TOLERANCE_FT:
+                low.add(a["cs"])
+            if rma is None:
+                continue
+            if rma.contains(a["x"], a["y"]):
+                entered.add(a["cs"])
+            elif a["cs"] in entered and rma.distance_nm(a["x"], a["y"]) > RMA_TOLERANCE_NM:
+                left.add(a["cs"])
+                outside_s += dt
 
     # Spacing at the runway: where each follower is on final when its leader lands. A follower that is not
     # yet established on final (still being vectored, or going around) is not counted.
@@ -113,4 +139,7 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
         "safety_blocks": len(kinds["blocked"]),
         "go_arounds": len(kinds["go_around"]),
         "stable_at_1000ft_pct": round(100 * sum(c["stable"] for c in checks) / len(checks)) if checks else "",
+        "left_rma": len(left) if rma is not None else "",
+        "minutes_outside_rma": round(outside_s / 60.0, 1) if rma is not None else "",
+        "below_minimum_altitude": len(low),
     }

@@ -14,3 +14,4 @@ pygrib>=2.1  # reads NOAA's GFS weather files
 
 # Tests
 pytest>=7.4
+shapely>=2.0  # areas: the RMA and minimum-altitude areas

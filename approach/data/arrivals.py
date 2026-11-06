@@ -222,10 +222,17 @@ def build_day(day: date, airport, log=print) -> dict:
 
     area = adsblol.get_day(day, airport, log=log)
     arrivals = find_arrivals(area, airport)
+    try:
+        from approach.data.metar import qnh_by_hour
+
+        qnh = qnh_by_hour(day, airport.icao)
+    except OSError:
+        qnh = {}
     out = {
         "day": day.isoformat(), "airport": airport.icao, "source": adsblol.CREDIT, "licence": "ODbL 1.0",
         "instance": area["instance"],
         "handover": {"radius_nm": HANDOVER_RADIUS_NM, "ceiling_ft": HANDOVER_CEILING_FT},
+        "qnh_hpa_by_hour": {str(h): q for h, q in sorted(qnh.items())},  # from METARs: corrects altitudes below 6,000 ft
         "arrivals": arrivals,
     }
     path = arrivals_path(airport.icao, day)

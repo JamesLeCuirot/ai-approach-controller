@@ -15,6 +15,9 @@ It follows the stage 0 spec (docs/stage0-gatwick-spec.md):
    to its approach speed by 4 DME). Descent to 3,000 ft on base.
 5. Hand over: once cleared for the ILS the pilot flies the approach; the
    controller re-sequences any go-around.
+6. Stay inside the RMA: outside it, an arrival goes direct to its hold (WILLO or
+   TIMBA) and descends in the stack. It is vectored off the hold only when its slot
+   can be made with a downwind that stays inside the RMA; until then it holds.
 
 Positions are worked in the runway frame: ``along`` (NM out from the threshold on
 the extended centreline) and ``lateral`` (NM right of the centreline as seen by an
@@ -25,6 +28,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+
+from shapely.geometry import Point
 
 from approach import wake
 from approach.airports.model import Airport
@@ -44,6 +49,10 @@ GS_DOWNWIND, GS_BASE = 235.0, 190.0  # rough ground speeds used for timing (no w
 REISSUE_DEG = 8.0
 REISSUE_S = 20.0
 PILOT_DELAY_S = 4.5
+STACKS = ("WILLO", "TIMBA")
+STACK_BASE_FT = 7000  # the minimum stack level (FL70 on a standard day)
+SPEED_HOLD = 220
+RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 
 
 @dataclass
@@ -52,7 +61,11 @@ class Plan:
     actype: str
     key: float  # earliest landing time when first planned: fixes the order
     side: float  # -1 = left of the centreline (south for 26L), +1 = right
-    stage: str = "downwind"  # downwind -> base -> cleared
+    stage: str = "inbound"  # inbound (to its hold, holding if need be) -> downwind -> base -> cleared
+    hold_fix: str = "WILLO"
+    holding: bool = False
+    stack_level: int = 0
+    direct_sent: bool = False
     d_join: float = D_JOIN_MIN_NM
     level: int = 4000
     landing_t: float = 0.0
@@ -75,6 +88,32 @@ class RulesController(Controller):
         self.last_plan_t = -1e9
         self.out: list[Instruction] = []
         self.notes: list[str] = []
+        self.rma = airport.rma(runway)
+        self._max_join: dict[float, float] = {}
+
+    # ---- the RMA ---------------------------------------------------------------
+    def _inside(self, x: float, y: float, margin: float = 0.0) -> bool:
+        if self.rma is None:
+            return True
+        return self.rma.contains(x, y) and (margin == 0.0 or self.rma.polygon.exterior.distance(Point(x, y)) >= margin)
+
+    def max_join(self, side: float) -> float:
+        """The longest final (join point distance) whose downwind and base stay inside the RMA on that side."""
+        if side not in self._max_join:
+            best = None
+            d = D_JOIN_MIN_NM
+            while d <= D_JOIN_MAX_NM:
+                pts = self._points(Plan("probe", "A320", 0.0, side, d_join=d))
+                if all(self._inside(*pts[k], margin=m) for k, m in RMA_MARGIN_NM.items()):
+                    best = d
+                d += 0.5
+            self._max_join[side] = best if best is not None else -1.0
+        return self._max_join[side]
+
+    def _side(self, v) -> float:
+        """The aircraft's own side of the centreline if the RMA has room for a downwind there, else the other."""
+        own = -1.0 if v.lateral < 0 else 1.0
+        return own if self.max_join(own) >= self.max_join(-own) or self.max_join(own) >= D_JOIN_MIN_NM + 4 else -own
 
     # ---- geometry --------------------------------------------------------------
     def _points(self, p: Plan) -> dict[str, tuple[float, float]]:
@@ -98,7 +137,7 @@ class RulesController(Controller):
         legs = []
         icpt = self._intercept_heading(q)
         base_hdg = bearing_xy(*pts["D"], *pts["B"])
-        if q.stage == "downwind":
+        if q.stage in ("downwind", "inbound"):
             downwind_gs = max(v.tas_kt, 200.0)  # true airspeed is faster than indicated at altitude
             to_d = bearing_xy(v.x, v.y, *pts["D"])
             legs += [
@@ -108,7 +147,7 @@ class RulesController(Controller):
         elif q.stage == "base":
             to_b = bearing_xy(v.x, v.y, *pts["B"])
             legs.append((distance_xy(v.x, v.y, *pts["B"]) - self._corner_saving(to_b, icpt, GS_BASE), GS_BASE))
-        if q.stage in ("downwind", "base"):
+        if q.stage in ("downwind", "base", "inbound"):
             legs.append((INTERCEPT_LEG_NM, GS_BASE))
             final = q.d_join
         else:
@@ -135,14 +174,35 @@ class RulesController(Controller):
 
     # ---- sequencing ------------------------------------------------------------
     def _replan(self, t: float, views: dict) -> None:
-        order = sorted((p for p in self.plans.values() if p.cs in views), key=lambda p: (p.stage != "cleared", p.key))
+        order = sorted((p for p in self.plans.values() if p.cs in views),
+                       key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3), p.key))
         prev_t, prev_type = None, None
         for p in order:
             v = views[p.cs]
+            if p.stage == "inbound":
+                # Off the hold only when inside the RMA and the slot can be made with a downwind inside it.
+                side = self._side(v)
+                longest = self.max_join(side)
+                probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
+                need = t
+                if prev_t is not None:
+                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
+                    need = prev_t + gap_nm / 150.0 * 3600.0
+                can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
+                if can_go:
+                    p.stage, p.side, p.holding = "downwind", side, False
+                    ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
+                    p.level = min(6000, 4000 + 1000 * ahead)
+                    p.alt_cmd = None
+                    p.hdg_cmd = None
+                else:
+                    p.landing_t = max(need, t + self._eta(v, probe, D_JOIN_MIN_NM))
+                    prev_t, prev_type = p.landing_t, p.actype
+                    continue
             if p.stage == "downwind" and prev_t is not None:
                 gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
                 need = prev_t + gap_nm / 150.0 * 3600.0  # landing time that keeps the gap
-                lo, hi = D_JOIN_MIN_NM, D_JOIN_MAX_NM
+                lo, hi = D_JOIN_MIN_NM, max(D_JOIN_MIN_NM, self.max_join(p.side))
                 if t + self._eta(v, p, hi) < need:
                     p.d_join = hi
                     if not p.warned:
@@ -186,11 +246,10 @@ class RulesController(Controller):
         # New arrivals (and go-arounds back under control) get a plan.
         for v in views_list:
             if v.cs not in self.plans and v.phase == "vectoring" and not v.cleared:
-                side = -1.0 if v.lateral < 0 else 1.0
+                side = self._side(v)
                 p = Plan(v.cs, v.actype, key=0.0, side=side)
-                p.key = t + self._eta(v, p)
-                ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
-                p.level = min(6000, 4000 + 1000 * ahead)
+                p.hold_fix = min(STACKS, key=lambda f: distance_xy(v.x, v.y, *self.airport.xy(self.airport.holds[f].position)))
+                p.key = t + self._eta(v, Plan(**{**vars(p), "stage": "downwind"}))
                 self.plans[v.cs] = p
                 self.last_plan_t = -1e9  # replan now
         for cs in [cs for cs in self.plans if cs not in views]:
@@ -199,9 +258,27 @@ class RulesController(Controller):
             self._replan(t, views)
             self.last_plan_t = t
 
+        self._stack_levels(views)
         for p in sorted(self.plans.values(), key=lambda p: p.key):
             v = views[p.cs]
             if p.stage == "cleared":
+                # Crossed to the far side of final without capturing the localiser: bring it round again.
+                if not v.loc and v.lateral * p.side < -1.0:
+                    self._resequence(t, p, "missed the localiser")
+                continue
+            if p.stage == "inbound":
+                fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
+                if not p.direct_sent:
+                    self._say(p, "direct", p.hold_fix)
+                    p.direct_sent = True
+                if p.spd_cmd is None and v.cas_kt > SPEED_HOLD + 5:
+                    self._say(p, "speed", SPEED_HOLD)
+                if not p.holding and distance_xy(v.x, v.y, fx, fy) < 3.0:
+                    self._say(p, "hold", p.hold_fix)
+                    p.holding = True
+                    self.notes.append(f"{p.cs} holding at {p.hold_fix}")
+                if p.stack_level and p.alt_cmd != p.stack_level and t >= p.retry_t and p.stack_level < v.target_alt:
+                    self._say(p, "altitude", p.stack_level)
                 continue
             pts = self._points(p)
             if p.alt_cmd is None and t >= p.retry_t:
@@ -229,6 +306,14 @@ class RulesController(Controller):
         self._final_spacing(views)
         return self.out
 
+    def _stack_levels(self, views: dict) -> None:
+        """Each stack fills from the bottom: the earliest in the sequence gets the lowest level."""
+        for fix in STACKS:
+            waiting = sorted((p for p in self.plans.values() if p.stage == "inbound" and p.hold_fix == fix and p.cs in views),
+                             key=lambda p: p.key)
+            for k, p in enumerate(waiting):
+                p.stack_level = STACK_BASE_FT + 1000 * k
+
     def _final_spacing(self, views: dict) -> None:
         """Final director: keep a cleared follower at least 6 NM behind the aircraft ahead.
 
@@ -248,6 +333,11 @@ class RulesController(Controller):
             if follow.spd_cmd != speed:
                 self._say(follow, "speed", speed)
 
+    def _resequence(self, t: float, p: Plan, why: str) -> None:
+        p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
+        self.last_plan_t = -1e9
+        self.notes.append(f"{p.cs} {why}: re-sequenced")
+
     def on_event(self, event: dict) -> None:
         kind, cs = event.get("kind"), event.get("cs")
         if kind == "blocked":
@@ -255,10 +345,12 @@ class RulesController(Controller):
             p = self.plans.get(instr.callsign)
             if p is not None:
                 if instr.kind == "altitude":
-                    p.alt_cmd = None if p.stage == "downwind" else 0  # ask again shortly
+                    p.alt_cmd = None if p.stage in ("downwind", "inbound") else 0  # ask again shortly
                     p.retry_t = event.get("t", 0) + REISSUE_S
                 elif instr.kind == "heading":
                     p.hdg_cmd = None
+                    if p.stage == "cleared":  # the turn onto the localiser was blocked: back on base, try again
+                        p.stage = "base"
                 elif instr.kind == "speed":
                     p.spd_cmd = None
         elif kind == "go_around" and cs in self.plans:

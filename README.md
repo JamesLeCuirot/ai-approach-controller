@@ -13,6 +13,7 @@ The AI starts with two aircraft and speed control only, then grows stage by stag
 - [Project diary](diary/README.md): one entry per milestone, each with radar replays, videos, screenshots and scores
 - [Project plan](docs/project-plan.md): the vision, prior work, how it works, roadmap, risks and team
 - [Stage 0 spec: Gatwick](docs/stage0-gatwick-spec.md): airspace, arrival routes, holds, spacing, speeds and the rules controller
+- [Questions for a Gatwick controller](docs/questions-for-a-gatwick-controller.md): what the simulator still guesses at
 
 ## How it works
 

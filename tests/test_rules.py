@@ -35,3 +35,5 @@ def test_rules_controller_three_arrivals_behind_a_heavy():
     assert s["landed"] == 3
     assert s["separation_losses"] == 0 and s["wake_violations"] == 0
     assert s["min_spacing_nm"] >= 6.0
+    # It keeps everyone inside the RMA and above the minimum altitudes, holding when it must.
+    assert s["left_rma"] == 0 and s["below_minimum_altitude"] == 0

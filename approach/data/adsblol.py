@@ -174,7 +174,16 @@ def main() -> None:
     for d in args.days:
         day = date.fromisoformat(d)
         t = time.time()
-        data = get_day(day, airport)
+        for attempt in range(3):  # the downloads are long; a dropped connection just means starting the day again
+            try:
+                data = get_day(day, airport)
+                break
+            except (OSError, EOFError, tarfile.TarError) as e:
+                print(f"{day}: attempt {attempt + 1} failed ({e}), retrying", flush=True)
+                time.sleep(30)
+        else:
+            print(f"{day}: gave up", flush=True)
+            continue
         print(f"{day}: {len(data['aircraft'])} aircraft in the area ({data['instance']}), {time.time() - t:.0f} s", flush=True)
 
 

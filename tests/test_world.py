@@ -88,3 +88,27 @@ def test_instructions_given_together_are_flown_in_order(airport):
         world.step(8)
         assert abs(world.views()[0].target_hdg - 330.0) < 0.01
         assert float(world.bs.traf.ap.trk[0]) % 360 == pytest.approx(330.0, abs=0.5), seed
+
+
+def test_hold_at_willo(airport):
+    """Told to hold, the pilot goes to the fix and flies the published left-hand racetrack there."""
+    import math
+
+    from approach.sim.world import World
+
+    world = World(airport, "26L")
+    fx, fy = airport.xy(airport.holds["WILLO"].position)
+    world.spawn("H1", "A320", 51.1, -0.5, 150.0, 8000, 220)
+    world.instruct(Instruction("H1", "hold", "WILLO"))
+    turned, last, furthest = 0.0, None, 0.0
+    for _ in range(900):
+        world.step(1)
+        v = world.views()[0]
+        if world.pilots["H1"].hold_state not in ("", "to_fix"):
+            furthest = max(furthest, math.hypot(v.x - fx, v.y - fy))
+            if last is not None:
+                turned += (v.hdg - last + 540) % 360 - 180
+            last = v.hdg
+    assert turned < -600  # left turns: more than one and a half laps
+    assert furthest < 10.0
+    assert v.phase == "holding"

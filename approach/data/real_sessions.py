@@ -44,6 +44,12 @@ def runway_in_use(arrivals: list[dict]) -> str:
     return max(counts, key=counts.get) if counts else "26L"
 
 
+def _qnh(day: dict, t: float) -> float | None:
+    q = day.get("qnh_hpa_by_hour") or {}
+    hour = str(datetime.fromtimestamp(t, tz=timezone.utc).hour)
+    return q.get(hour) or (next(iter(q.values())) if q else None)
+
+
 def _interp(track: list[list], t: float, elev: float):
     ts = [p[0] for p in track]
     k = bisect.bisect_right(ts, t)
@@ -127,6 +133,9 @@ def real_session(day: dict, airport: Airport, start: float, end: float, title: s
             if s is None:
                 continue
             lat, lon, alt, gs, trk, vs = s
+            from approach.data.metar import qnh_altitude_ft
+
+            alt = qnh_altitude_ft(alt, _qnh(day, t), airport.transition_altitude_ft)
             x, y = airport.grid.to_xy(lat, lon)
             along, lateral = airport.runway_frame(a["runway"], x, y)
             ac.append({"cs": a["callsign"], "type": a["type"], "wake": a["wake"], "x": round(x, 3), "y": round(y, 3),

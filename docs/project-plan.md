@@ -128,7 +128,7 @@ Design choices made up front, so later stages don't force a rewrite:
 - **Small model.** Tens of thousands of parameters, trained with PPO (a standard reinforcement-learning method). No GPU needed for the early stages.
 - **Scaled scores.** Raw scores are scaled down before training, the fix atc_app needed when its training became unstable.
 - **Any airport.** Airports plug in as data (runways, arrivals, holds, approaches), so Gatwick is the first airport rather than the only one. Naveen's JFK data and Geneva in stage 7 use the same code.
-- **A safety check outside the AI.** A fixed, rule-based check sits between the AI and the aircraft and blocks any instruction that would break separation, terrain or airspace limits. The AI trains with it in place, and every block is counted and reported, so it is clear how much the AI relied on it.
+- **A safety check outside the AI.** A fixed, rule-based check sits between the AI and the aircraft and blocks any instruction that would break separation, terrain or airspace limits. The AI trains with it in place, and every block is counted and reported, so it is clear how much the AI relied on it. It knows each runway's RMA (radar manoeuvring area): once inside it, an aircraft may not be vectored out, and outside it an aircraft may only be turned towards it, sent direct to a fix or held. It also applies the minimum altitude for where each aircraft is.
 
 ## Training process
 
@@ -182,11 +182,13 @@ Eight stages take the project from two aircraft to the full demo, then to a seco
 | 0 · Foundations | Simulator, safety check, radar screen and rules controller; real controllers scored | The rules controller lands two arrivals safely, start to finish, on screen |
 | 1 · Speed, then base turns | 1a: the AI adjusts only speeds. 1b: it also chooses when each aircraft turns base. Wind, pilot speed (±10 kt) and descent rates vary | The AI's spacing on final beats the rules controller's |
 | 2 · Vectoring onto final | Downwind, base and intercept, using headings, altitudes and speeds | 95% of approaches stable at 1,000 ft, every intercept at 45° or less |
-| 3 · Traffic and wake | A busy hour of arrivals in mixed sizes, with bigger gaps behind heavy aircraft | No separation losses and every pair at its wake minimum, over 100 sessions |
+| 3 · Traffic and wake | A busy hour of arrivals in mixed sizes, with bigger gaps behind heavy aircraft, and the other real traffic (Gatwick departures, Heathrow, overflights) replayed around them | No separation losses, with each other or with the other traffic, and every pair at its wake minimum, over 100 sessions |
 | 4 · Holds and go-arounds | Holds stack up at peak demand and empty in order; go-arounds are re-sequenced | Stacks built and emptied in order, with no separation losses |
 | 5 · Runway change | A wind shift mid-session; the AI switches runways and re-sequences the traffic | Runway change completed with no separation losses |
 | 6 · Storms: the end vision | Moving storm cells; aircraft vectored around them or given delay vectors | No aircraft enters a storm cell, with no separation losses |
 | 7 · Second airport: Geneva (earmarked) | The Gatwick-trained AI moved to Geneva, with terrain and a new airspace layout | — |
+
+**Other traffic.** The real data already holds the aircraft we don't control: Gatwick's departures, Heathrow's traffic and overflights. They come in three steps. First, replay them along their real tracks as traffic we can't instruct, so the safety check and the scores see any conflict with them; they don't react to us, so this measures risk rather than modelling it. Second, mark the areas and levels they use (departure routes, Heathrow's airspace to the north) as no-go volumes in the safety check, once a Gatwick controller has said which matter. Third, with the runway model, simulate Gatwick's departures on their real departure routes and times, so they also take their real slots on the runway.
 
 Stage 1 can start from BlueSky-Gym's MergeEnv and stage 6 from its StaticObstacleEnv, which shortens both. Stage 2's gate uses the European limit of joining final at an angle of 45° or less (EASA AMC2 ATS.TR.155). How long each stage takes depends on who joins the team, one of the open questions.
 
@@ -306,6 +308,8 @@ The work splits into four workstreams that one person each can own, so a team of
 | AI training | Scoring, the model, training runs | Naveen Mathew, author of atc_app and FlightPathAnalysis (to approach) |
 | Data and baselines | Open ADS-B data for Gatwick, the real-controller baseline, the metrics | A data scientist in Jersey (to approach) |
 | Radar screen | The scope, the instruction transcript, the mode for human controllers | Open |
+
+A controller is the biggest gap. [Questions for a Gatwick controller](questions-for-a-gatwick-controller.md) lists what the simulator, safety check and scoring currently guess at, starting with whether arrivals can ever be vectored outside the RMA. VATSIM UK's Gatwick controllers and mentors are the first people to ask; a real controller later, to check realism before the benchmark is published.
 
 The atc_app fixes described above make a natural opener with Naveen Mathew: they solve that project's top open issue.
 

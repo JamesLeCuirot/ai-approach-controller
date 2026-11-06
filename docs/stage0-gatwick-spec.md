@@ -154,7 +154,7 @@ The rules controller is a hand-written baseline that applies the procedures abov
 
 ## Open tasks
 
-- [ ] Convert the RMA and minimum-altitude shapes in VATSIM UK's sector file (`Airports/EGKK/RMA.txt` and `SMAA.txt`, already in coordinates) into simulator polygons. Check them against the AIP's ATC Surveillance Minimum Altitude chart (AD 2.EGKK-5-1).
+- [x] Convert the RMA and minimum-altitude shapes in VATSIM UK's sector file (`Airports/EGKK/RMA.txt` and `SMAA.txt`, already in coordinates) into simulator polygons (`approach/airports/areas.py`). The safety check keeps vectoring inside the RMA. Still to do: check them against the AIP's ATC Surveillance Minimum Altitude chart (AD 2.EGKK-5-1).
 - [x] Real traffic: OpenSky's full historical data is only for research institutions, so real arrivals come from adsb.lol's open data (ODbL) instead; see `data/real/README.md`.
 - [x] Pick the replay days: 60 days in `data/real/egkk/days.csv`, chosen by `scripts/choose_days.py`.
 - [x] Load fix coordinates from the sector file's `Navaids` folder. For example, WILLO is at 50°59'05.88"N 000°11'30.30"W and TIMBA at 50°56'43.99"N 000°15'42.25"E. The STAR fix sequences per runway are in `Airports/EGKK/Stars.txt`.

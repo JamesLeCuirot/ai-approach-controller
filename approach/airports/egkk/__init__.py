@@ -95,4 +95,8 @@ def load(sector_dir: Path | None = None) -> Airport:
         holds=holds,
         fixes=fixes,
         airspace=airspace,
+        # Westerlies (26L) and easterlies (08R) have different RMAs, as drawn in the sector file's RMA.txt.
+        rma_shapes={"26L": "Gatwick RMA Westerlies", "26R": "Gatwick RMA Westerlies",
+                    "08R": "Gatwick RMA Easterlies", "08L": "Gatwick RMA Easterlies"},
+        smaa_shape="EGKK Gatwick SMAA",
     )

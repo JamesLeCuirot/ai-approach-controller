@@ -4,7 +4,8 @@ BlueSky runs headless and moves the aircraft. On top of it, each aircraft has a
 simulated pilot that
 
 * carries out instructions after a short delay (3-6 s),
-* flies direct to a fix when told to,
+* flies direct to a fix when told to, and flies the published hold at a fix
+  (racetrack, 1-minute legs at or below FL140, 1.5 minutes above),
 * captures the localiser and glide path once cleared for the ILS,
 * slows to 160 kt by 7 NM and to its approach speed by 4 NM,
 * goes around if the approach is unstable at 1,000 ft, the runway is still
@@ -101,6 +102,9 @@ class Pilot:
     loc: bool = False
     gs: bool = False
     direct_fix: str | None = None
+    hold_fix: str | None = None
+    hold_state: str = ""  # to_fix, turn_out, outbound, turn_in, inbound
+    hold_t: float = 0.0
     pending: list[tuple[float, Instruction]] = field(default_factory=list)
     stable_checked: bool = False
     go_around_stage: int = 0
@@ -197,7 +201,8 @@ class World:
                 gs_kt=float(traf.gs[i]) * KT_PER_MS, tas_kt=float(traf.tas[i]) * KT_PER_MS,
                 hdg=float(traf.hdg[i]) % 360.0, trk=float(traf.trk[i]) % 360.0, wind_e_kt=we, wind_n_kt=wn,
                 vs_fpm=float(traf.vs[i]) * FT_PER_M * 60.0,
-                phase=p.phase, cleared=p.cleared, along=along, lateral=lateral, released_t=p.released_t,
+                phase="holding" if p.hold_fix and p.hold_state != "to_fix" else p.phase,
+                cleared=p.cleared, along=along, lateral=lateral, released_t=p.released_t,
                 target_hdg=p.target_hdg, target_alt=p.target_alt, target_spd=p.target_spd, loc=p.loc, gs=p.gs,
             ))
         return out
@@ -217,6 +222,7 @@ class World:
         cs = p.cs
         if instr.kind == "heading":
             p.direct_fix = None
+            p.hold_fix = None  # a heading takes it out of the hold
             if not p.loc:
                 self.stack(f"HDG {cs} {float(instr.value):.1f}")
         elif instr.kind == "altitude":
@@ -226,6 +232,10 @@ class World:
             self.stack(f"SPD {cs} {float(instr.value):.0f}")
         elif instr.kind == "direct":
             p.direct_fix = str(instr.value)
+            p.hold_fix = None
+        elif instr.kind == "hold" and str(instr.value) in self.airport.holds:
+            p.direct_fix = None
+            p.hold_fix, p.hold_state = str(instr.value), "to_fix"
         elif instr.kind == "cleared_ils":
             p.cleared = str(instr.value)
 
@@ -240,7 +250,9 @@ class World:
             p.pending = [(tt, i) for tt, i in p.pending if tt > self.t]
             for instr in due:
                 self._apply(p, instr)
-            if p.direct_fix and p.direct_fix in self.airport.fixes:
+            if p.hold_fix:
+                self._hold_tick(p, v)
+            elif p.direct_fix and p.direct_fix in self.airport.fixes:
                 fx, fy = self.airport.xy(self.airport.fixes[p.direct_fix])
                 self.stack(f"HDG {cs} {self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)):.1f}")
             if p.phase == "go_around":
@@ -254,6 +266,35 @@ class World:
             if follow.along - lead.along < MIN_FINAL_GAP_NM:
                 events += self._start_go_around(self.pilots[follow.cs], follow, "too close to the aircraft ahead")
         return events
+
+    def _hold_tick(self, p: Pilot, v: AircraftView) -> None:
+        """Fly the published racetrack: to the fix, turn outbound, a timed leg, turn back, inbound to the fix."""
+        hold = self.airport.holds[p.hold_fix]
+        fx, fy = self.airport.xy(hold.position)
+        inbound = self.airport.magnetic_to_true(hold.inbound_course_mag)
+        outbound = (inbound + 180.0) % 360.0
+        side = 1.0 if hold.turn == "right" else -1.0
+        leg_s = 60.0 if v.alt_ft <= 14000 else 90.0
+        dist = math.hypot(fx - v.x, fy - v.y)
+        if p.hold_state in ("to_fix", "inbound"):
+            self.stack(f"HDG {p.cs} {self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)):.1f}")
+            if dist < 0.7:
+                p.hold_state = "turn_out"
+                self.stack(f"HDG {p.cs} {(inbound + 90.0 * side) % 360:.1f}")  # turn the published way
+        elif p.hold_state == "turn_out":
+            mid = (inbound + 90.0 * side) % 360
+            if abs(heading_difference(v.hdg, mid)) < 15:
+                self.stack(f"HDG {p.cs} {outbound:.1f}")
+            if abs(heading_difference(v.hdg, outbound)) < 5:
+                p.hold_state, p.hold_t = "outbound", self.t
+        elif p.hold_state == "outbound":
+            if self.t - p.hold_t >= leg_s:
+                p.hold_state = "turn_in"
+                self.stack(f"HDG {p.cs} {(outbound + 90.0 * side) % 360:.1f}")
+        elif p.hold_state == "turn_in":
+            mid = (outbound + 90.0 * side) % 360
+            if abs(heading_difference(v.hdg, mid)) < 15:
+                p.hold_state = "inbound"
 
     @staticmethod
     def heading_for_track(v: AircraftView, track: float) -> float:

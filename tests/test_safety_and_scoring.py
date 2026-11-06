@@ -31,8 +31,10 @@ def test_safety_rules(airport):
     safety = SafetyCheck(airport, "26L")
     me = view("A", 0, -10, 6000)
     assert not safety.review(Instruction("A", "altitude", 1500), [me])[0]
-    ok, reason = safety.review(Instruction("A", "altitude", 2500), [me])  # 20 NM out, not established
-    assert not ok and "10 NM" in reason
+    assert safety.review(Instruction("A", "altitude", 2500), [me])[0]  # inside the minimum-altitude area
+    far = view("A", 20, -15, 6000, hdg=0.0)  # outside it, near TIMBA
+    ok, reason = safety.review(Instruction("A", "altitude", 2500), [far])
+    assert not ok and "3,000 ft" in reason
     assert not safety.review(Instruction("A", "speed", 270), [me])[0]
     assert not safety.review(Instruction("A", "speed", 150), [me])[0]
     assert safety.review(Instruction("A", "speed", 180), [me])[0]
@@ -85,7 +87,40 @@ def test_safety_demo_blocks_the_unsafe_instructions():
 
     log = run_scenario(SCENARIOS["safety_demo"])
     reasons = [e["reason"] for e in log.events if e["kind"] == "blocked"]
-    assert len(reasons) == 4
+    assert len(reasons) == 5
     assert sum("within" in r for r in reasons) == 2
     assert any("minimum altitude" in r for r in reasons) and any("250 kt" in r for r in reasons)
+    assert any("RMA" in r for r in reasons)
     assert log.scores["separation_losses"] == 0
+
+
+@needs_sector_file
+def test_safety_keeps_vectoring_inside_the_rma(airport):
+    from approach.controllers.safety import SafetyCheck
+
+    safety = SafetyCheck(airport, "26L")
+    rma = airport.rma("26L")
+    north_edge = view("A", 0, 4, 5000, hdg=270.0, gs=220.0, along=0.0)  # inside, close to the northern edge
+    assert rma.contains(4 * 0, 4)
+    ok, reason = safety.review(Instruction("A", "heading", 0.0), [north_edge])
+    assert not ok and "RMA" in reason
+    assert safety.review(Instruction("A", "heading", 180.0), [north_edge])[0]
+    outside = view("A", 25, 18, 9000, hdg=45.0, gs=250.0, along=30.0)  # north-east of Gatwick, outside
+    assert not rma.contains(25, 18)
+    assert not safety.review(Instruction("A", "heading", 45.0), [outside])[0]  # away from the RMA
+    assert safety.review(Instruction("A", "heading", 200.0), [outside])[0]  # towards it
+
+
+@needs_sector_file
+def test_scoring_counts_leaving_the_rma(airport):
+    from approach.scoring import score
+    from approach.session import SessionLog
+
+    def at(t, x, y):
+        return {"t": t, "ac": [{"cs": "A", "type": "A320", "wake": "M", "x": x, "y": y, "alt": 5000, "phase": "vectoring"}]}
+
+    inside_then_out = SessionLog(meta={}, map={}, frames=[at(0, 10, -10), at(60, 10, 9), at(120, 10, 10)])
+    s = score(inside_then_out, airport, "26L")
+    assert s["left_rma"] == 1 and s["minutes_outside_rma"] == 1.0  # from the frame at 60 s to the last one
+    never_in = SessionLog(meta={}, map={}, frames=[at(0, 10, 12), at(60, 10, 13)])
+    assert score(never_in, airport, "26L")["left_rma"] == 0

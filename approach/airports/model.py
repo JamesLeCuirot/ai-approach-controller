@@ -52,9 +52,34 @@ class Airport:
     fixes: dict[str, LatLon]
     airspace: dict[str, list[Segment]] = field(default_factory=dict)
     minimum_stack_level_fl: int = 70
+    # Which drawn shape is each runway's RMA (radar manoeuvring area), and which is the minimum-altitude area.
+    rma_shapes: dict[str, str] = field(default_factory=dict)
+    smaa_shape: str | None = None
+    smaa_minimum_ft: int = 2000  # inside the minimum-altitude area
+    outside_minimum_ft: int = 3000  # elsewhere, unless established on the localiser
 
     def __post_init__(self) -> None:
         self.grid = LocalGrid(self.reference)
+        self._areas: dict[str, object] = {}
+
+    def _area(self, shape: str):
+        if shape not in self._areas:
+            from approach.airports.areas import Area, area_from_segments
+
+            segs = [(self.xy(a), self.xy(b)) for a, b in self.airspace[shape]]
+            self._areas[shape] = Area(shape, area_from_segments(segs))
+        return self._areas[shape]
+
+    def rma(self, runway: str):
+        """The radar manoeuvring area for the runway in use (None if the sector file has none)."""
+        shape = self.rma_shapes.get(runway)
+        return self._area(shape) if shape and shape in self.airspace else None
+
+    def minimum_altitude_ft(self, x: float, y: float) -> int:
+        """The lowest altitude an aircraft may be given at a point, off the localiser."""
+        if self.smaa_shape and self.smaa_shape in self.airspace and self._area(self.smaa_shape).contains(x, y):
+            return self.smaa_minimum_ft
+        return self.outside_minimum_ft
 
     def xy(self, point: LatLon) -> tuple[float, float]:
         return self.grid.to_xy(point.lat, point.lon)
