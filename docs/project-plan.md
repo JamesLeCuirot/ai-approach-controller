@@ -274,12 +274,11 @@ Everything needed is free and open source, so the project runs on a laptop with 
 
 ## Relationship to atc_app
 
-This project lives in its own repo and contributes fixes back to [atc_app](https://github.com/SNaveenMathew/atc_app), whose author invites collaborators. Building on it directly would mean rewriting its core first. Two problems found when reading its code:
+This project lives in its own repo and contributes fixes back to [atc_app](https://github.com/SNaveenMathew/atc_app), whose author invites collaborators. Building on it directly would mean rewriting its core first, because of one thing found when reading its code:
 
 - **Turns and speed changes have no effect in training.** The training world replays recorded tracks, so a heading or speed instruction changes the number on the aircraft but not where it goes next. Only altitude instructions have any effect.
-- **The BlueSky connection has probably never run.** It calls BlueSky functions by names that don't exist in BlueSky 1.1.1 (`selhdg` instead of `selhdgcmd`, and so on), and it ignores the 10-second time step it is given.
 
-The simulated world built in stage 0, where aircraft actually respond to instructions, fixes both. Offering it upstream as a pull request is a real contribution and costs little extra work. Open an issue with the author first, so the change fits their plans.
+The simulated world built in stage 0, where aircraft actually respond to instructions, fixes this. Offering it upstream as a pull request is a real contribution and costs little extra work. Open an issue with the author first, so the change fits their plans.
 
 Neither atc_app nor FlightPathAnalysis has a licence file yet, so their code is not copied into this repo until the author adds one or gives permission.
 
@@ -305,13 +304,11 @@ The work splits into four workstreams that one person each can own, so a team of
 | Workstream | What it covers | Possible fit |
 | --- | --- | --- |
 | Simulated world | Gatwick airspace and procedures, scripted pilots, wind and storms | James, using the UK AIP and VATSIM material |
-| AI training | Scoring, the model, training runs | Naveen Mathew, author of atc_app and FlightPathAnalysis (to approach) |
+| AI training | Scoring, the model, training runs | Open |
 | Data and baselines | Open ADS-B data for Gatwick, the real-controller baseline, the metrics | A data scientist in Jersey (to approach) |
 | Radar screen | The scope, the instruction transcript, the mode for human controllers | Open |
 
 A controller is the biggest gap. [Questions for a Gatwick controller](questions-for-a-gatwick-controller.md) lists what the simulator, safety check and scoring currently guess at, starting with whether arrivals can ever be vectored outside the RMA. VATSIM UK's Gatwick controllers and mentors are the first people to ask; a real controller later, to check realism before the benchmark is published.
-
-The atc_app fixes described above make a natural opener with Naveen Mathew: they solve that project's top open issue.
 
 ## Publications
 
