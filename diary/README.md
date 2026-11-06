@@ -1,8 +1,8 @@
 # Project diary
 
 One entry per milestone, newest first. Each folder holds the diary entry, the radar replays
-(open them in a browser), screenshots and the session logs. Videos are attached to the GitHub
-release with the same name as the milestone. `scores.csv` collects every milestone's scores.
+(open them in a browser), MP4 videos of each replay, screenshots and the session logs.
+`scores.csv` collects every milestone's scores. Each entry names the commit it was recorded at.
 
 | Date | Milestone | Entry |
 | --- | --- | --- |

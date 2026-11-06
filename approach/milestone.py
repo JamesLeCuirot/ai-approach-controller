@@ -5,9 +5,9 @@
 
 For each scenario this runs a session and saves, under diary/<date>-<slug>/:
 the session log, the self-contained radar replay, and a screenshot of the final
-frame. It records a video of each replay into media/<date>-<slug>/ (kept out of
-git; published as GitHub release assets by scripts/publish_milestone.sh), appends
-the scores to diary/scores.csv, and writes a diary entry draft. An existing entry
+frame, plus an MP4 video of each replay playing (small enough to keep in git).
+It appends the scores to diary/scores.csv, writes a diary entry draft and updates
+the diary index. An existing entry
 keeps its hand-written notes: only the section between the AUTO markers is replaced.
 """
 
@@ -57,7 +57,7 @@ def record(html: Path, video_webm: Path, shot: Path, speed: int) -> tuple[Path |
         mp4 = video_webm.with_suffix(".mp4")
         conv = subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video_webm), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-             "-crf", "23", "-movflags", "+faststart", str(mp4)],
+             "-crf", "28", "-movflags", "+faststart", str(mp4)],
             capture_output=True, text=True,
         )
         if conv.returncode == 0:
@@ -89,10 +89,11 @@ def scores_line(log) -> str:
 
 
 def write_entry(entry: Path, title: str, day: str, slug: str, summary: str, rows: list[dict]) -> None:
-    auto = [AUTO_START, "", f"Milestone `{slug}` · {day} · code `{rows[0]['code'] if rows else code_version()}`", ""]
+    code = rows[0]["code"] if rows else code_version()
+    auto = [AUTO_START, "", f"Milestone `{slug}` · {day} · code `{code}` (check it out with `git checkout {code.split('+')[0]}`)", ""]
     auto += ["| Scenario | What it shows | Replay | Screenshot | Video | Scores |", "| --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        video = f"`{r['video']}` (release asset)" if r["video"] else r["video_note"]
+        video = f"[video]({r['video']})" if r["video"] else r["video_note"]
         auto.append(f"| `{r['scenario']}` | {r['title']} | [replay]({r['html']}) | ![]({r['shot']}) | {video} | {r['scores']} |" if r["shot"]
                     else f"| `{r['scenario']}` | {r['title']} | [replay]({r['html']}) | — | {video} | {r['scores']} |")
     auto += ["", "Open a replay file in a browser to watch it; it needs no server.", "", AUTO_END]
@@ -119,8 +120,8 @@ def write_index() -> None:
         "# Project diary",
         "",
         "One entry per milestone, newest first. Each folder holds the diary entry, the radar replays",
-        "(open them in a browser), screenshots and the session logs. Videos are attached to the GitHub",
-        "release with the same name as the milestone. `scores.csv` collects every milestone's scores.",
+        "(open them in a browser), MP4 videos of each replay, screenshots and the session logs.",
+        "`scores.csv` collects every milestone's scores. Each entry names the commit it was recorded at.",
         "",
         "| Date | Milestone | Entry |",
         "| --- | --- | --- |",
@@ -160,6 +161,8 @@ def main(argv: list[str] | None = None) -> None:
         if not args.no_video:
             print(f"[{name}] recording")
             video, note = record(html, media / f"{name}.webm", shot, video_speed(log.meta["duration"]))
+            if video and video.suffix == ".mp4":
+                video = Path(shutil.move(str(video), out / video.name))
         rows.append({
             "scenario": name, "title": scenario.title, "html": html.name,
             "shot": shot.name if shot.exists() else "", "video": video.name if video else "", "video_note": note,
@@ -177,7 +180,7 @@ def main(argv: list[str] | None = None) -> None:
         w.writerows(csv_rows)
     write_entry(out / "README.md", args.title, args.date, args.slug, args.summary, rows)
     write_index()
-    (media / "milestone.json").write_text(json.dumps({"slug": args.slug, "title": args.title, "folder": folder}))
+    (out / "milestone.json").write_text(json.dumps({"slug": args.slug, "title": args.title, "folder": folder}))
     print(f"Diary entry: {out / 'README.md'}")
 
 

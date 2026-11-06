@@ -29,5 +29,5 @@ outputs/
 .vscode/
 .idea/
 
-# Milestone videos (published as GitHub release assets)
+# Temporary recordings made while recording a milestone
 media/
