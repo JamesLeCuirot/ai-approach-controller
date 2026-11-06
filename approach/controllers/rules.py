@@ -3,8 +3,11 @@
 It follows the stage 0 spec (docs/stage0-gatwick-spec.md):
 
 1. Sequence: landing order by each aircraft's earliest possible landing time when
-   it is released; each slot is the slot ahead plus the larger of 6 NM and the
-   wake minimum (as time at final approach speed).
+   it is released (a go-around goes to the front); each slot is the slot ahead
+   plus the larger of the spacing target and the wake minimum, plus a margin (as
+   time at final approach speed). Departures aren't modelled yet, so the target is
+   the 3 NM radar minimum rather than Gatwick's 6 NM (one departure between
+   arrivals) or 8 NM (two).
 2. Separate on the way in: each new arrival gets its own altitude (4,000 ft, then
    5,000, then 6,000) until it turns base.
 3. Vector tactically, with no fixed pattern: a downwind point D south of the
@@ -42,8 +45,12 @@ D_JOIN_MAX_NM = 30.0
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
-TARGET_SPACING_NM = 6.0  # one departure between arrivals
-PLANNING_MARGIN_NM = 0.5  # plan slightly long: the final director can close a gap but not open one
+# Spacing between landings. Gatwick's guide uses 6 NM to leave room for one departure between arrivals, or 8 NM
+# for two. With no departures in the simulator yet, arrivals are spaced to the radar minimum (or the wake minimum if
+# larger), plus a margin because the timing is not exact.
+TARGET_SPACING_NM = 3.0
+MIXED_MODE_SPACING_NM = 6.0  # for when departures are modelled
+PLANNING_MARGIN_NM = 1.0  # plan slightly long: the final director can close a gap but not open one
 SPEED_DOWNWIND, SPEED_BASE, SPEED_FINAL = 220, 180, 160
 GS_DOWNWIND, GS_BASE = 235.0, 190.0  # rough ground speeds used for timing (no wind)
 REISSUE_DEG = 8.0
@@ -90,6 +97,7 @@ class RulesController(Controller):
         self.notes: list[str] = []
         self.rma = airport.rma(runway)
         self._max_join: dict[float, float] = {}
+        self.went_around: set[str] = set()
 
     # ---- the RMA ---------------------------------------------------------------
     def _inside(self, x: float, y: float, margin: float = 0.0) -> bool:
@@ -250,6 +258,9 @@ class RulesController(Controller):
                 p = Plan(v.cs, v.actype, key=0.0, side=side)
                 p.hold_fix = min(STACKS, key=lambda f: distance_xy(v.x, v.y, *self.airport.xy(self.airport.holds[f].position)))
                 p.key = t + self._eta(v, Plan(**{**vars(p), "stage": "downwind"}))
+                if v.cs in self.went_around:  # back to the front of the queue
+                    self.went_around.discard(v.cs)
+                    p.key = t
                 self.plans[v.cs] = p
                 self.last_plan_t = -1e9  # replan now
         for cs in [cs for cs in self.plans if cs not in views]:
@@ -277,7 +288,11 @@ class RulesController(Controller):
                     self._say(p, "hold", p.hold_fix)
                     p.holding = True
                     self.notes.append(f"{p.cs} holding at {p.hold_fix}")
-                if p.stack_level and p.alt_cmd != p.stack_level and t >= p.retry_t and p.stack_level < v.target_alt:
+                # Stacks only step down, except for an aircraft coming up from below them (after a go-around),
+                # which climbs to its level in the stack.
+                climb_into_stack = v.target_alt < STACK_BASE_FT
+                if (p.stack_level and p.alt_cmd != p.stack_level and t >= p.retry_t
+                        and (p.stack_level < v.target_alt or climb_into_stack)):
                     self._say(p, "altitude", p.stack_level)
                 continue
             pts = self._points(p)
@@ -354,4 +369,5 @@ class RulesController(Controller):
                 elif instr.kind == "speed":
                     p.spd_cmd = None
         elif kind == "go_around" and cs in self.plans:
-            del self.plans[cs]  # re-sequenced once the pilot is back at 3,000 ft
+            del self.plans[cs]  # re-sequenced, first in the queue, once the pilot is back at 3,000 ft
+            self.went_around.add(cs)

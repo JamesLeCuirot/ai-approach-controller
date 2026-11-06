@@ -23,17 +23,17 @@ def test_rules_controller_lands_one_arrival():
 
 
 def test_rules_controller_spaces_two_arrivals():
-    """Stage 0 gate: two arrivals released together land safely, at least 6 NM apart."""
+    """Stage 0 gate: two arrivals released together land safely, at least 3 NM apart (arrivals only, no departures)."""
     s = run("two_arrivals").scores
     assert s["landed"] == 2
     assert s["separation_losses"] == 0 and s["wake_violations"] == 0
-    assert s["min_spacing_nm"] >= 6.0
+    assert s["min_spacing_nm"] >= 3.0
 
 
 def test_rules_controller_three_arrivals_behind_a_heavy():
     s = run("three_arrivals").scores
     assert s["landed"] == 3
     assert s["separation_losses"] == 0 and s["wake_violations"] == 0
-    assert s["min_spacing_nm"] >= 6.0
+    assert s["min_spacing_nm"] >= 3.0
     # It keeps everyone inside the RMA and above the minimum altitudes, holding when it must.
     assert s["left_rma"] == 0 and s["below_minimum_altitude"] == 0

@@ -87,7 +87,7 @@ Arrivals on final must be at least 3 NM apart, and at least the RECAT-EU wake di
 | Rule | Value |
 | --- | --- |
 | Minimum radar separation | 3 NM |
-| Routine spacing target | 6 NM (one departure between arrivals) or 8 NM (two departures) |
+| Routine spacing target | 6 NM (one departure between arrivals) or 8 NM (two departures). Until departures are modelled, the rules controller spaces arrivals to the minimum: 3 NM, or the wake minimum if larger, plus a 1 NM margin |
 | Who applies it | The final director, until 4 NM from touchdown. Radar and wake separation must hold until touchdown |
 | If spacing is lost | The aircraft is taken off the approach and re-sequenced |
 | Night | 22:30–23:30 local: 6 NM, or the wake minimum if larger. 23:30–06:00: 12 NM |

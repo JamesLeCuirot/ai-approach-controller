@@ -28,7 +28,7 @@ Please say whether an answer is real-world practice or VATSIM practice: both are
 | --- | --- | --- |
 | 9 | How far from the centreline is a typical downwind, and how far out do aircraft usually join final? | Downwind 6 NM from the centreline, joining final 11–14 NM out |
 | 10 | What intercept angles are normal? Is 45° the real limit at Gatwick? | 30° intercept; the safety check allows up to 45° |
-| 11 | What spacing do you aim for on final in mixed mode, with departures in between? | 6 NM, or the wake minimum if larger. Real controllers in the data average about 5.5 NM in a busy hour, closest about 3 NM |
+| 11 | What spacing do you aim for on final, and how do you decide when to leave a gap for departures (6 or 8 NM) and when to close up to the minimum? | Departures aren't modelled yet, so arrivals are spaced to the minimum: 3 NM, or the wake minimum if larger, plus a 1 NM margin. Real controllers in the data average about 5.5 NM in a busy hour, closest about 3 NM |
 | 12 | Is 2.5 NM between aircraft on the same final within 10 NM approved and used at Gatwick? | The scoring allows it for every controller (UK/EASA AMC1 ATS.TR.210(c)(2)) |
 | 13 | Which wake turbulence scheme does Gatwick use: RECAT-EU or the UK categories? | RECAT-EU |
 | 14 | Are these speeds right: 220 kt from the hold, 180 kt on base, 160 kt to 4 DME? | Yes, as in the VATSIM UK Gatwick guide |
@@ -39,7 +39,7 @@ Please say whether an answer is real-world practice or VATSIM practice: both are
 | --- | --- | --- |
 | 15 | How is a runway change from 26L to 08R planned and run, and how long does it take? | Not modelled yet (stage 5) |
 | 16 | How do low visibility procedures change spacing and holding? | Not modelled yet |
-| 17 | After a go-around, how is the aircraft brought back into the sequence? | Climbs straight ahead to 3,000 ft, turns onto 178, then is re-sequenced |
+| 17 | After a go-around, how is the aircraft brought back into the sequence? Is it vectored straight back round, or ever sent to a hold? | Climbs straight ahead to 3,000 ft and turns onto 178, then goes to the front of the sequence; if it still has to hold, it climbs to its level in the stack |
 | 18 | In strong wind, what changes: spacing, speeds, how far out you join final? | Nothing special yet |
 
 ## Realism check
