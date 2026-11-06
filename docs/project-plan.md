@@ -209,7 +209,7 @@ The full spec is in [stage0-gatwick-spec.md](stage0-gatwick-spec.md). Stage 0 ha
 
 ## Stage 1: speed, then base turns
 
-Stage 1 puts the first learning agent in charge of one thing at a time: speed in 1a, then speed and when to turn base in 1b. The rules controller keeps the routing, altitudes, landing order and ILS clearances. The agent's job is to deliver each aircraft exactly the required gap behind the one ahead: 6 NM, or the wake minimum if larger. Speed first keeps the learning problem small and proves the training setup, but it isn't how controllers mainly space traffic: they mostly use vectors, which is why 1b follows quickly.
+Stage 1 puts the first learning agent in charge of one thing at a time: speed in 1a, then speed and when to turn base in 1b. The rules controller keeps the routing, altitudes, landing order and ILS clearances. The agent's job is to deliver each aircraft exactly the required gap behind the one ahead: 3 NM, or the wake minimum if larger. Departures aren't modelled yet, so there are no 6 or 8 NM gaps to leave for them. Speed first keeps the learning problem small and proves the training setup, but it isn't how controllers mainly space traffic: they mostly use vectors, which is why 1b follows quickly.
 
 ### A less tidy world
 
@@ -337,7 +337,8 @@ Each stage produces a result worth publishing, so the project can put out papers
 | Question | Decision |
 | --- | --- |
 | Airport | London Gatwick: one of the busiest single-runway airports, with daily holding at WILLO and TIMBA and runway changes between 26L and 08R. Geneva is earmarked for stage 7, a test of whether the AI copes with terrain and a new layout |
-| Repo | A personal GitHub repo, `jameslecuirot/ai-approach-controller`, private until the stage 0 prototype works |
+| Repo | A personal GitHub repo, `jameslecuirot/ai-approach-controller`, public from November 2026 |
+| Licence | MIT for the code. The real traffic data in `data/real/` stays under adsb.lol's ODbL. The VATSIM UK sector file (GPL-3) is fetched by script, not bundled |
 | Synthetic voice | Not now. A possible nice-to-have later |
 | Arrival traffic | Real Gatwick arrivals from adsb.lol's open ADS-B data (ODbL), every day since late December 2023. The AI takes over each aircraft the first time it is within 40 NM and at or below FL150, wherever it is: heading for a hold, on a direct or on a heading from the previous controller. OpenSky's full data is only for research institutions, and the EUROCONTROL PRC 2024 dataset covers only a few percent of Gatwick's flights |
 | Live demo | Possible with adsb.lol's free live feed: aircraft arrive live and change colour when the AI takes them over, with the real track continuing in faint grey behind. The radar replay already does this for past days |
@@ -348,7 +349,6 @@ Each stage produces a result worth publishing, so the project can put out papers
 
 - [ ] **Who joins the team, and with how much time?** This sets the timeline. Candidates and workstreams are listed in Team.
 - [ ] **Laptop or cloud?** Start on laptops. A shared cloud machine for training becomes worth it once several people are training models.
-- [ ] **Licence for this repo.** MIT keeps it widest open; GPL-3 would allow bundling the VATSIM UK sector file. Decide before going public.
 - [ ] **Read the closest papers in full:** Han Lu (2026), ApproachNet (2026), Auto-ATC (2025), the Applied Sciences framework (2025), and NTU's arrival-sequencing work.
 - [ ] **OpenScope as the radar screen?** Check its licence, whether it has Gatwick, and how it would connect to BlueSky.
 - [ ] **Does Gatwick use 2.5 NM on final?** UK and EASA rules (AMC1 ATS.TR.210(c)(2)) allow 2.5 NM between aircraft established on the same final within 10 NM, where approved, and real Gatwick pairs at 2.5–3 NM appear in the data. The scoring allows it for every controller; confirm with a Gatwick controller.
