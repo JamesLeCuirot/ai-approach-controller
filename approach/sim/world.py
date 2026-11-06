@@ -10,6 +10,11 @@ simulated pilot that
 * goes around if the approach is unstable at 1,000 ft, the runway is still
   occupied, or it is too close to the aircraft ahead, and
 * lands when it crosses the threshold on the glide path.
+
+Wind (optional) comes from a real weather model (approach.data.gfs). Assigned
+headings are flown as headings, so the wind makes aircraft drift, as it does in
+real life; pilots correct for drift only when they fly a track themselves: on
+the localiser and when flying direct to a fix.
 """
 
 from __future__ import annotations
@@ -19,10 +24,14 @@ import io
 import math
 import random
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from approach import wake
 from approach.airports.model import Airport
 from approach.geo import FT_PER_M, KT_PER_MS, bearing_xy, heading_difference
+
+if TYPE_CHECKING:
+    from approach.data.gfs import WindProfile
 from approach.instructions import Instruction
 
 _BS_READY = False
@@ -31,6 +40,7 @@ TURN_RATE_REF_DEG_S = 2.0  # BlueSky airliner turn rate at the reference speed b
 TURN_RATE_REF_TAS_KT = 247.0
 RUNWAY_OCCUPANCY_S = 50.0
 MIN_FINAL_GAP_NM = 2.0  # tower sends the follower around below this
+MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilot still captures
 
 
 def _bluesky():
@@ -62,6 +72,9 @@ class AircraftView:
     gs_kt: float
     tas_kt: float
     hdg: float  # true
+    trk: float  # true track over the ground (differs from the heading in wind)
+    wind_e_kt: float  # wind at the aircraft, towards the east
+    wind_n_kt: float  # wind at the aircraft, towards the north
     vs_fpm: float
     phase: str  # vectoring, established, go_around
     cleared: str | None
@@ -103,7 +116,8 @@ class Pilot:
 
 
 class World:
-    def __init__(self, airport: Airport, runway: str, seed: int = 1, pilot_delay_s: tuple[float, float] = (3.0, 6.0)):
+    def __init__(self, airport: Airport, runway: str, seed: int = 1, pilot_delay_s: tuple[float, float] = (3.0, 6.0),
+                 wind: "WindProfile | None" = None):
         self.bs = _bluesky()
         from bluesky import stack
 
@@ -116,6 +130,23 @@ class World:
         self.t = 0.0
         self.last_landing_t = -1e9
         self.steps_per_second = max(1, round(1.0 / self.bs.sim.simdt))
+        self.wind = wind
+        if wind is not None:
+            self.set_wind(wind)
+
+    def set_wind(self, wind: "WindProfile") -> None:
+        """Give BlueSky the weather model's wind on its grid, at every height level."""
+        import numpy as np
+
+        lat, lon = np.meshgrid(np.array(wind.lats), np.array(wind.lons), indexing="ij")  # south-north, west-east
+        veast = np.array([np.array(g).ravel() for g in wind.u_kt]) / KT_PER_MS  # (levels, points), m/s
+        vnorth = np.array([np.array(g).ravel() for g in wind.v_kt]) / KT_PER_MS
+        alt_m = np.array(wind.heights_ft) / FT_PER_M
+        self.bs.traf.wind.clear()
+        self.bs.traf.wind.addpointvne(lat.ravel(), lon.ravel(), vnorth, veast, alt_m)
+        if self.bs.traf.wind.fe is None:
+            raise RuntimeError("BlueSky could not build the wind field from the weather grid")
+        self.wind = wind
 
     # ---- traffic -----------------------------------------------------------------
     def spawn(self, cs: str, actype: str, lat: float, lon: float, hdg_true: float, alt_ft: float, cas_kt: float) -> None:
@@ -133,7 +164,10 @@ class World:
         if pilot is None:
             return
         delay = self.rng.uniform(*self.pilot_delay_s)
-        pilot.pending.append((self.t + delay, instr))
+        # A pilot acts on instructions in the order they were given, so one sent with (or just after)
+        # another is never carried out before it.
+        due = max([self.t + delay] + [tt for tt, _ in pilot.pending])
+        pilot.pending.append((due, instr))
         # Controllers and the safety check plan with the newest instruction straight away.
         if instr.kind == "heading":
             pilot.target_hdg = float(instr.value)
@@ -154,12 +188,15 @@ class World:
             if i < 0:
                 continue
             x, y = self.airport.grid.to_xy(float(traf.lat[i]), float(traf.lon[i]))
+            we = float(traf.windeast[i]) * KT_PER_MS if len(traf.windeast) > i else 0.0
+            wn = float(traf.windnorth[i]) * KT_PER_MS if len(traf.windnorth) > i else 0.0
             along, lateral = self.airport.runway_frame(self.runway.name, x, y)
             out.append(AircraftView(
                 cs=cs, actype=p.actype, wake=p.wake, x=x, y=y,
                 alt_ft=float(traf.alt[i]) * FT_PER_M, cas_kt=float(traf.cas[i]) * KT_PER_MS,
                 gs_kt=float(traf.gs[i]) * KT_PER_MS, tas_kt=float(traf.tas[i]) * KT_PER_MS,
-                hdg=float(traf.hdg[i]) % 360.0, vs_fpm=float(traf.vs[i]) * FT_PER_M * 60.0,
+                hdg=float(traf.hdg[i]) % 360.0, trk=float(traf.trk[i]) % 360.0, wind_e_kt=we, wind_n_kt=wn,
+                vs_fpm=float(traf.vs[i]) * FT_PER_M * 60.0,
                 phase=p.phase, cleared=p.cleared, along=along, lateral=lateral, released_t=p.released_t,
                 target_hdg=p.target_hdg, target_alt=p.target_alt, target_spd=p.target_spd, loc=p.loc, gs=p.gs,
             ))
@@ -205,7 +242,7 @@ class World:
                 self._apply(p, instr)
             if p.direct_fix and p.direct_fix in self.airport.fixes:
                 fx, fy = self.airport.xy(self.airport.fixes[p.direct_fix])
-                self.stack(f"HDG {cs} {bearing_xy(v.x, v.y, fx, fy):.1f}")
+                self.stack(f"HDG {cs} {self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)):.1f}")
             if p.phase == "go_around":
                 events += self._go_around_tick(p, v)
             elif p.cleared:
@@ -218,6 +255,14 @@ class World:
                 events += self._start_go_around(self.pilots[follow.cs], follow, "too close to the aircraft ahead")
         return events
 
+    @staticmethod
+    def heading_for_track(v: AircraftView, track: float) -> float:
+        """The heading that makes good the given track in the wind at the aircraft."""
+        tr = math.radians(track)
+        cross = v.wind_e_kt * math.cos(tr) - v.wind_n_kt * math.sin(tr)  # wind component to the right of the track
+        ratio = max(-0.9, min(0.9, cross / max(v.tas_kt, 100.0)))
+        return (track - math.degrees(math.asin(ratio))) % 360.0
+
     def _turn_radius_nm(self, tas_kt: float) -> float:
         ref_radius = (TURN_RATE_REF_TAS_KT / 3600.0) / math.radians(TURN_RATE_REF_DEG_S)
         return ref_radius * (max(tas_kt, 100.0) / TURN_RATE_REF_TAS_KT) ** 2
@@ -225,17 +270,19 @@ class World:
     def _approach_tick(self, p: Pilot, v: AircraftView) -> list[dict]:
         rwy = self.runway
         c = rwy.course_true
-        angle = heading_difference(v.hdg, c)  # + means heading right of the localiser course
+        angle = heading_difference(v.trk, c)  # + means tracking right of the localiser course
         events: list[dict] = []
         if not p.loc:
             converging = (v.lateral < 0 < angle) or (v.lateral > 0 > angle) or abs(v.lateral) < 0.05
-            lead = self._turn_radius_nm(v.tas_kt) * (1 - math.cos(math.radians(abs(angle)))) + 0.05
-            if converging and abs(angle) <= 50 and abs(v.lateral) <= lead and v.along > 1.0:
+            lead = self._turn_radius_nm(max(v.tas_kt, v.gs_kt)) * (1 - math.cos(math.radians(abs(angle)))) + 0.05
+            # Autopilots capture at steep intercepts too (the wind can make a 30 degree intercept heading a much
+            # steeper track); they just overshoot more.
+            if converging and abs(angle) <= MAX_CAPTURE_TRACK_DEG and abs(v.lateral) <= lead and v.along > 1.0:
                 p.loc = True
                 events.append({"kind": "pilot", "cs": p.cs, "text": f"{p.cs} localiser captured {v.along:.1f} NM out"})
         if p.loc:
             correction = max(-30.0, min(30.0, v.lateral * 60.0))
-            self.stack(f"HDG {p.cs} {(c - correction) % 360:.1f}")
+            self.stack(f"HDG {p.cs} {self.heading_for_track(v, (c - correction) % 360):.1f}")
             if p.phase == "vectoring" and abs(v.lateral) < 0.15 and abs(angle) < 10:
                 p.phase = "established"
             gp = rwy.glide_path_altitude_ft(max(v.along, 0.0))

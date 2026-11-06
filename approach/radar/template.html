@@ -47,6 +47,13 @@
   #legend span:first-child { margin-left: 0; }
   #banner { position: absolute; left: 12px; top: 10px; font-size: 12px; color: var(--muted);
     background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; }
+  #wind { position: absolute; right: 12px; top: 10px; font-size: 11.5px; color: var(--muted);
+    background: rgba(11,18,32,.75); padding: 6px 8px; border-radius: 6px; display: none; }
+  #wind b { color: var(--text); font-weight: 600; }
+  #wind table { border-collapse: collapse; margin-top: 3px; }
+  #wind td { padding: 0 0 0 8px; text-align: right; }
+  #wind td:first-child { padding-left: 0; text-align: left; }
+  #wind .arrow { display: inline-block; width: 12px; text-align: center; color: var(--vectoring); }
   @media (max-width: 760px) {
     #app { flex-direction: column; }
     #scope { height: 60vh; flex: none; }
@@ -59,6 +66,7 @@
   <div id="scope">
     <canvas id="c"></canvas>
     <div id="banner"></div>
+    <div id="wind"></div>
     <div id="legend"><span style="background:var(--vectoring)"></span>vectoring<span style="background:var(--established)"></span>established<span style="background:var(--held)"></span>holding<span style="background:var(--goaround)"></span>go-around</div>
   </div>
   <aside id="panel">
@@ -90,6 +98,17 @@
   document.getElementById('title').textContent = S.meta.title || 'Radar replay';
   document.getElementById('subtitle').textContent = [S.meta.scenario, S.meta.controller, M.airport + ' ' + M.runway, S.meta.milestone].filter(Boolean).join(' · ');
   document.getElementById('banner').textContent = M.name + ' · runway ' + M.runway + (S.meta.code_version ? ' · code ' + S.meta.code_version : '');
+
+  // Wind (real weather), as direction it blows from in degrees true and speed in knots
+  if (S.meta.weather) {
+    const w = S.meta.weather, box = document.getElementById('wind');
+    const rows = w.levels.map(l => '<tr><td>' + (l.alt === 'surface' ? 'surface' : l.alt.toLocaleString('en-GB') + ' ft') +
+      '</td><td><span class="arrow" style="transform:rotate(' + l.dir + 'deg)">↓</span></td><td>' +
+      String(l.dir).padStart(3, '0') + '°</td><td>' + l.kt + ' kt</td></tr>').join('');
+    box.innerHTML = '<b>Wind</b> ' + w.valid.replace('T', ' ').replace(':00Z', 'Z') + '<table>' + rows + '</table>' +
+      '<div style="margin-top:3px">' + w.source.replace(/, run.*/, '') + '</div>';
+    box.style.display = 'block';
+  }
 
   // Scores table
   const st = document.getElementById('scoretable');

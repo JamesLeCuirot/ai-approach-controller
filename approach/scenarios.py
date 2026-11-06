@@ -28,6 +28,7 @@ class Scenario:
     script: list[tuple[float, Instruction]] = field(default_factory=list)  # scripted instructions (tests, demos)
     notes: str = ""
     safety: bool | None = None  # safety check on? Default: on for every controller except scripts
+    weather: str | None = None  # UTC hour of real weather to fly in, e.g. "2024-12-07T09" (GFS winds)
 
 
 SCENARIOS: dict[str, Scenario] = {}
@@ -144,6 +145,48 @@ register(
         arrivals=_busy(12, 90),
         duration_s=3600,
         notes="Faster than the stage 0 rules controller can handle without holds: it runs out of altitudes and spacing.",
+    )
+)
+
+# Real winds from NOAA's GFS weather model (approach.data.gfs). Any scenario can also be flown in the
+# winds of any hour since 2021 with: python -m approach.run <scenario> --weather 2024-12-07T09
+STORM_DARRAGH = "2024-12-07T09"  # Gatwick reported 260/30 gusting 41 kt; 64 kt at 3,000 ft, almost straight down 26L
+STORM_ISHA = "2024-01-21T21"  # Gatwick reported 210/25 gusting 38 kt; 70 kt at 3,000 ft from 219, 40 degrees across 26L
+
+register(
+    Scenario(
+        name="two_arrivals_darragh",
+        title="Rules controller in Storm Darragh: two arrivals, 64 kt of wind at 3,000 ft almost straight down the runway",
+        arrivals=[Arrival("EZY12AB", "A320", "WILLO"), Arrival("BAW2GE", "B77W", "TIMBA", level_ft=9000)],
+        duration_s=2400,
+        weather=STORM_DARRAGH,
+        notes="The two_arrivals traffic in the real winds of 7 December 2024, 09Z.",
+    )
+)
+
+register(
+    Scenario(
+        name="two_arrivals_isha",
+        title="Rules controller in Storm Isha: two arrivals, 70 kt of wind at 3,000 ft, 40 degrees across the runway",
+        arrivals=[Arrival("EZY12AB", "A320", "WILLO"), Arrival("BAW2GE", "B77W", "TIMBA", level_ft=9000)],
+        duration_s=2400,
+        weather=STORM_ISHA,
+        notes="The two_arrivals traffic in the real winds of 21 January 2024, 21Z.",
+    )
+)
+
+register(
+    Scenario(
+        name="three_arrivals_isha",
+        title="Rules controller in Storm Isha: three arrivals, a heavy leading two mediums",
+        arrivals=[
+            Arrival("BAW2GE", "B77W", "TIMBA", release_s=0, level_ft=9000),
+            Arrival("EZY12AB", "A320", "WILLO", release_s=30),
+            Arrival("TOM4KP", "B38M", "TIMBA", release_s=90),
+        ],
+        duration_s=2700,
+        weather=STORM_ISHA,
+        notes="The three_arrivals traffic in the real winds of 21 January 2024, 21Z.",
     )
 )
 

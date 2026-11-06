@@ -85,6 +85,13 @@ def scores_line(log) -> str:
     if s.get("safety_blocks"):
         parts.append(f"safety blocks {s['safety_blocks']}")
     parts.append(f"instructions {s.get('instructions', 0)}")
+    if s.get("minutes_per_arrival") not in (None, ""):
+        parts.append(f"{s['minutes_per_arrival']} min per arrival")
+    weather = log.meta.get("weather")
+    if weather:
+        at3 = next((lv for lv in weather["levels"] if lv["alt"] == 3000), None)
+        if at3:
+            parts.append(f"wind at 3,000 ft {at3['dir']:03d}°/{at3['kt']} kt")
     return ", ".join(parts)
 
 

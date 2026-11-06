@@ -74,3 +74,17 @@ def test_scripted_ils_approach_lands(airport):
     texts = " ".join(e["text"] for e in log.events)
     assert "localiser captured" in texts and "glide path captured" in texts
     assert log.scores["landed"] == 1 and log.scores["stable_at_1000ft_pct"] == 100
+
+
+def test_instructions_given_together_are_flown_in_order(airport):
+    """A pilot never carries out the second of two headings before the first, whatever the delays."""
+    from approach.sim.world import World
+
+    for seed in range(20):
+        world = World(airport, "26L", seed=seed)
+        spawn_at_willo(world, airport)
+        world.instruct(Instruction("TEST1", "heading", 200.0))
+        world.instruct(Instruction("TEST1", "heading", 330.0))
+        world.step(8)
+        assert abs(world.views()[0].target_hdg - 330.0) < 0.01
+        assert float(world.bs.traf.ap.trk[0]) % 360 == pytest.approx(330.0, abs=0.5), seed

@@ -38,8 +38,9 @@ def _frame(t: float, views) -> dict:
     }
 
 
-def run_session(airport: Airport, scenario: Scenario, controller_name: str, log: SessionLog, seed: int = 1) -> SessionLog:
-    world = World(airport, scenario.runway, seed=seed)
+def run_session(airport: Airport, scenario: Scenario, controller_name: str, log: SessionLog, seed: int = 1,
+                wind=None) -> SessionLog:
+    world = World(airport, scenario.runway, seed=seed, wind=wind)
     controller = make_controller(controller_name, airport, scenario, seed)
     # Scripted tests send their instructions straight to the pilots unless the scenario asks
     # for the safety check (as the safety demo does).
@@ -49,6 +50,10 @@ def run_session(airport: Airport, scenario: Scenario, controller_name: str, log:
     released = 0
     t = 0
     log.add_event(0, "note", None, f"{controller.name} controller, runway {scenario.runway}")
+    if wind is not None:
+        surface = log.meta.get("weather", {}).get("levels", [{}])[0]
+        log.add_event(0, "note", None, f"Real winds from {wind.source}, valid {wind.valid}"
+                      + (f": surface {surface['dir']:03d}/{surface['kt']} kt" if surface else ""))
     while t <= scenario.duration_s:
         while released < len(pending) and pending[released].release_s <= t:
             a = pending[released]

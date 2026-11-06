@@ -19,9 +19,9 @@ def airport():
     return egkk.load()
 
 
-def view(cs, x, y, alt, hdg=90.0, gs=250.0, along=20.0, loc=False):
-    return SimpleNamespace(cs=cs, x=x, y=y, alt_ft=alt, hdg=hdg, gs_kt=gs, target_hdg=hdg, target_alt=alt,
-                           loc=loc, gs=False, along=along)
+def view(cs, x, y, alt, hdg=90.0, gs=250.0, along=20.0, loc=False, wind=(0.0, 0.0)):
+    return SimpleNamespace(cs=cs, x=x, y=y, alt_ft=alt, hdg=hdg, gs_kt=gs, tas_kt=gs, target_hdg=hdg, target_alt=alt,
+                           loc=loc, gs=False, along=along, wind_e_kt=wind[0], wind_n_kt=wind[1])
 
 
 @needs_sector_file

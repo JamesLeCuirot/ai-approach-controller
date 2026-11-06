@@ -41,6 +41,10 @@ class Track:
     target_hdg: float
     target_alt: float
     on_glide_path: bool
+    on_localiser: bool = False
+    tas_kt: float = 0.0
+    wind_e_kt: float = 0.0  # wind at the aircraft (towards east, towards north)
+    wind_n_kt: float = 0.0
 
 
 class SafetyCheck:
@@ -52,7 +56,7 @@ class SafetyCheck:
     def _tracks(self, views) -> dict[str, Track]:
         return {
             v.cs: Track(v.cs, v.x, v.y, v.hdg, v.gs_kt, v.alt_ft, v.target_hdg if not v.loc else self.runway.course_true,
-                        v.target_alt, v.gs)
+                        v.target_alt, v.gs, v.loc, v.tas_kt or v.gs_kt, v.wind_e_kt, v.wind_n_kt)
             for v in views
         }
 
@@ -63,11 +67,16 @@ class SafetyCheck:
         for _ in range(0, LOOKAHEAD_S, STEP_S):
             snap = {}
             for t in state.values():
-                turn = heading_difference(t.target_hdg, t.hdg)
-                t.hdg = (t.hdg + max(-TURN_RATE_DEG_S * STEP_S, min(TURN_RATE_DEG_S * STEP_S, turn))) % 360
-                d = t.gs_kt * STEP_S / 3600.0
-                t.x += d * math.sin(math.radians(t.hdg))
-                t.y += d * math.cos(math.radians(t.hdg))
+                if t.on_localiser:  # the pilot holds the centreline whatever the wind
+                    d = t.gs_kt * STEP_S / 3600.0
+                    t.x += d * math.sin(math.radians(self.runway.course_true))
+                    t.y += d * math.cos(math.radians(self.runway.course_true))
+                else:  # flies the heading through the air and drifts with the wind
+                    turn = heading_difference(t.target_hdg, t.hdg)
+                    t.hdg = (t.hdg + max(-TURN_RATE_DEG_S * STEP_S, min(TURN_RATE_DEG_S * STEP_S, turn))) % 360
+                    k = STEP_S / 3600.0
+                    t.x += (t.tas_kt * math.sin(math.radians(t.hdg)) + t.wind_e_kt) * k
+                    t.y += (t.tas_kt * math.cos(math.radians(t.hdg)) + t.wind_n_kt) * k
                 if t.on_glide_path:
                     along, _ = self.airport.runway_frame(self.runway.name, t.x, t.y)
                     t.alt = self.runway.glide_path_altitude_ft(max(along, 0.0))
@@ -119,8 +128,11 @@ class SafetyCheck:
                 return False, "below 160 kt before 4 DME"
         if instr.kind == "heading":
             h = math.radians(float(instr.value))
-            d = me.gs_kt * LOOKAHEAD_S / 3600.0
-            if math.hypot(me.x + d * math.sin(h), me.y + d * math.cos(h)) > AREA_RADIUS_NM:
+            k = LOOKAHEAD_S / 3600.0
+            tas = me.tas_kt or me.gs_kt
+            x = me.x + (tas * math.sin(h) + me.wind_e_kt) * k
+            y = me.y + (tas * math.cos(h) + me.wind_n_kt) * k
+            if math.hypot(x, y) > AREA_RADIUS_NM:
                 return False, "would take the aircraft out of Gatwick's airspace"
         return True, ""
 

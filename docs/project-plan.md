@@ -215,12 +215,18 @@ Stage 0's world had no variation, so timing was easy. Stage 1 adds the following
 
 | Variation | Range | Why it matters |
 | --- | --- | --- |
-| Wind | Different in each session | Changes ground speed, so timing that works in still air comes out wrong |
+| Wind | Real winds at every height from NOAA's GFS weather model: the same hour as the real traffic for benchmark sessions, hours from past years for training | Changes ground speed, so timing that works in still air comes out wrong |
 | Pilot speed | Assigned speed held only within ±10 kt | Gaps drift, so the controller has to keep correcting |
 | Descent rate | Varies by aircraft type and pilot | A slow descender can reach the intercept too high and have to go around, so its descent must start earlier |
 | Release times and aircraft types | Random | The agent can't memorise one traffic pattern |
 
-The ranges for wind and descent rate are still to be set. Start with realistic values, then widen them once the agent copes.
+The wind needs no made-up range: it is whatever Gatwick actually had. Strong wind is rare (since mid-2023 Gatwick's reported surface wind reached 15 kt only 4% of the time), so training includes extra windy hours. The range for descent rates is still to be set: start with realistic values, then widen it once the agent copes.
+
+### First: the rules controller in the new world
+
+Before any learning, the stage 0 rules controller flies stage 0's scenarios in the new conditions, about 200 sessions each, and the results go in the diary. Stage 0's own results stand: every variation is a switch, off by default, so they still reproduce.
+
+Then the rules controller gets the fixes any competent programmer would make, such as timing with the wind rather than still air and starting descents earlier with a margin, and is frozen. That frozen version is what the agent has to beat: beating a rules controller that ignores the wind would prove nothing. Recording both versions also adds to the case for an agent, since every fix is another rule.
 
 ### 1a: speed only
 
@@ -246,7 +252,7 @@ The ranges for wind and descent rate are still to be set. Start with realistic v
 
 **Diary.** "Watching it learn": the same scenario recorded at 0, 10,000, 100,000 and 1 million practice decisions, from near-random speed changes to clean, even gaps.
 
-**Unknowns.** Training time: about a million decisions might take 3–4 hours across 8 parallel simulations on a normal computer, and BlueSky can run with a coarser time step if that's too slow. Also, how much the descent-rate variation hurts the rules controller before the agent is even involved.
+**Unknowns.** Training time: about a million decisions might take 3–4 hours across 8 parallel simulations on a normal computer, and BlueSky can run with a coarser time step if that's too slow.
 
 ## Tools and data
 
@@ -262,7 +268,7 @@ Everything needed is free and open source, so the project runs on a laptop with 
 | Airspace data | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File), GPL-3 | Fix coordinates, vectoring-area and minimum-altitude shapes, arrival routes and runways, already in coordinates. Downloaded by script, not committed |
 | Controller procedures | VATSIM UK controller guides and forums | How Gatwick traffic is vectored in practice: speed control, when holds are used. Written for the simulation network, so check details against the UK AIP |
 | Real traffic | OpenSky Network ADS-B history, cleaned with [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) | Realistic arrival streams to feed the simulator, and the real-controller baseline. Free for non-commercial research, with an account |
-| Weather | Simulated storm cells first | Moving no-go shapes that grow and drift. Real weather data is a later option |
+| Weather | Wind from [NOAA's GFS weather model](https://registry.opendata.aws/noaa-gfs-bdp-pds/) (public domain, free on NOAA's open data store). Simulated storm cells first | Real winds at every height for any hour since 2021, downloaded once and kept locally. Storms start as moving no-go shapes that grow and drift; real storm data is a later option |
 
 ## Relationship to atc_app
 
@@ -358,3 +364,5 @@ Each stage produces a result worth publishing, so the project can put out papers
 - [The Hybrid AI-Human Air Traffic Management](https://www.eurocontrol.int/sites/default/files/2021-03/fly-ai-webinar-2-ntu.pdf), Sameer Alam, EUROCONTROL FLY AI webinar, 2021
 - [OpenSky Network: publications using OpenSky data](https://opensky-network.org/about/publications) and [scientific datasets](https://opensky-network.org/data/scientific)
 - [Auto-ATC: A Diffusion-Transformer-Based Automatic Air Traffic Control System](https://tdr.lib.ntu.edu.tw/jspui/handle/123456789/98584), master's thesis, National Taiwan University, 2025
+- [NOAA Global Forecast System on AWS open data](https://registry.opendata.aws/noaa-gfs-bdp-pds/): 0.25 degree winds, checked against Gatwick's METARs
+- [Iowa State University METAR archive](https://mesonet.agron.iastate.edu/request/download.phtml): Gatwick's reported surface wind since mid-2023

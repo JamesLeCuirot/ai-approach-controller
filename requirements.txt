@@ -10,6 +10,7 @@ gymnasium>=0.29
 # Data handling
 numpy>=1.24
 pandas>=2.0
+pygrib>=2.1  # reads NOAA's GFS weather files
 
 # Tests
 pytest>=7.4

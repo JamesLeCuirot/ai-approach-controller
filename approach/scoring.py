@@ -53,13 +53,14 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
                                            "text": f"Separation lost: {pair[0]} and {pair[1]}, {h:.1f} NM and {v:,.0f} ft"})
         in_loss = now
 
-    # Spacing at the runway: where each follower is when its leader lands.
+    # Spacing at the runway: where each follower is on final when its leader lands. A follower that is not
+    # yet established on final (still being vectored, or going around) is not counted.
     landings = sorted(kinds["landed"], key=lambda e: e["t"])
     spacings, wake_violations = [], 0
     for lead, follow in zip(landings, landings[1:]):
         frame = max((f for f in frames if f["t"] <= lead["t"]), key=lambda f: f["t"], default=None)
         pos = next((a for a in frame["ac"] if a["cs"] == follow["cs"]), None) if frame else None
-        if pos is None:
+        if pos is None or pos.get("phase", "established") != "established":
             continue
         along, _ = airport.runway_frame(runway, pos["x"], pos["y"])
         spacings.append(along)
