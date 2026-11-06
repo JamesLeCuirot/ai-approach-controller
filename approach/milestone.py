@@ -84,7 +84,10 @@ def scores_line(log) -> str:
         parts.append(f"closest spacing at the runway {s['min_spacing_nm']} NM")
     if s.get("safety_blocks"):
         parts.append(f"safety blocks {s['safety_blocks']}")
-    parts.append(f"instructions {s.get('instructions', 0)}")
+    if s.get("instructions") not in (None, ""):
+        parts.append(f"instructions {s['instructions']}")
+    if s.get("go_arounds"):
+        parts.append(f"go-arounds {s['go_arounds']}")
     if s.get("minutes_per_arrival") not in (None, ""):
         parts.append(f"{s['minutes_per_arrival']} min per arrival")
     weather = log.meta.get("weather")
@@ -147,7 +150,9 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("slug", help="milestone name, e.g. stage0-02-turn-test")
     p.add_argument("--title", required=True)
-    p.add_argument("--scenarios", required=True, help="comma-separated scenario names")
+    p.add_argument("--scenarios", required=True,
+                   help="comma-separated scenario names; a real hour is real:2026-05-30T12 (the real controllers) "
+                        "or rules:2026-05-30T12 (our rules controller on the same traffic)")
     p.add_argument("--summary", default="", help="what was built (Markdown)")
     p.add_argument("--date", default=date.today().isoformat())
     p.add_argument("--no-video", action="store_true")
@@ -159,9 +164,18 @@ def main(argv: list[str] | None = None) -> None:
     media.mkdir(parents=True, exist_ok=True)
     rows, csv_rows = [], []
     for name in [s.strip() for s in args.scenarios.split(",") if s.strip()]:
-        scenario = SCENARIOS[name]
         print(f"[{name}] running")
-        log = run_scenario(scenario, milestone=args.slug)
+        if ":" in name:  # a real hour of traffic
+            from approach.data.real_sessions import session_log
+
+            log = session_log(name, milestone=args.slug)
+            log.meta["code_version"] = log.meta.get("code_version") or code_version()
+            title = log.meta["title"]
+            name = name.replace(":", "_")
+        else:
+            scenario = SCENARIOS[name]
+            log = run_scenario(scenario, milestone=args.slug)
+            title = scenario.title
         log.save(out / f"{name}.json")
         html = replay.write(log, out / f"{name}.html")
         shot, video, note = out / f"{name}.png", None, "not recorded"
@@ -171,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
             if video and video.suffix == ".mp4":
                 video = Path(shutil.move(str(video), out / video.name))
         rows.append({
-            "scenario": name, "title": scenario.title, "html": html.name,
+            "scenario": name, "title": title, "html": html.name,
             "shot": shot.name if shot.exists() else "", "video": video.name if video else "", "video_note": note,
             "scores": scores_line(log), "code": log.meta["code_version"],
         })

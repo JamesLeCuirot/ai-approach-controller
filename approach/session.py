@@ -23,6 +23,8 @@ class SessionLog:
     frames: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     scores: dict[str, Any] = field(default_factory=dict)
+    # Real tracks drawn faintly behind the session's aircraft (real-traffic sessions): what really happened.
+    ghosts: list[dict[str, Any]] = field(default_factory=list)
 
     def add_event(self, t: float, kind: str, callsign: str | None = None, text: str = "", **extra: Any) -> None:
         self.events.append({"t": round(t, 1), "kind": kind, "cs": callsign, "text": text, **extra})

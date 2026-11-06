@@ -2,7 +2,7 @@
 
 Snapshot of the shared spec, 5 November 2026 · James Le Cuirot
 
-Stage 0 models Gatwick approach control from the WILLO and TIMBA release points to the runway, on 26L or 08R. Real arrivals are replayed from ADS-B up to the release point, then handed to the AI. The procedures come from VATSIM UK's Gatwick and London vMATS, checked against the UK AIP. VATSIM material is written for flight simulation only, never for real-world use.
+Stage 0 models Gatwick approach control from the edge of the approach area to the runway, on 26L or 08R. Real arrivals are replayed from ADS-B until each is within 40 NM of Gatwick and at or below FL150, then handed to the AI wherever it is: heading for a hold, on a direct or on a heading from the previous controller. The made-up stage 0 scenarios release arrivals at the WILLO and TIMBA holds instead. The procedures come from VATSIM UK's Gatwick and London vMATS, checked against the UK AIP. VATSIM material is written for flight simulation only, never for real-world use.
 
 ## Who controls what
 
@@ -155,12 +155,12 @@ The rules controller is a hand-written baseline that applies the procedures abov
 ## Open tasks
 
 - [ ] Convert the RMA and minimum-altitude shapes in VATSIM UK's sector file (`Airports/EGKK/RMA.txt` and `SMAA.txt`, already in coordinates) into simulator polygons. Check them against the AIP's ATC Surveillance Minimum Altitude chart (AD 2.EGKK-5-1).
-- [ ] Apply for OpenSky Network historical data access. It is free for non-commercial research but needs an approved account, so start early.
-- [ ] Pick the first replay days: busy westerly days with holding, plus a few easterly ones.
-- [ ] Load fix coordinates from the sector file's `Navaids` folder. For example, WILLO is at 50°59'05.88"N 000°11'30.30"W and TIMBA at 50°56'43.99"N 000°15'42.25"E. The STAR fix sequences per runway are in `Airports/EGKK/Stars.txt`.
+- [x] Real traffic: OpenSky's full historical data is only for research institutions, so real arrivals come from adsb.lol's open data (ODbL) instead; see `data/real/README.md`.
+- [x] Pick the replay days: 60 days in `data/real/egkk/days.csv`, chosen by `scripts/choose_days.py`.
+- [x] Load fix coordinates from the sector file's `Navaids` folder. For example, WILLO is at 50°59'05.88"N 000°11'30.30"W and TIMBA at 50°56'43.99"N 000°15'42.25"E. The STAR fix sequences per runway are in `Airports/EGKK/Stars.txt`.
 - [ ] Check the rules controller's vectoring logic with a controller or a VATSIM UK mentor.
 - [ ] Confirm the UK version of the intercept rule. The EU text (EASA AMC2 ATS.TR.155(c)(3)) says 45° or less, and the roadmap now uses that.
-- [ ] Map aircraft to RECAT-EU categories: transponder code to aircraft type from OpenSky's aircraft database, then type to category from the vMATS appendix and EUROCONTROL's RECAT-EU type list.
+- [ ] Map aircraft to RECAT-EU categories: adsb.lol's data already gives each aircraft's type, then type to category from the vMATS appendix and EUROCONTROL's RECAT-EU type list.
 - [ ] Get historical METARs for each replayed day. Heathrow QNH sets the London stack levels. Gatwick QNH converts ADS-B pressure altitudes to real altitudes below 6,000 ft, and Gatwick wind gives the runway in use.
 - [x] Verify the threshold coordinates: the sector file's runway data matches the AIP values for 08R and 26L.
 - [ ] Decide how to handle the sector file's GPL-3 licence: download it separately at build time, or license the project repo under GPL-3.

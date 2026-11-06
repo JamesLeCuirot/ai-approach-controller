@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from approach import scoring
 from approach.airports.model import Airport
 from approach.controllers.base import NoController, RandomController, ScriptController
@@ -38,6 +40,25 @@ def _frame(t: float, views) -> dict:
     }
 
 
+def _compass(x: float, y: float) -> str:
+    brg = (math.degrees(math.atan2(x, y)) + 360) % 360
+    return "N NE E SE S SW W NW".split()[int(((brg + 22.5) % 360) // 45)]
+
+
+def _real_entry(a, wind) -> tuple[float, float]:
+    """Heading and indicated airspeed that give a real arrival's ground track and speed in the wind."""
+    from bluesky.tools.aero import ft, kts, vtas2cas
+
+    trk = math.radians(a.track or 0.0)
+    ge, gn = (a.gs_kt or 250.0) * math.sin(trk), (a.gs_kt or 250.0) * math.cos(trk)
+    we, wn = wind.uv(a.lat, a.lon, a.level_ft) if wind is not None else (0.0, 0.0)
+    ae, an = ge - we, gn - wn
+    hdg = math.degrees(math.atan2(ae, an)) % 360
+    tas = math.hypot(ae, an)
+    cas = float(vtas2cas(tas * kts, a.level_ft * ft)) / kts
+    return hdg, max(170.0, min(320.0, cas))
+
+
 def run_session(airport: Airport, scenario: Scenario, controller_name: str, log: SessionLog, seed: int = 1,
                 wind=None) -> SessionLog:
     world = World(airport, scenario.runway, seed=seed, wind=wind)
@@ -57,13 +78,21 @@ def run_session(airport: Airport, scenario: Scenario, controller_name: str, log:
     while t <= scenario.duration_s:
         while released < len(pending) and pending[released].release_s <= t:
             a = pending[released]
-            hold = airport.holds[a.fix]
-            pos = hold.position
-            world.spawn(a.callsign, a.actype, pos.lat, pos.lon, airport.magnetic_to_true(hold.inbound_course_mag),
-                        a.level_ft, a.speed_kt)
             level = f"FL{a.level_ft // 100}" if a.level_ft > airport.transition_altitude_ft else f"{a.level_ft:,} ft"
-            log.add_event(t, "takeover", a.callsign, f"{a.callsign} ({a.actype}) released at {a.fix}, {level}, {a.speed_kt} kt",
-                          actype=a.actype, fix=a.fix)
+            if a.lat is not None:
+                hdg, cas = _real_entry(a, wind)
+                world.spawn(a.callsign, a.actype, a.lat, a.lon, hdg, a.level_ft, cas)
+                x, y = airport.grid.to_xy(a.lat, a.lon)
+                where = f"{(x * x + y * y) ** 0.5:.0f} NM {_compass(x, y)}"
+                log.add_event(t, "takeover", a.callsign, f"{a.callsign} ({a.actype}) handed over {where}, {level}, "
+                              f"{cas:.0f} kt", actype=a.actype, fix=a.fix)
+            else:
+                hold = airport.holds[a.fix]
+                pos = hold.position
+                world.spawn(a.callsign, a.actype, pos.lat, pos.lon, airport.magnetic_to_true(hold.inbound_course_mag),
+                            a.level_ft, a.speed_kt)
+                log.add_event(t, "takeover", a.callsign, f"{a.callsign} ({a.actype}) released at {a.fix}, {level}, "
+                              f"{a.speed_kt} kt", actype=a.actype, fix=a.fix)
             released += 1
         views = world.views()
         if t % DECISION_INTERVAL_S == 0:

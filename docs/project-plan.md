@@ -196,14 +196,14 @@ The first four steps turn atc_app into the foundation, prove it on Naveen Mathew
 
 1. **Build the closed-loop environment.** Replace atc_app's replay-based training with a world run by BlueSky, where instructions take effect at real turn and climb rates, and fix the BlueSky connection. Done when the AI's "turn left 30°" turns the aircraft at about 3° a second and its track changes. Airports plug in as data, so Naveen's JFK data works as well as Gatwick.
 2. **Retrain Naveen's agent on it and rerun his benchmark.** Same AI, same scoring, and his three scenarios (head-on, crossing, high density), compared with his published results. This answers the open question in his README: does fixing the mismatch improve his agent? The environment and results go back to atc_app as a contribution.
-3. **Add Gatwick.** Enter its arrival routes, holds and approaches from the UK AIP and VATSIM material. Replay real arrivals from OpenSky data up to the edge of the approach airspace, and hand each aircraft to the controller as it crosses. Then write the rules controller and the safety check, and show them on the radar screen. This completes stage 0.
-4. **Start the data side in parallel.** Score how real controllers handled Gatwick arrivals from OpenSky data: spacing at the threshold, track miles and holding, with FlightPathAnalysis cleaning the tracks. This needs no AI, is the first publishable result, and becomes the benchmark's real-controller baseline.
+3. **Add Gatwick.** Enter its arrival routes, holds and approaches from the UK AIP and VATSIM material. Replay real arrivals from open ADS-B data up to the edge of the approach area, and hand each aircraft to the controller as it crosses. Then write the rules controller and the safety check, and show them on the radar screen. This completes stage 0.
+4. **Start the data side in parallel.** Score how real controllers handled Gatwick arrivals from open ADS-B data (adsb.lol): spacing at the threshold, track miles and holding, with FlightPathAnalysis cleaning the tracks. This needs no AI, is the first publishable result, and becomes the benchmark's real-controller baseline.
 
 Entering Gatwick's procedures for step 3 can start straight away, so every workstream has work from day one.
 
 ## Gatwick stage 0 spec
 
-The full spec is in [stage0-gatwick-spec.md](stage0-gatwick-spec.md). Stage 0 hands each real arrival to the AI at the WILLO or TIMBA release point and ends when the aircraft is established on the ILS for 26L or 08R. It is built from VATSIM UK's Gatwick procedures and the UK AIP.
+The full spec is in [stage0-gatwick-spec.md](stage0-gatwick-spec.md). Stage 0 hands each real arrival to the AI the first time it is within 40 NM of Gatwick and at or below FL150, and ends when the aircraft is established on the ILS for 26L or 08R. It is built from VATSIM UK's Gatwick procedures and the UK AIP.
 
 ## Stage 1: speed, then base turns
 
@@ -217,10 +217,10 @@ Stage 0's world had no variation, so timing was easy. Stage 1 adds the following
 | --- | --- | --- |
 | Wind | Real winds at every height from NOAA's GFS weather model: the same hour as the real traffic for benchmark sessions, hours from past years for training | Changes ground speed, so timing that works in still air comes out wrong |
 | Pilot speed | Assigned speed held only within ±10 kt | Gaps drift, so the controller has to keep correcting |
-| Descent rate | Varies by aircraft type and pilot | A slow descender can reach the intercept too high and have to go around, so its descent must start earlier |
-| Release times and aircraft types | Random | The agent can't memorise one traffic pattern |
+| Descent rate | From real Gatwick arrivals: typically 800–1,000 ft/min when descending, with the slowest tenth of flights near 550 and the fastest near 1,300, varying by type | A slow descender can reach the intercept too high and have to go around, so its descent must start earlier |
+| Release times and aircraft types | Real arrival streams from the chosen days, plus random made-up traffic for extra variety | The agent can't memorise one traffic pattern |
 
-The wind needs no made-up range: it is whatever Gatwick actually had. Strong wind is rare (since mid-2023 Gatwick's reported surface wind reached 15 kt only 4% of the time), so training includes extra windy hours. The range for descent rates is still to be set: start with realistic values, then widen it once the agent copes.
+The wind needs no made-up range: it is whatever Gatwick actually had. Strong wind is rare (since mid-2023 Gatwick's reported surface wind reached 15 kt only 4% of the time), so training includes extra windy hours. Descent rates come from real arrivals too; start with the real spread, then widen it once the agent copes.
 
 ### First: the rules controller in the new world
 
@@ -267,7 +267,7 @@ Everything needed is free and open source, so the project runs on a laptop with 
 | Procedures | Gatwick's published procedures from the UK AIP (NATS) | Arrivals, the WILLO and TIMBA holds, and approaches to 26L and 08R |
 | Airspace data | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File), GPL-3 | Fix coordinates, vectoring-area and minimum-altitude shapes, arrival routes and runways, already in coordinates. Downloaded by script, not committed |
 | Controller procedures | VATSIM UK controller guides and forums | How Gatwick traffic is vectored in practice: speed control, when holds are used. Written for the simulation network, so check details against the UK AIP |
-| Real traffic | OpenSky Network ADS-B history, cleaned with [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) | Realistic arrival streams to feed the simulator, and the real-controller baseline. Free for non-commercial research, with an account |
+| Real traffic | [adsb.lol](https://www.adsb.lol)'s open ADS-B data (ODbL 1.0), with [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) for cleaning if needed | Every Gatwick arrival every day since late December 2023, with tracks every few seconds: real arrival streams for the simulator, and the real-controller baseline. Its live feed could drive a live demo |
 | Weather | Wind from [NOAA's GFS weather model](https://registry.opendata.aws/noaa-gfs-bdp-pds/) (public domain, free on NOAA's open data store). Simulated storm cells first | Real winds at every height for any hour since 2021, downloaded once and kept locally. Storms start as moving no-go shapes that grow and drift; real storm data is a later option |
 
 ## Relationship to atc_app
@@ -304,7 +304,7 @@ The work splits into four workstreams that one person each can own, so a team of
 | --- | --- | --- |
 | Simulated world | Gatwick airspace and procedures, scripted pilots, wind and storms | James, using the UK AIP and VATSIM material |
 | AI training | Scoring, the model, training runs | Naveen Mathew, author of atc_app and FlightPathAnalysis (to approach) |
-| Data and baselines | OpenSky ADS-B for Gatwick, the real-controller baseline, the metrics | A data scientist in Jersey (to approach) |
+| Data and baselines | Open ADS-B data for Gatwick, the real-controller baseline, the metrics | A data scientist in Jersey (to approach) |
 | Radar screen | The scope, the instruction transcript, the mode for human controllers | Open |
 
 The atc_app fixes described above make a natural opener with Naveen Mathew: they solve that project's top open issue.
@@ -315,7 +315,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 
 | Paper | Comes from | Lead workstream | Possible venue |
 | --- | --- | --- | --- |
-| How well do real controllers do? Scoring Gatwick approach control from OpenSky data: spacing at the threshold, track miles and holding, for every arrival | Data side, from the start | Data and baselines | OpenSky Symposium (proceedings in the Journal of Open Aviation Science) |
+| How well do real controllers do? Scoring Gatwick approach control from open ADS-B data: spacing at the threshold, track miles and holding, for every arrival | Data side, from the start | Data and baselines | OpenSky Symposium (proceedings in the Journal of Open Aviation Science) |
 | An open Gatwick approach benchmark: real procedures, replayed real arrivals, standard scenarios and scoring, and rules and real-controller baselines | Stages 0–2 | Simulated world | SESAR Innovation Days, or the Journal of Open Aviation Science |
 | Learning to vector arrivals onto final at Gatwick: RL against a rules controller and real controllers on identical traffic | Stages 1–3 | AI training | SESAR Innovation Days, or ICRAT (International Conference on Research in Air Transportation) |
 | A two-layer AI approach controller handling holds, go-arounds, runway changes and storms | Stages 4–6 | AI training and simulated world | ICRAT, the USA/Europe ATM R&D Seminar, or a journal such as Transportation Research Part C |
@@ -323,7 +323,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 | Does an approach controller trained at Gatwick work at Geneva? | Stage 7 | AI training | Journal paper |
 
 - **Authorship follows the workstreams.** Whoever leads a paper is first author, and everyone who contributed is a co-author.
-- **Data and acknowledgements.** OpenSky asks users of its data to cite its reference paper. VATSIM UK material and the sector file need acknowledging, and live sessions need each controller's consent.
+- **Data and acknowledgements.** adsb.lol's data is under the ODbL, so any dataset we publish from it credits adsb.lol and stays under the same licence. OpenSky asks users of its data to cite its reference paper. VATSIM UK material and the sector file need acknowledging, and live sessions need each controller's consent.
 - **Deadlines change each year,** so check the calls for papers once a result is close.
 - **Not papers on their own.** The atc_app fix is a contribution to Naveen's repo and a blog post. Gatwick holding prediction is already well studied at other airports, so holding is measured inside the real-controller scoring paper instead.
 - **Rigour decides the AI papers.** Many training runs, test days kept apart from practice days, and the same scoring for every controller. Without these they read as another reinforcement-learning air traffic control paper, and they must be positioned against Han Lu's paper and Auto-ATC.
@@ -335,7 +335,8 @@ Each stage produces a result worth publishing, so the project can put out papers
 | Airport | London Gatwick: one of the busiest single-runway airports, with daily holding at WILLO and TIMBA and runway changes between 26L and 08R. Geneva is earmarked for stage 7, a test of whether the AI copes with terrain and a new layout |
 | Repo | A personal GitHub repo, `jameslecuirot/ai-approach-controller`, private until the stage 0 prototype works |
 | Synthetic voice | Not now. A possible nice-to-have later |
-| Arrival traffic | Real Gatwick arrivals from OpenSky ADS-B data, replayed up to the edge of the approach airspace. The AI takes over each aircraft as it crosses that boundary |
+| Arrival traffic | Real Gatwick arrivals from adsb.lol's open ADS-B data (ODbL), every day since late December 2023. The AI takes over each aircraft the first time it is within 40 NM and at or below FL150, wherever it is: heading for a hold, on a direct or on a heading from the previous controller. OpenSky's full data is only for research institutions, and the EUROCONTROL PRC 2024 dataset covers only a few percent of Gatwick's flights |
+| Live demo | Possible with adsb.lol's free live feed: aircraft arrive live and change colour when the AI takes them over, with the real track continuing in faint grey behind. The radar replay already does this for past days |
 | The AI model | A small neural network trained locally with reinforcement learning. No paid APIs |
 | Project framing | Benchmark first: an open Gatwick benchmark with real traffic and real-controller scores, with our AI as its first entrant. Adds real-controller scoring as the first result, a safety check, and an imitation baseline. Decided after reviewing OpenSky's publication list |
 
@@ -346,6 +347,8 @@ Each stage produces a result worth publishing, so the project can put out papers
 - [ ] **Licence for this repo.** MIT keeps it widest open; GPL-3 would allow bundling the VATSIM UK sector file. Decide before going public.
 - [ ] **Read the closest papers in full:** Han Lu (2026), ApproachNet (2026), Auto-ATC (2025), the Applied Sciences framework (2025), and NTU's arrival-sequencing work.
 - [ ] **OpenScope as the radar screen?** Check its licence, whether it has Gatwick, and how it would connect to BlueSky.
+- [ ] **Does Gatwick use 2.5 NM on final?** UK and EASA rules (AMC1 ATS.TR.210(c)(2)) allow 2.5 NM between aircraft established on the same final within 10 NM, where approved, and real Gatwick pairs at 2.5–3 NM appear in the data. The scoring allows it for every controller; confirm with a Gatwick controller.
+- [ ] **Wake categories at Gatwick:** the scoring uses RECAT-EU. Confirm which scheme Gatwick applies.
 
 ## Sources
 
@@ -362,6 +365,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 - [Priority-driven reinforcement learning under dynamic weather hazards](https://research.polyu.edu.hk/en/publications/priority-driven-reinforcement-learning-for-multi-aircraft-traject/), Hong Kong PolyU, 2026
 - [Data-Driven Prediction of Aircraft Holding Times Using OpenSky Data](https://journals.open.tudelft.nl/joas/article/view/7890), J. Open Aviation Science, 2025
 - [The Hybrid AI-Human Air Traffic Management](https://www.eurocontrol.int/sites/default/files/2021-03/fly-ai-webinar-2-ntu.pdf), Sameer Alam, EUROCONTROL FLY AI webinar, 2021
+- [adsb.lol open historical data](https://www.adsb.lol/docs/open-data/historical/) (ODbL 1.0)
 - [OpenSky Network: publications using OpenSky data](https://opensky-network.org/about/publications) and [scientific datasets](https://opensky-network.org/data/scientific)
 - [Auto-ATC: A Diffusion-Transformer-Based Automatic Air Traffic Control System](https://tdr.lib.ntu.edu.tw/jspui/handle/123456789/98584), master's thesis, National Taiwan University, 2025
 - [NOAA Global Forecast System on AWS open data](https://registry.opendata.aws/noaa-gfs-bdp-pds/): 0.25 degree winds, checked against Gatwick's METARs

@@ -15,6 +15,11 @@ class Arrival:
     release_s: float = 0.0
     level_ft: int = 8000  # minimum stack level + 1 (FL80) on a standard-pressure day
     speed_kt: int = 220
+    # Real traffic: released where it really was at handover instead of at the hold fix.
+    lat: float | None = None
+    lon: float | None = None
+    track: float | None = None  # true track over the ground
+    gs_kt: float | None = None  # ground speed
 
 
 @dataclass

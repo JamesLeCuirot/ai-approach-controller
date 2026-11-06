@@ -26,13 +26,28 @@ LABELS = {
 }
 
 
+RADAR_MIN_NM = 3.0
+FINAL_MIN_NM = 2.5  # same final approach track within 10 NM of the threshold (UK/EASA AMC1 ATS.TR.210(c)(2))
+FINAL_RANGE_NM = 10.0
+VERTICAL_MIN_FT = 1000
+VERTICAL_TOLERANCE_FT = 100  # ADS-B altitudes come in 25 ft steps and aircraft settle onto a level: allow for it
+
+
+def _minimum_nm(a: dict, b: dict, airport: Airport, runway: str) -> float:
+    if a.get("phase") == "established" and b.get("phase") == "established":
+        if all(0 <= airport.runway_frame(runway, p["x"], p["y"])[0] <= FINAL_RANGE_NM for p in (a, b)):
+            return FINAL_MIN_NM
+    return RADAR_MIN_NM
+
+
 def score(log: SessionLog, airport: Airport, runway: str) -> dict:
     events, frames = log.events, log.frames
     kinds = defaultdict(list)
     for e in events:
         kinds[e["kind"]].append(e)
 
-    # Separation losses: episodes where a pair is within 3 NM and 1,000 ft.
+    # Separation losses: episodes where a pair is closer than the radar minimum (3 NM, or 2.5 NM when both are
+    # established on final within 10 NM) and less than 1,000 ft apart (less 100 ft for altitude reporting).
     in_loss: set[tuple[str, str]] = set()
     losses = 0
     new_events = []
@@ -44,7 +59,7 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
                 a, b = ac[i], ac[j]
                 h = math.hypot(a["x"] - b["x"], a["y"] - b["y"])
                 v = abs(a["alt"] - b["alt"])
-                if h < 3.0 and v < 1000:
+                if h < 3.0 and v < VERTICAL_MIN_FT - VERTICAL_TOLERANCE_FT and h < _minimum_nm(a, b, airport, runway):
                     pair = tuple(sorted((a["cs"], b["cs"])))
                     now.add(pair)
                     if pair not in in_loss:

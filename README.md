@@ -24,7 +24,7 @@ flowchart LR
     W -- live positions --> R["Radar screen"]
 ```
 
-Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA holds. From there the AI controls each aircraft until it is established on the ILS for 26L or 08R. A fixed safety check blocks any unsafe instruction. Every controller, including the real Gatwick controllers scored from the same traffic, is measured the same way.
+Real Gatwick arrivals are replayed from ADS-B data until each is within 40 NM of Gatwick and at or below FL150, wherever it is: heading for a hold, on a direct or on a heading from the previous controller. From there the AI controls each aircraft until it is established on the ILS for 26L or 08R. A fixed safety check blocks any unsafe instruction. Every controller, including the real Gatwick controllers scored from the same traffic, is measured the same way.
 
 ## Repo layout
 
@@ -37,7 +37,8 @@ Real Gatwick arrivals are replayed from ADS-B data up to the WILLO and TIMBA hol
 | `approach/airports/` | Airports as data. `egkk/` is Gatwick |
 | `approach/controllers/` | Baseline controllers: rules, imitation and random, plus the safety check |
 | `approach/ai/` | The learned controller: network, scoring, training, evaluation |
-| `approach/data/` | Pipelines for OpenSky ADS-B, METARs and aircraft types |
+| `approach/data/` | Pipelines for real traffic (adsb.lol ADS-B), real winds (NOAA GFS) and real arrivals |
+| `data/real/` | Every real Gatwick arrival on the chosen days, from adsb.lol (ODbL) |
 | `approach/radar/` | The radar screen and session replays |
 | `scripts/` | Helper scripts, such as fetching the sector file |
 | `docs/` | Plan and specs |
@@ -104,7 +105,7 @@ This runs the scenarios and saves into `diary/<date>-<name>/`: the replays, an M
 | [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and [BlueSky-Gym](https://pypi.org/project/bluesky-gym/) (MIT) | Simulator and starter training environments | Installed as dependencies |
 | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File) (GPL-3) | Fixes, vectoring areas, minimum altitudes, arrival routes, runways | No, fetched by script |
 | VATSIM UK Gatwick vMATS, UK AIP | Procedures summarised in the stage 0 spec | No, link only |
-| OpenSky Network ADS-B (non-commercial research access) | Real arrivals and the real-controller baseline | No, downloaded locally |
+| [adsb.lol](https://www.adsb.lol) open ADS-B data (ODbL 1.0) | Real arrivals, the real traffic replayed into the simulator, and the real-controller baseline | The arrivals only, in `data/real/` under ODbL; the full daily files are downloaded locally |
 | [NOAA GFS weather model](https://registry.opendata.aws/noaa-gfs-bdp-pds/) (public domain) | Real winds at every height, for any hour since 2021 | No, downloaded and cached locally (`data/raw/gfs/`) |
 | [atc_app](https://github.com/SNaveenMathew/atc_app) and [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) (Naveen Mathew) | Prior work this project builds on | No code copied until they carry a licence |
 

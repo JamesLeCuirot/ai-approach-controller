@@ -10,6 +10,7 @@
     --ring: #1e2b42; --map: #3b4a63; --rma: #2f6f68; --smaa: #4b3f66; --runway: #e2e8f0;
     --centreline: #6b7a90; --fix: #8fa3bf; --hold: #5d7190;
     --vectoring: #7dd3fc; --established: #86efac; --goaround: #fbbf24; --blocked: #fbbf24; --held: #c4b5fd;
+    --real: #e5e7eb; --ghost: #8a94a6;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -108,6 +109,11 @@
     box.innerHTML = '<b>Wind</b> ' + w.valid.replace('T', ' ').replace(':00Z', 'Z') + '<table>' + rows + '</table>' +
       '<div style="margin-top:3px">' + w.source.replace(/, run.*/, '') + '</div>';
     box.style.display = 'block';
+  }
+
+  if ((S.ghosts || []).length) {
+    document.getElementById('legend').insertAdjacentHTML('beforeend',
+      '<span style="background:var(--real)"></span>real, before handover<span style="background:var(--ghost)"></span>real track after handover');
   }
 
   // Scores table
@@ -214,9 +220,55 @@
   }
   const colour = ph => ph === 'established' || ph === 'final' ? C['--established'] : ph === 'go_around' ? C['--goaround'] : ph === 'holding' ? C['--held'] : C['--vectoring'];
 
+  // Real tracks (real-traffic sessions): white while the aircraft is still with the real controllers,
+  // then a faint grey line showing what really happened after we took it over.
+  const ghosts = S.ghosts || [];
+  function ghostAt(g, t) {
+    const P = g.points; if (!P.length || t < P[0][0] || t > P[P.length - 1][0]) return null;
+    let lo = 0, hi = P.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (P[mid][0] <= t) lo = mid; else hi = mid - 1; }
+    const a = P[lo], b = P[Math.min(lo + 1, P.length - 1)], f = b[0] > a[0] ? (t - a[0]) / (b[0] - a[0]) : 0;
+    return { x: a[1] + (b[1] - a[1]) * f, y: a[2] + (b[2] - a[2]) * f, alt: a[3] + (b[3] - a[3]) * f, k: lo };
+  }
+  function drawGhosts(t) {
+    ghosts.forEach(g => {
+      const now = ghostAt(g, t);
+      const P = g.points;
+      const upto = now ? now.k : (t > (P.length ? P[P.length - 1][0] : 0) ? P.length - 1 : -1);
+      if (upto < 0) return;
+      if (t < g.handover_t) {
+        // Still with the real controllers: a white target with its callsign.
+        if (!now) return;
+        ctx.globalAlpha = 0.5; ctx.fillStyle = C['--real'];
+        for (let k = Math.max(0, upto - 6); k <= upto; k++) ctx.fillRect(sx(P[k][1]) - 1, sy(P[k][2]) - 1, 2, 2);
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(sx(now.x) - 3, sy(now.y) - 3, 6, 6);
+        ctx.fillText(g.cs, sx(now.x) + 8, sy(now.y) - 6);
+        ctx.globalAlpha = 1;
+        return;
+      }
+      // Ours now: the real track from the handover on, in faint grey.
+      let k0 = 0; while (k0 < P.length && P[k0][0] < g.handover_t) k0++;
+      ctx.strokeStyle = C['--ghost']; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let k = k0; k <= upto; k++) { const X = sx(P[k][1]), Y = sy(P[k][2]); k === k0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y); }
+      if (now) ctx.lineTo(sx(now.x), sy(now.y));
+      ctx.stroke();
+      if (now) {
+        ctx.fillStyle = C['--ghost']; ctx.globalAlpha = 0.6;
+        ctx.beginPath(); ctx.arc(sx(now.x), sy(now.y), 2.5, 0, 2 * Math.PI); ctx.fill();
+        ctx.font = '10px ui-monospace, Menlo, Consolas, monospace';
+        ctx.fillText(g.cs, sx(now.x) + 5, sy(now.y) + 11);
+        ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+
   function drawAircraft(t) {
     const i = frameIndex(t);
     ctx.font = '11.5px ui-monospace, Menlo, Consolas, monospace';
+    if (ghosts.length) drawGhosts(t);
     if (fullTrail && i >= 0) {
       // Every aircraft's whole track so far, including ones that have landed, coloured by phase.
       const tracks = {}, lastSeen = {};
@@ -271,13 +323,14 @@
   const tr = document.getElementById('transcript'), slider = document.getElementById('slider'), clock = document.getElementById('clock');
   let shown = 0;
   function fmt(s) { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0'); }
+  function utc(s) { const d = new Date(s * 1000); return d.toISOString().slice(11, 19); }
   function updateTranscript() {
     const upto = events.filter(e => e.t <= t).length;
     if (upto < shown) { tr.innerHTML = ''; shown = 0; }
     for (; shown < upto; shown++) {
       const e = events[shown], div = document.createElement('div');
       div.className = 'ev ' + ({ blocked: 'blocked', landed: 'landed', go_around: 'goaround', separation_loss: 'loss', note: 'note', takeover: 'takeover' }[e.kind] || '');
-      const span = document.createElement('span'); span.className = 't'; span.textContent = fmt(e.t);
+      const span = document.createElement('span'); span.className = 't'; span.textContent = S.meta.t0_epoch ? utc(S.meta.t0_epoch + e.t).slice(0, 5) : fmt(e.t);
       div.appendChild(span); div.appendChild(document.createTextNode(e.text));
       tr.appendChild(div);
     }
@@ -287,7 +340,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css('--bg'); ctx.fillRect(0, 0, W, H);
     drawMap(); drawAircraft(t);
-    clock.textContent = fmt(t) + ' / ' + fmt(duration);
+    clock.textContent = S.meta.t0_epoch ? utc(S.meta.t0_epoch + t) + ' UTC' : fmt(t) + ' / ' + fmt(duration);
     slider.value = String(Math.round(1000 * t / duration));
     updateTranscript();
   }
