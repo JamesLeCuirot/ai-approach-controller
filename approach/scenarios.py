@@ -55,7 +55,7 @@ register(
         controller="script",
         arrivals=[Arrival("EZY12AB", "A320", "WILLO")],
         script=[
-            (10, Instruction("EZY12AB", "heading", 254.0)),  # 30 degrees left of the WILLO inbound course (true 285.3)
+            (10, Instruction("EZY12AB", "heading", 255.3)),  # 30 degrees left of the WILLO inbound course (285.3 true)
             (70, Instruction("EZY12AB", "altitude", 5000)),
             (70, Instruction("EZY12AB", "speed", 200)),
             (100, Instruction("EZY12AB", "heading", 345.0)),

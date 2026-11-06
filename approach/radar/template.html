@@ -92,7 +92,7 @@
 
   // Scores table
   const st = document.getElementById('scoretable');
-  const labels = S.scores_labels || {};
+  const labels = (S.meta && S.meta.scores_labels) || {};
   Object.entries(S.scores || {}).forEach(([k, v]) => {
     if (typeof v === 'object') return;
     const tr = document.createElement('tr');
