@@ -34,7 +34,14 @@ FINAL_MIN_NM = 2.5  # same final approach track within 10 NM of the threshold (U
 FINAL_RANGE_NM = 10.0
 VERTICAL_MIN_FT = 1000
 VERTICAL_TOLERANCE_FT = 100  # ADS-B altitudes come in 25 ft steps and aircraft settle onto a level: allow for it
+HORIZONTAL_TOLERANCE_NM = 0.1  # ADS-B positions and 4-second frames: a pair at 2.95 NM is at the limit, not under it
+RUNWAY_ZONE_NM = 2.0  # inside this on final (or past the threshold) the tower's runway rules apply, not radar separation
 RMA_TOLERANCE_NM = 1.0  # outside the RMA by more than this counts as leaving it
+
+
+def _near_runway(a: dict, airport: Airport, runway: str) -> bool:
+    along, lateral = airport.runway_frame(runway, a["x"], a["y"])
+    return along < RUNWAY_ZONE_NM and abs(lateral) < 1.0 and a["alt"] < airport.runways[runway].elevation_ft + 1000
 
 
 def _minimum_nm(a: dict, b: dict, airport: Airport, runway: str) -> float:
@@ -51,7 +58,8 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
         kinds[e["kind"]].append(e)
 
     # Separation losses: episodes where a pair is closer than the radar minimum (3 NM, or 2.5 NM when both are
-    # established on final within 10 NM) and less than 1,000 ft apart (less 100 ft for altitude reporting).
+    # established on final within 10 NM) and less than 1,000 ft apart, allowing 0.1 NM and 100 ft for how precisely
+    # ADS-B reports them. Inside 2 NM of the threshold the tower's runway rules apply instead.
     in_loss: set[tuple[str, str]] = set()
     losses = 0
     new_events = []
@@ -63,7 +71,9 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
                 a, b = ac[i], ac[j]
                 h = math.hypot(a["x"] - b["x"], a["y"] - b["y"])
                 v = abs(a["alt"] - b["alt"])
-                if h < 3.0 and v < VERTICAL_MIN_FT - VERTICAL_TOLERANCE_FT and h < _minimum_nm(a, b, airport, runway):
+                if (h < 3.0 and v < VERTICAL_MIN_FT - VERTICAL_TOLERANCE_FT
+                        and h < _minimum_nm(a, b, airport, runway) - HORIZONTAL_TOLERANCE_NM
+                        and not (_near_runway(a, airport, runway) or _near_runway(b, airport, runway))):
                     pair = tuple(sorted((a["cs"], b["cs"])))
                     now.add(pair)
                     if pair not in in_loss:
@@ -84,7 +94,8 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
         for a in f["ac"]:
             if a.get("phase") in ("established", "go_around"):
                 continue
-            if a["alt"] < airport.minimum_altitude_ft(a["x"], a["y"]) - VERTICAL_TOLERANCE_FT:
+            if (a["alt"] < airport.minimum_altitude_ft(a["x"], a["y"]) - VERTICAL_TOLERANCE_FT
+                    and not _near_runway(a, airport, runway)):
                 low.add(a["cs"])
             if rma is None:
                 continue
@@ -105,7 +116,10 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
             continue
         along, _ = airport.runway_frame(runway, pos["x"], pos["y"])
         spacings.append(along)
-        if along < wake.separation_nm(lead["actype"], follow["actype"]) - 0.05:
+        # Only pairs with a wake distance of their own count here; for the rest the radar minimum applies,
+        # and that is checked as separation above (2.5 NM on final where allowed).
+        need = wake.separation_nm(lead["actype"], follow["actype"])
+        if need > wake.RADAR_MINIMUM_NM and along < need - HORIZONTAL_TOLERANCE_NM:
             wake_violations += 1
 
     # Track miles and time from release to landing.

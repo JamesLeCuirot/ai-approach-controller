@@ -50,8 +50,8 @@ def _qnh(day: dict, t: float) -> float | None:
     return q.get(hour) or (next(iter(q.values())) if q else None)
 
 
-def _interp(track: list[list], t: float, elev: float):
-    ts = [p[0] for p in track]
+def _interp(track: list[list], t: float, elev: float, ts: list[float] | None = None):
+    ts = ts if ts is not None else [p[0] for p in track]
     k = bisect.bisect_right(ts, t)
     if k == 0 or k >= len(track):
         return None
@@ -61,8 +61,14 @@ def _interp(track: list[list], t: float, elev: float):
     lat = p[1] + (q[1] - p[1]) * f
     lon = p[2] + (q[2] - p[2]) * f
     gs = (p[4] or q[4] or 0) if p[4] is None or q[4] is None else p[4] + (q[4] - p[4]) * f
-    trk = q[5] if p[5] is None else (p[5] + heading_difference(q[5], p[5]) * f) % 360 if q[5] is not None else p[5]
-    return lat, lon, alt(p[3]) + (alt(q[3]) - alt(p[3])) * f, gs, trk or 0.0, p[6] or 0
+    if p[5] is not None and q[5] is not None:
+        trk = (p[5] + heading_difference(q[5], p[5]) * f) % 360
+    elif p[5] is not None or q[5] is not None:
+        trk = p[5] if p[5] is not None else q[5]
+    else:  # no track reported (some positions come by multilateration): take it from the positions
+        dlat, dlon = q[1] - p[1], (q[2] - p[2]) * math.cos(math.radians(p[1]))
+        trk = math.degrees(math.atan2(dlon, dlat)) % 360 if (dlat or dlon) else 0.0
+    return lat, lon, alt(p[3]) + (alt(q[3]) - alt(p[3])) * f, gs, trk, p[6] or 0
 
 
 def _phase(a: dict, t: float, along: float, lateral: float, trk: float, course: float) -> str:
@@ -86,7 +92,8 @@ def _describe_handover(a: dict, airport: Airport) -> str:
     brg = (math.degrees(math.atan2(x, y)) + 360) % 360
     side = "N NE E SE S SW W NW".split()[int(((brg + 22.5) % 360) // 45)]
     lvl = f"FL{round(h['alt'] / 100):03d}" if h["alt"] > airport.transition_altitude_ft else f"{h['alt']:,.0f} ft"
-    return f"{a['callsign']} ({a['type']}) handed over {d:.0f} NM {side}, {lvl}, {h['gs']:.0f} kt over the ground"
+    speed = f", {h['gs']:.0f} kt over the ground" if h.get("gs") is not None else ""
+    return f"{a['callsign']} ({a['type']}) handed over {d:.0f} NM {side}, {lvl}{speed}"
 
 
 def real_session(day: dict, airport: Airport, start: float, end: float, title: str = "") -> SessionLog:
@@ -123,19 +130,21 @@ def real_session(day: dict, airport: Airport, start: float, end: float, title: s
             log.add_event(a["landed_t"] - start, "note", a["callsign"], f"{a['callsign']} landed runway {a['runway']}")
     log.events.sort(key=lambda e: e["t"])
 
+    from approach.data.metar import qnh_altitude_ft
+
+    times = [[p[0] for p in a["track"]] for a in arrivals]
     t = start
     while t <= t_end:
         ac = []
-        for a in arrivals:
+        qnh = _qnh(day, t)
+        for a, ts in zip(arrivals, times):
             if not (a["handover"]["t"] <= t <= a["landed_t"]):
                 continue
-            s = _interp(a["track"], t, elev)
+            s = _interp(a["track"], t, elev, ts)
             if s is None:
                 continue
             lat, lon, alt, gs, trk, vs = s
-            from approach.data.metar import qnh_altitude_ft
-
-            alt = qnh_altitude_ft(alt, _qnh(day, t), airport.transition_altitude_ft)
+            alt = qnh_altitude_ft(alt, qnh, airport.transition_altitude_ft)
             x, y = airport.grid.to_xy(lat, lon)
             along, lateral = airport.runway_frame(a["runway"], x, y)
             ac.append({"cs": a["callsign"], "type": a["type"], "wake": a["wake"], "x": round(x, 3), "y": round(y, 3),

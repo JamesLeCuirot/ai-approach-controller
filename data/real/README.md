@@ -10,6 +10,9 @@ Every arrival at each benchmark airport on the chosen days, from real ADS-B trac
 | --- | --- |
 | `egkk/days.csv` | The 60 Gatwick days, chosen from Gatwick's weather reports by `scripts/choose_days.py`: storms, strong wind, easterly days (runway 08R), low visibility, busy summer days and ordinary days. One day in four of each kind is marked `test` and is never used for training |
 | `egkk/arrivals/<day>.json.gz` | Every arrival that day (UTC) |
+| `egkk/other/<day>.json.gz` | Everything else near Gatwick that day: Gatwick's departures (with take-off time and runway, a point every 8 s) and other traffic within 10 NM of either RMA, below FL150 (a point every 15 s) |
+| `egkk/real_controller_hours.csv` | The real controllers' scores for every hour of every day, measured exactly as simulated sessions are (`python -m approach.data.real_baseline`) |
+| `egkk/landing_gaps.csv` | Every pair of consecutive landings: how many departures went between them, and how far apart the two arrivals were (`python -m approach.data.other_traffic --gaps`) |
 
 Each arrival has:
 
