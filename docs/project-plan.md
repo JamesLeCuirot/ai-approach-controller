@@ -124,7 +124,7 @@ Design choices made up front, so later stages don't force a rewrite:
 
 - **Any number of aircraft.** Each aircraft is described separately and the model looks across them, instead of a fixed list of slots.
 - **Realistic timing.** The AI decides every 10 seconds or so, aircraft turn at the standard 3° per second, and simulated pilots take a few seconds to respond.
-- **Same physics in training and on screen.** The world the AI practises in is the world we watch. This is the main flaw in atc_app today.
+- **Same physics in training and on screen.** The world the AI practises in is the world we watch.
 - **Small model.** Tens of thousands of parameters, trained with PPO (a standard reinforcement-learning method). No GPU needed for the early stages.
 - **Scaled scores.** Raw scores are scaled down before training, the fix atc_app needed when its training became unstable.
 - **Any airport.** Airports plug in as data (runways, arrivals, holds, approaches), so Gatwick is the first airport rather than the only one. Naveen's JFK data and Geneva in stage 7 use the same code.
@@ -305,7 +305,7 @@ The work splits into four workstreams that one person each can own, so a team of
 | --- | --- | --- |
 | Simulated world | Gatwick airspace and procedures, scripted pilots, wind and storms | James, using the UK AIP and VATSIM material |
 | AI training | Scoring, the model, training runs | Open |
-| Data and baselines | Open ADS-B data for Gatwick, the real-controller baseline, the metrics | A data scientist in Jersey (to approach) |
+| Data and baselines | Open ADS-B data for Gatwick, the real-controller baseline, the metrics | Open |
 | Radar screen | The scope, the instruction transcript, the mode for human controllers | Open |
 
 A controller is the biggest gap. [Questions for a Gatwick controller](questions-for-a-gatwick-controller.md) lists what the simulator, safety check and scoring currently guess at, starting with whether arrivals can ever be vectored outside the RMA. VATSIM UK's Gatwick controllers and mentors are the first people to ask; a real controller later, to check realism before the benchmark is published.
