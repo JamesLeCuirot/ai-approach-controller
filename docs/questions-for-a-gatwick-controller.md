@@ -10,7 +10,7 @@ Please say whether an answer is real-world practice or VATSIM practice: both are
 | --- | --- | --- |
 | 1 | Can an arrival ever be vectored outside the RMA? If so, when, and what coordination does it need? | Never: once inside the RMA, a heading must keep it inside |
 | 2 | Are the RMA outlines in VATSIM UK's sector file (`RMA.txt`, westerlies and easterlies) right for real operations? | We use them as drawn |
-| 3 | Where do Gatwick's directors take arrivals over from London Terminal Control: at the holds, before them, at what levels? | The AI takes each arrival the first time it is within 40 NM and at or below FL150, so it does both jobs |
+| 3 | Where do Gatwick's directors take arrivals over from London Terminal Control: at the holds, before them, at what levels? How much does it vary with what the previous sector has arranged? | The AI takes each arrival the first time it is within 40 NM and at or below FL150, so it does both jobs. This is our assumption |
 | 4 | What minimum altitudes apply where? Inside the minimum-altitude area (`SMAA.txt`), the north-east and north-west parts, and outside it but inside the RMA | 2,000 ft inside the minimum-altitude area, 3,000 ft outside it |
 | 5 | Which neighbouring traffic do Gatwick arrivals have to stay clear of: Heathrow, Biggin Hill, Redhill, Shoreham, Farnborough, Gatwick's own departures? Where and at what levels? | Only the RMA keeps us clear; other traffic isn't in the simulator yet |
 
@@ -48,3 +48,10 @@ Please say whether an answer is real-world practice or VATSIM practice: both are
 | --- | --- | --- |
 | 19 | Watching a real busy hour next to our rules controller's version of the same traffic, what looks wrong? | The real tracks are drawn in grey behind ours |
 | 20 | What would you need to see before you'd trust an AI's vectoring? | Our scores: separation, RMA, minimum altitudes, spacing, track miles, holding, go-arounds |
+
+## Controller tools
+
+| # | Question | What we do now |
+| --- | --- | --- |
+| 21 | What are the STCA settings in Gatwick's approach airspace: look-ahead time, lateral and vertical thresholds, and anything that suppresses alerts, such as on final? | Not built yet. Plan: about 2 minutes ahead, 3 NM and 1,000 ft, on a prediction that knows each aircraft's cleared level |
+| 22 | Which support tools do Gatwick's approach controllers use (traffic probe, vertical assistance window, sector conflict tool, vector lines, halos), and how much do they lean on each? | Not built yet. Plan: the same tools for people and the AI, with the option of running the benchmark without them |
