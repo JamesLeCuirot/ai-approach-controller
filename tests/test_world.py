@@ -62,3 +62,15 @@ def test_pilot_delay_and_descent(airport):
     world.step(60)
     v = world.views()[0]
     assert 6000 < v.alt_ft < 7500 and v.vs_fpm < -1000
+
+
+def test_scripted_ils_approach_lands(airport):
+    from approach.run import run_scenario
+    from approach.scenarios import SCENARIOS
+
+    log = run_scenario(SCENARIOS["ils_capture"])
+    kinds = [e["kind"] for e in log.events]
+    assert "landed" in kinds and "go_around" not in kinds
+    texts = " ".join(e["text"] for e in log.events)
+    assert "localiser captured" in texts and "glide path captured" in texts
+    assert log.scores["landed"] == 1 and log.scores["stable_at_1000ft_pct"] == 100
