@@ -13,3 +13,9 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-06,stage1-01-real-wind,two_arrivals_darragh,rules,8398e43,2,2,0,0,6.1,6.1,36.7,15.5,0,0,100
 2026-11-06,stage1-01-real-wind,two_arrivals_isha,rules,8398e43,2,2,0,0,5.7,5.7,36.4,14.5,0,0,100
 2026-11-06,stage1-01-real-wind,three_arrivals_isha,rules,8398e43,3,3,0,0,5.2,5.6,37.6,13.3,0,0,100
+2026-11-06,stage1-02-real-traffic,real_2026-05-30T12,real,e2fca51,28,28,0,0,3.1,5.5,68.1,,,0,
+2026-11-06,stage1-02-real-traffic,rules_2026-05-30T12,rules,e2fca51,28,26,5,0,3.4,6.8,72.5,14.2,32,2,100
+2026-11-06,stage1-02-real-traffic,real_2024-06-01T12,real,e2fca51,28,28,0,0,3.5,5.5,72.8,,,0,
+2026-11-06,stage1-02-real-traffic,rules_2024-06-01T12,rules,e2fca51,28,28,11,1,2.4,6.4,81.2,16.0,32,5,100
+2026-11-06,stage1-02-real-traffic,real_2024-12-07T14,real,e2fca51,17,17,0,0,4.9,6.0,56.6,,,0,
+2026-11-06,stage1-02-real-traffic,rules_2024-12-07T14,rules,e2fca51,17,17,0,0,4.4,7.1,55.7,12.8,0,0,100
