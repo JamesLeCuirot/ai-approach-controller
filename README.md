@@ -6,7 +6,7 @@ An open benchmark for AI approach control, and a simulated approach radar where 
 
 The AI starts with two aircraft and speed control only, then grows stage by stage to full vectoring, wake turbulence spacing, holds, go-arounds, runway changes and storms. It is a small neural network trained with reinforcement learning in the simulator, on a laptop, with no paid APIs.
 
-**Status:** stage 0 prototype working. The rules controller lands arrivals released at WILLO and TIMBA on runway 26L, with no separation losses and at least 6 NM between landings, and the safety check blocks unsafe instructions. Arrivals are still made up; real OpenSky arrivals come next. There is no learned AI yet: that starts in stage 1.
+**Status:** stage 0 prototype working. The rules controller lands arrivals released at WILLO and TIMBA on runway 26L, with no separation losses and at least 6 NM between landings, and the safety check blocks unsafe instructions. Arrivals are still made up; real OpenSky arrivals come next. Stage 1 has started: any scenario can now fly in the real winds of a past hour, from NOAA's GFS weather model. There is no learned AI yet.
 
 ## Documents
 

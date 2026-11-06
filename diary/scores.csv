@@ -10,3 +10,6 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-06,stage0-06-stage0-gate,two_arrivals,rules,8886d8e,2,2,0,0,6.8,6.8,33.7,12.5,0,0,100
 2026-11-06,stage0-06-stage0-gate,three_arrivals,rules,8886d8e,3,3,0,0,6.4,6.5,34.8,11.3,0,0,100
 2026-11-06,stage0-06-stage0-gate,safety_demo,script,8886d8e,2,0,0,0,,,,1.5,4,0,
+2026-11-06,stage1-01-real-wind,two_arrivals_darragh,rules,8398e43,2,2,0,0,6.1,6.1,36.7,15.5,0,0,100
+2026-11-06,stage1-01-real-wind,two_arrivals_isha,rules,8398e43,2,2,0,0,5.7,5.7,36.4,14.5,0,0,100
+2026-11-06,stage1-01-real-wind,three_arrivals_isha,rules,8398e43,3,3,0,0,5.2,5.6,37.6,13.3,0,0,100
