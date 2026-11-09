@@ -25,6 +25,12 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
         from approach.controllers.rules import RulesController
 
         return RulesController(airport, scenario.runway)
+    if name == "rules_speed":  # stage 1a's competitor: fixed paths, speed only
+        from approach.controllers.rules import RulesController
+
+        c = RulesController(airport, scenario.runway, fixed_paths=True, speeds="slot")
+        c.name = "rules_speed"
+        return c
     return NoController()
 
 

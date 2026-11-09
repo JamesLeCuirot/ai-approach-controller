@@ -21,6 +21,14 @@ It follows the stage 0 spec (docs/stage0-gatwick-spec.md):
 6. Stay inside the RMA: outside it, an arrival goes direct to its hold (WILLO or
    TIMBA) and descends in the stack. It is vectored off the hold only when its slot
    can be made with a downwind that stays inside the RMA; until then it holds.
+7. Stay south of the extended centreline, away from the departure routes to the north:
+   every downwind is on the south side.
+
+Stage 1a options. With ``fixed_paths`` every arrival joins final at the same distance
+(no stretching), so speed is the only way to make the gaps. ``speeds`` chooses who sets
+speeds: "rules" (the stage 0 speeds above), "slot" (the speed-only competitor: every
+10 s it steps each aircraft's speed towards its landing slot, with the same steps and
+bands as the AI, from approach.controllers.speed) or "none" (the AI sets them).
 
 Positions are worked in the runway frame: ``along`` (NM out from the threshold on
 the extended centreline) and ``lateral`` (NM right of the centreline as seen by an
@@ -35,6 +43,7 @@ from dataclasses import dataclass
 from shapely.geometry import Point
 
 from approach import wake
+from approach.controllers import speed
 from approach.airports.model import Airport
 from approach.controllers.base import Controller
 from approach.geo import bearing_xy, distance_xy, heading_difference
@@ -42,6 +51,9 @@ from approach.instructions import Instruction
 
 D_JOIN_MIN_NM = 11.0
 D_JOIN_MAX_NM = 30.0
+D_JOIN_FIXED_NM = 11.0  # stage 1a: every arrival joins final here
+SPEED_ABSORB_S = 90.0  # stage 1a: delay speed alone is expected to absorb, so leave the hold no earlier than this
+SLOT_DEADBAND_S = 15.0  # the speed-only competitor leaves a speed alone within this of the slot
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
@@ -81,13 +93,19 @@ class Plan:
     alt_cmd: float | None = None
     spd_cmd: float | None = None
     retry_t: float = -1e9  # after a blocked altitude, wait before asking again
+    slot_t: float = 0.0  # the landing time that keeps the gap behind the aircraft ahead
     warned: bool = False
 
 
 class RulesController(Controller):
     name = "rules"
 
-    def __init__(self, airport: Airport, runway: str):
+    def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules"):
+        if speeds not in ("rules", "slot", "none"):
+            raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
+        self.fixed_paths = fixed_paths
+        self.speeds = speeds
+        self.last_speed_t = -1e9
         self.airport = airport
         self.runway = airport.runways[runway]
         self.rwy = runway
@@ -98,6 +116,7 @@ class RulesController(Controller):
         self.rma = airport.rma(runway)
         self._max_join: dict[float, float] = {}
         self.went_around: set[str] = set()
+        self.south = self._south_side()
 
     # ---- the RMA ---------------------------------------------------------------
     def _inside(self, x: float, y: float, margin: float = 0.0) -> bool:
@@ -118,10 +137,15 @@ class RulesController(Controller):
             self._max_join[side] = best if best is not None else -1.0
         return self._max_join[side]
 
+    def _south_side(self) -> float:
+        """The side of the centreline (-1 left, +1 right, as seen on final) that lies to the south."""
+        _, y_left = self.airport.centreline_point(self.rwy, 10.0, -1.0)
+        _, y_right = self.airport.centreline_point(self.rwy, 10.0, 1.0)
+        return -1.0 if y_left < y_right else 1.0
+
     def _side(self, v) -> float:
-        """The aircraft's own side of the centreline if the RMA has room for a downwind there, else the other."""
-        own = -1.0 if v.lateral < 0 else 1.0
-        return own if self.max_join(own) >= self.max_join(-own) or self.max_join(own) >= D_JOIN_MIN_NM + 4 else -own
+        """Always the south side: the departure routes are to the north."""
+        return self.south
 
     # ---- geometry --------------------------------------------------------------
     def _points(self, p: Plan) -> dict[str, tuple[float, float]]:
@@ -196,7 +220,12 @@ class RulesController(Controller):
                 if prev_t is not None:
                     gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
                     need = prev_t + gap_nm / 150.0 * 3600.0
-                can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
+                if self.fixed_paths:
+                    probe.d_join = D_JOIN_FIXED_NM
+                    can_go = (longest >= D_JOIN_FIXED_NM and self._inside(v.x, v.y)
+                              and t + self._eta(v, probe) + SPEED_ABSORB_S >= need)
+                else:
+                    can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
                 if can_go:
                     p.stage, p.side, p.holding = "downwind", side, False
                     ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
@@ -205,8 +234,18 @@ class RulesController(Controller):
                     p.hdg_cmd = None
                 else:
                     p.landing_t = max(need, t + self._eta(v, probe, D_JOIN_MIN_NM))
+                    p.slot_t = p.landing_t
                     prev_t, prev_type = p.landing_t, p.actype
                     continue
+            if self.fixed_paths and p.stage != "cleared":
+                p.d_join = D_JOIN_FIXED_NM
+                p.landing_t = t + self._eta(v, p)
+                p.slot_t = p.landing_t
+                if prev_t is not None:
+                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
+                    p.slot_t = max(p.landing_t, prev_t + gap_nm / 150.0 * 3600.0)
+                prev_t, prev_type = p.slot_t, p.actype
+                continue
             if p.stage == "downwind" and prev_t is not None:
                 gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
                 need = prev_t + gap_nm / 150.0 * 3600.0  # landing time that keeps the gap
@@ -227,6 +266,7 @@ class RulesController(Controller):
             elif p.stage == "downwind":
                 p.d_join = D_JOIN_MIN_NM
             p.landing_t = t + self._eta(v, p)
+            p.slot_t = p.landing_t
             prev_t, prev_type = p.landing_t, p.actype
 
     # ---- instructions ----------------------------------------------------------
@@ -282,7 +322,7 @@ class RulesController(Controller):
                 if not p.direct_sent:
                     self._say(p, "direct", p.hold_fix)
                     p.direct_sent = True
-                if p.spd_cmd is None and v.cas_kt > SPEED_HOLD + 5:
+                if self.speeds == "rules" and p.spd_cmd is None and v.cas_kt > SPEED_HOLD + 5:
                     self._say(p, "speed", SPEED_HOLD)
                 if not p.holding and distance_xy(v.x, v.y, fx, fy) < 3.0:
                     self._say(p, "hold", p.hold_fix)
@@ -306,7 +346,8 @@ class RulesController(Controller):
                     p.stage = "base"
                     self._steer(t, p, v, pts["B"], force=True)
                     self._say(p, "altitude", 3000)
-                    self._say(p, "speed", SPEED_BASE)
+                    if self.speeds == "rules":
+                        self._say(p, "speed", SPEED_BASE)
             elif p.stage == "base":
                 if p.alt_cmd != 3000 and t >= p.retry_t:
                     self._say(p, "altitude", 3000)
@@ -317,9 +358,43 @@ class RulesController(Controller):
                     p.stage = "cleared"
                     self._say(p, "heading", self._snap(icpt))
                     self._say(p, "cleared_ils", self.rwy)
-                    self._say(p, "speed", SPEED_FINAL)
-        self._final_spacing(views)
+                    if self.speeds == "rules":
+                        self._say(p, "speed", SPEED_FINAL)
+        if self.speeds == "rules":
+            self._final_spacing(views)
+        elif self.speeds == "slot" and t - self.last_speed_t >= speed.DECISION_S:
+            self.last_speed_t = t
+            self._slot_speeds(views)
         return self.out
+
+    def stage_of(self, cs: str) -> str | None:
+        """The plan stage of an aircraft (inbound, downwind, base, cleared), for the speed bands."""
+        p = self.plans.get(cs)
+        return p.stage if p else None
+
+    def _slot_speeds(self, views: dict) -> None:
+        """The speed-only competitor: step each aircraft's speed towards making its landing slot.
+
+        Early for its slot: slow down; late: speed up; within SLOT_DEADBAND_S: back towards
+        the standard speed for its stage. One step (10 or 20 kt) per aircraft every 10 s.
+        """
+        for p in self.plans.values():
+            v = views.get(p.cs)
+            limits = speed.band(p.stage, v.along) if v else None
+            if limits is None:
+                continue
+            early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
+            if early > SLOT_DEADBAND_S:
+                target = limits[0]
+            elif early < -SLOT_DEADBAND_S:
+                target = limits[1]
+            else:
+                target = speed.STANDARD_KT[p.stage]
+            diff = target - v.target_spd
+            step = 0 if abs(diff) < 5 else int(max(-20, min(20, round(diff / 10.0) * 10)))
+            new = speed.apply_step(v.target_spd, step, limits)
+            if abs(new - v.target_spd) >= 5:
+                self._say(p, "speed", new)
 
     def _stack_levels(self, views: dict) -> None:
         """Each stack fills from the bottom: the earliest in the sequence gets the lowest level."""

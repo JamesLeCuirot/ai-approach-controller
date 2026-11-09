@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import io
 import math
+import os
 import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -44,18 +45,26 @@ MIN_FINAL_GAP_NM = 2.0  # tower sends the follower around below this
 MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilot still captures
 
 
-def _bluesky():
-    """Start BlueSky once per process (headless), or reset it for a new session."""
+# BlueSky's time step. Its own default is 0.05 s; 0.5 s gives the same results on the stage 0 tests and the Storm
+# Darragh hour, about ten times faster, and it is used for training and the benchmark alike (same physics in both).
+SIM_DT_S = float(os.environ.get("APPROACH_SIM_DT", "0.5"))
+
+
+def _bluesky(sim_dt: float = SIM_DT_S):
+    """Start BlueSky once per process (headless), or reset it for a new session, with the given time step."""
     global _BS_READY
     import bluesky as bs
 
-    if not _BS_READY:
-        with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()):
+        if not _BS_READY:
             bs.init(mode="sim", detached=True)
-        _BS_READY = True
-    else:
-        with contextlib.redirect_stdout(io.StringIO()):
-            bs.sim.reset()
+            _BS_READY = True
+        bs.settings.simdt = sim_dt  # reset() reads it
+        bs.sim.reset()
+        from bluesky.core import simtime
+
+        simtime.setdt(sim_dt)
+        bs.sim.simdt = sim_dt
     return bs
 
 
@@ -121,8 +130,8 @@ class Pilot:
 
 class World:
     def __init__(self, airport: Airport, runway: str, seed: int = 1, pilot_delay_s: tuple[float, float] = (3.0, 6.0),
-                 wind: "WindProfile | None" = None):
-        self.bs = _bluesky()
+                 wind: "WindProfile | None" = None, sim_dt: float | None = None):
+        self.bs = _bluesky(sim_dt or SIM_DT_S)
         from bluesky import stack
 
         self.stack = stack.stack
@@ -131,6 +140,7 @@ class World:
         self.rng = random.Random(seed)
         self.pilot_delay_s = pilot_delay_s
         self.pilots: dict[str, Pilot] = {}
+        self._last_hdg: dict[str, float] = {}
         self.t = 0.0
         self.last_landing_t = -1e9
         self.steps_per_second = max(1, round(1.0 / self.bs.sim.simdt))
@@ -218,13 +228,21 @@ class World:
             events += self._pilots_tick()
         return events
 
+    def _hdg(self, cs: str, hdg: float, force: bool = False) -> None:
+        """Set an autopilot heading, skipping repeats: BlueSky does a wind calculation for every heading command."""
+        hdg %= 360.0
+        last = self._last_hdg.get(cs)
+        if force or last is None or abs(heading_difference(hdg, last)) >= 0.5:
+            self.stack(f"HDG {cs} {hdg:.1f}")
+            self._last_hdg[cs] = hdg
+
     def _apply(self, p: Pilot, instr: Instruction) -> None:
         cs = p.cs
         if instr.kind == "heading":
             p.direct_fix = None
             p.hold_fix = None  # a heading takes it out of the hold
             if not p.loc:
-                self.stack(f"HDG {cs} {float(instr.value):.1f}")
+                self._hdg(cs, float(instr.value), force=True)
         elif instr.kind == "altitude":
             if not p.gs:
                 self.stack(f"ALT {cs} {float(instr.value):.0f}")
@@ -254,7 +272,7 @@ class World:
                 self._hold_tick(p, v)
             elif p.direct_fix and p.direct_fix in self.airport.fixes:
                 fx, fy = self.airport.xy(self.airport.fixes[p.direct_fix])
-                self.stack(f"HDG {cs} {self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)):.1f}")
+                self._hdg(cs, self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)))
             if p.phase == "go_around":
                 events += self._go_around_tick(p, v)
             elif p.cleared:
@@ -277,20 +295,20 @@ class World:
         leg_s = 60.0 if v.alt_ft <= 14000 else 90.0
         dist = math.hypot(fx - v.x, fy - v.y)
         if p.hold_state in ("to_fix", "inbound"):
-            self.stack(f"HDG {p.cs} {self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)):.1f}")
+            self._hdg(p.cs, self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)))
             if dist < 0.7:
                 p.hold_state = "turn_out"
-                self.stack(f"HDG {p.cs} {(inbound + 90.0 * side) % 360:.1f}")  # turn the published way
+                self._hdg(p.cs, (inbound + 90.0 * side) % 360)  # turn the published way
         elif p.hold_state == "turn_out":
             mid = (inbound + 90.0 * side) % 360
             if abs(heading_difference(v.hdg, mid)) < 15:
-                self.stack(f"HDG {p.cs} {outbound:.1f}")
+                self._hdg(p.cs, outbound)
             if abs(heading_difference(v.hdg, outbound)) < 5:
                 p.hold_state, p.hold_t = "outbound", self.t
         elif p.hold_state == "outbound":
             if self.t - p.hold_t >= leg_s:
                 p.hold_state = "turn_in"
-                self.stack(f"HDG {p.cs} {(outbound + 90.0 * side) % 360:.1f}")
+                self._hdg(p.cs, (outbound + 90.0 * side) % 360)
         elif p.hold_state == "turn_in":
             mid = (outbound + 90.0 * side) % 360
             if abs(heading_difference(v.hdg, mid)) < 15:
@@ -323,7 +341,7 @@ class World:
                 events.append({"kind": "pilot", "cs": p.cs, "text": f"{p.cs} localiser captured {v.along:.1f} NM out"})
         if p.loc:
             correction = max(-30.0, min(30.0, v.lateral * 60.0))
-            self.stack(f"HDG {p.cs} {self.heading_for_track(v, (c - correction) % 360):.1f}")
+            self._hdg(p.cs, self.heading_for_track(v, (c - correction) % 360))
             if p.phase == "vectoring" and abs(v.lateral) < 0.15 and abs(angle) < 10:
                 p.phase = "established"
             gp = rwy.glide_path_altitude_ft(max(v.along, 0.0))
@@ -369,7 +387,7 @@ class World:
         p.phase, p.reason, p.cleared, p.loc, p.gs, p.go_around_stage = "go_around", reason, None, False, False, 1
         p.pending.clear()
         p.target_hdg, p.target_alt, p.target_spd = self.runway.course_true, 3000, 200
-        self.stack(f"HDG {p.cs} {self.runway.course_true:.1f}")
+        self._hdg(p.cs, self.runway.course_true)
         self.stack(f"VS {p.cs} 2000")
         self.stack(f"ALT {p.cs} 3000")
         self.stack(f"SPD {p.cs} 200")
@@ -381,7 +399,7 @@ class World:
         if p.go_around_stage == 1 and v.alt_ft >= 2000 and v.along < 1.0:
             p.go_around_stage = 2
             p.target_hdg = self.airport.magnetic_to_true(178)
-            self.stack(f"HDG {p.cs} {p.target_hdg:.1f}")
+            self._hdg(p.cs, p.target_hdg)
         if p.go_around_stage == 2 and v.alt_ft >= 2800:
             p.phase, p.go_around_stage = "vectoring", 0
             p.stable_checked = False
