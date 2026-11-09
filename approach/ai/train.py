@@ -35,7 +35,7 @@ RUNS = ROOT / "runs"
 RUNS_CSV = ROOT / "diary" / "training-runs.csv"
 RUN_FIELDS = ["run", "started", "code_version", "decisions", "envs", "seed", "headstart_episodes", "status",
               "finished", "hours", "notes"]
-CHECKPOINTS = {10_000: "10k", 100_000: "100k", 300_000: "300k"}
+CHECKPOINTS = {10_000: "10k", 100_000: "100k", 300_000: "300k", 500_000: "500k", 750_000: "750k"}
 LATEST_EVERY = 50_000  # also save model_latest.zip this often, to resume from
 PPO_SETTINGS = dict(n_steps=512, batch_size=256, n_epochs=5, learning_rate=2e-4, gamma=0.99, gae_lambda=0.95,
                     clip_range=0.15, ent_coef=0.005, vf_coef=0.5, max_grad_norm=0.5)

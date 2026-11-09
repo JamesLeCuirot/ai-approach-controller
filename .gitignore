@@ -35,3 +35,4 @@ outputs/
 
 # Temporary recordings made while recording a milestone
 media/
+runs/**/model_latest.zip
