@@ -1,2 +1,3 @@
 run,started,code_version,decisions,envs,seed,headstart_episodes,status,finished,hours,notes
 stage1a-01,2026-11-09 16:18 UTC,4e7f6c5,1000000,4,1,32,stopped at about 15k decisions,,,"Stopped: the four parallel simulations ran in lockstep, and a step that skipped through a quiet spell made the others wait, so it ran at about 16 decisions a second (17 hours for a million). Skipping is now capped per step; replaced by stage1a-02. Its head start agreed with the speed-only controller 89% of the time."
+stage1a-02,2026-11-09 16:35 UTC,ed513da,1000000,4,1,32,running,,,"First full stage 1a run: head start from the speed-only rules controller, then PPO. Hours drawn from those whose winds are downloaded (the rest still downloading)."
