@@ -21,7 +21,11 @@ models/
 *.pt
 *.pth
 *.zip
-runs/
+# Training runs are kept on the record (run.json, episode logs, saved AIs, tests); their working logs aren't
+!runs/**/*.zip
+runs/*.log
+runs/**/*.log
+runs/competitor/
 outputs/
 
 # OS / editor
