@@ -68,6 +68,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
+On a computer without a GPU, install the CPU build of PyTorch first; the default one downloads several gigabytes of GPU libraries:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
 ```bash
 pip install -r requirements.txt
 ```

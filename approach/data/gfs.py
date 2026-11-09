@@ -192,10 +192,44 @@ def fetch_for_airport(valid: datetime, airport) -> WindProfile:
     return fetch(valid, airport.reference.lat, airport.reference.lon, airport=airport.icao)
 
 
+def _prefetch_one(hour: str) -> str:
+    from approach.airports import egkk
+
+    try:
+        fetch_for_airport(parse_time(hour), egkk.load())
+        return ""
+    except Exception as e:  # noqa: BLE001 - report and carry on with the other hours
+        return f"{hour}: {e}"
+
+
+def prefetch(splits: set[str], workers: int = 3) -> None:
+    """Download the winds for every hour of real traffic on the chosen days (training needs them all)."""
+    import csv
+    from multiprocessing import Pool
+
+    from approach.data.arrivals import REAL_DIR
+
+    rows = csv.DictReader((REAL_DIR / "egkk" / "real_controller_hours.csv").open())
+    hours = sorted({f"{r['day']}T{int(r['hour']):02d}" for r in rows if r["split"] in splits})
+    todo = [h for h in hours if not (CACHE_DIR / f"egkk_{h.replace('-', '').replace('T', '')}.json").is_file()]
+    print(f"{len(hours)} hours, {len(todo)} to download", flush=True)
+    with Pool(workers) as pool:
+        for k, err in enumerate(pool.imap_unordered(_prefetch_one, todo), 1):
+            if err:
+                print(err, flush=True)
+            if k % 50 == 0:
+                print(f"{k}/{len(todo)}", flush=True)
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Download GFS winds for one hour at Gatwick and print the profile")
-    ap.add_argument("time", help="UTC hour, e.g. 2025-01-15T12")
+    ap = argparse.ArgumentParser(description="Download GFS winds for one hour at Gatwick and print the profile, "
+                                             "or with --prefetch for every hour of real traffic on the chosen days")
+    ap.add_argument("time", nargs="?", help="UTC hour, e.g. 2025-01-15T12")
+    ap.add_argument("--prefetch", nargs="+", metavar="SPLIT", help="splits to download winds for, e.g. train test")
     args = ap.parse_args()
+    if args.prefetch:
+        prefetch(set(args.prefetch))
+        return
     from approach.airports import egkk
 
     airport = egkk.load()

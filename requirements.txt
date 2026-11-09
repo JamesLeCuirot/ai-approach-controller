@@ -2,7 +2,8 @@
 bluesky-simulator==1.1.1
 bluesky-gym==0.2.0
 
-# Reinforcement learning
+# Reinforcement learning. Without a GPU, install the much smaller CPU build of PyTorch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 torch>=2.2
 stable-baselines3>=2.3
 gymnasium>=0.29
