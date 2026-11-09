@@ -121,6 +121,7 @@ def main() -> None:
     ap.add_argument("--notes", default="")
     args = ap.parse_args()
 
+    import torch
     from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import BaseCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecNormalize
@@ -128,6 +129,7 @@ def main() -> None:
     from approach.ai.env import N_FEATURES, N_MAX, REWARD, SpeedEnv, training_hours
     from approach.ai.policy import POLICY_KWARGS
 
+    torch.set_num_threads(1)  # a small network: extra threads only compete with the simulations for the cores
     out = RUNS / args.run
     out.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc)
@@ -194,7 +196,7 @@ def main() -> None:
             for i, (done, info) in enumerate(zip(self.locals["dones"], self.locals["infos"])):
                 self.rewards[i] += float(venv.get_original_reward()[i])
                 if done and "counts" in info:
-                    row = {"decisions": self.num_timesteps, **episode_row(info, self.rewards[i])}
+                    row = {"trained_decisions": self.num_timesteps, **episode_row(info, self.rewards[i])}
                     if writer is None:
                         writer = csv.DictWriter(episodes_csv, fieldnames=list(row))
                         writer.writeheader()

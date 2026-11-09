@@ -58,7 +58,10 @@ def chart(run: Path, out: Path) -> None:
     teacher = _rows(run / "teacher_episodes.csv")
     if not rows:
         raise SystemExit(f"no episodes yet in {run}")
-    x = np.array([int(r["decisions"]) for r in rows])
+    if "trained_decisions" in rows[0]:
+        x = np.array([int(r["trained_decisions"]) for r in rows])
+    else:  # run stage1a-01 logged each episode's own decisions: add them up for the running total
+        x = np.cumsum([int(r["decisions"]) for r in rows])
     m, t = _measures(rows), _measures(teacher) if teacher else None
     panels = [("gap", "Distance from the target gap\nat landing (NM)"),
               ("losses", "Separation losses\nper 100 arrivals"),

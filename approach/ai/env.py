@@ -57,6 +57,7 @@ FEATURES = (
 )
 N_FEATURES = len(FEATURES)
 TARGET_BUFFER_NM = 0.5  # the gap aimed for: the minimum plus this
+MAX_SKIP = 2  # extra 10 s spells a step may skip when no aircraft is in the sequence
 LEAVE_ALONE = speed.STEPS_KT.index(0)
 
 REWARD = {
@@ -322,7 +323,9 @@ class SpeedEnv(gym.Env if gym else object):
             r_adv, _ = self._advance(speed.DECISION_S)
             r += r_adv
             obs = self._observe()
-            while not self.slots and not self.session.done:
+            for _ in range(MAX_SKIP):  # skip a little through quiet spells, but keep steps alike in cost:
+                if self.slots or self.session.done:  # parallel training waits for the slowest simulation
+                    break
                 r_adv, _ = self._advance(speed.DECISION_S)
                 r += r_adv
                 obs = self._observe()

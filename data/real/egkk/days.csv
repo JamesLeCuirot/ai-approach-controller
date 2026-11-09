@@ -69,3 +69,5 @@ day,kind,split,mean_wind,max_gust_kt,easterly_share,low_vis_reports,note
 2026-10-31,recent,recent,070/5,0,0.53,0,
 2026-11-01,recent,recent,019/6,0,0.13,0,
 2026-11-02,recent,recent,017/10,22,0.55,0,
+2026-11-03,recent,recent,037/12,0,0.88,0,
+2026-11-04,recent,recent,071/10,0,1.00,0,
