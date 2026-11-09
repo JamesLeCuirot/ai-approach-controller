@@ -10,6 +10,10 @@ controller, with no separation losses, no wake infringements and no more speed i
 
 Writes <model>.eval.csv (one row per session and controller) and <model>.eval.json (totals and
 the gate), next to the model.
+
+The speed-only controller's results on a set of sessions don't change until its code does, so
+they are saved in runs/competitor/ and reused: each later test only flies the AI, which halves
+the time. The saved results are keyed on the sessions and on the code that flies them.
 """
 
 from __future__ import annotations
@@ -45,8 +49,26 @@ def test_hours(splits: tuple[str, ...] = ("test", "recent"), min_arrivals: int =
     return out
 
 
+COMPETITOR_DIR = REAL_DIR.parents[1] / "runs" / "competitor"
+CODE_FILES = ("approach/controllers", "approach/sim", "approach/ai/env.py", "approach/wake.py", "approach/scoring.py",
+              "approach/data/real_sessions.py", "approach/airports")
+
+
+def code_hash() -> str:
+    """A fingerprint of the code that flies and scores the competitor's sessions."""
+    import hashlib
+
+    root = REAL_DIR.parents[1]
+    h = hashlib.sha256()
+    for name in CODE_FILES:
+        path = root / name
+        for f in sorted(path.rglob("*.py")) if path.is_dir() else [path]:
+            h.update(f.read_bytes())
+    return h.hexdigest()[:12]
+
+
 def _run(args: tuple) -> list[dict]:
-    model_path, sessions = args
+    model_path, sessions, with_competitor = args
     from approach.ai.env import SpeedEnv, load_policy
     from approach.ai.train import episode_row
 
@@ -57,7 +79,7 @@ def _run(args: tuple) -> list[dict]:
         try:
             pair = []
             for who in ("rules_speed", "ai"):
-                if who == "ai" and policy is None:
+                if (who == "ai" and policy is None) or (who == "rules_speed" and not with_competitor):
                     continue
                 options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"],
                            "teacher": who == "rules_speed"}
@@ -124,10 +146,24 @@ def main() -> None:
         for err in pool.imap_unordered(_prefetch_one, needed):
             if err:
                 print("winds:", err, flush=True)
-    chunks = [(args.model, sessions[k::args.workers]) for k in range(args.workers)]
+    cache = COMPETITOR_DIR / f"seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
+    saved = list(csv.DictReader(cache.open())) if cache.is_file() else []
+    if saved:
+        print(f"Reusing the speed-only controller's results from {cache.name}", flush=True)
+    chunks = [(args.model, sessions[k::args.workers], not saved) for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
-    rows.sort(key=lambda r: (r["session"], r["controller"]))
+    if saved:
+        flown = {int(r["session"]) for r in rows}
+        rows += [r for r in saved if int(r["session"]) in flown]  # like for like: only sessions the AI flew
+    else:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        competitor = [r for r in rows if r["controller"] == "rules_speed"]
+        with cache.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(competitor[0]))
+            w.writeheader()
+            w.writerows(competitor)
+    rows.sort(key=lambda r: (int(r["session"]), r["controller"]))
     base = Path(args.out or (args.model or "runs/rules_speed") ).with_suffix("")
     with Path(f"{base}.eval.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
