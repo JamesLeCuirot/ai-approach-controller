@@ -33,11 +33,12 @@ def test_speed_env_runs_a_real_window():
 
 
 @needs_gym
-def test_speed_steps_stay_in_the_band():
+def test_speeds_stay_in_the_band():
     from approach.controllers import speed
 
-    assert speed.apply_step(220, 20, (180, 250)) == 240
-    assert speed.apply_step(250, 20, (180, 250)) == 250
-    assert speed.apply_step(280, -20, (180, 250)) == 250  # above the band: straight to its edge
-    assert speed.apply_step(220, 0, (160, 180)) == 180  # entering base faster than its band
+    assert speed.SPEEDS_KT[0] == 160 and speed.SPEEDS_KT[-1] == 250
+    assert speed.in_band(250, (160, 180)) == 180  # entering base faster than its band
+    assert speed.in_band(160, (180, 250)) == 180
+    assert speed.in_band(214, (180, 250)) == 210  # on a 10 kt value
+    assert speed.SPEEDS_KT[speed.nearest_choice(222)] == 220
     assert speed.band("cleared", 6.0) is None  # inside 7 NM the pilot flies the approach speeds

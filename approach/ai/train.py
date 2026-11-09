@@ -73,32 +73,54 @@ def _teacher_episodes(args: tuple[int, int, bool]) -> tuple[list, list, list]:
     return obs_all, act_all, rows
 
 
-def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 8, batch: int = 256, lr: float = 1e-3) -> float:
-    """Behaviour cloning: train the policy to choose what the speed-only rules controller chose.
+def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
+              change_weight: float = 5.0) -> dict:
+    """Behaviour cloning: train the policy to give the speeds the speed-only rules controller gave.
 
-    Returns how often it now agrees with that controller, on the aircraft it controls."""
+    Only aircraft the AI controls count, and the decisions where the controller changed a speed
+    count change_weight times as much: most of the time it leaves a speed as it is, and copying
+    that alone teaches nothing useful. Returns how often the AI now agrees with the controller,
+    overall and on its changes.
+    """
     import torch
+
+    from approach.ai.env import FEATURES
+    from approach.controllers import speed
 
     policy = model.policy
     opt = torch.optim.Adam(policy.parameters(), lr=lr)
     obs_t = torch.as_tensor(obs, dtype=torch.float32)
     act_t = torch.as_tensor(actions, dtype=torch.int64)
+    speeds = torch.as_tensor(speed.SPEEDS_KT, dtype=torch.float32)
+    controlled = obs_t[..., FEATURES.index("controllable")] > 0.5
+    assigned = obs_t[..., FEATURES.index("assigned_kt")] * 250.0
+    changed = controlled & ((speeds[act_t] - assigned).abs() >= 5)
+    weight = controlled.float() * (1.0 + (change_weight - 1.0) * changed.float())
+
+    def slot_log_probs(o, a):
+        dist = policy.get_distribution(o)
+        return torch.stack([d.log_prob(x) for d, x in zip(dist.distribution, torch.unbind(a, dim=1))], dim=1)
+
     n = len(obs_t)
     for _ in range(epochs):
         perm = torch.randperm(n)
         for k in range(0, n, batch):
             idx = perm[k:k + batch]
-            dist = policy.get_distribution(obs_t[idx])
-            loss_t = -dist.log_prob(act_t[idx]).mean()
+            w = weight[idx]
+            if w.sum() == 0:
+                continue
+            loss_t = -(slot_log_probs(obs_t[idx], act_t[idx]) * w).sum() / w.sum()
             opt.zero_grad()
             loss_t.backward()
             opt.step()
-    with torch.no_grad():  # agreement on the aircraft the AI actually controls (empty slots don't count)
-        sample = obs_t[:8192]
-        pred = policy.get_distribution(sample).mode()
-        mask = sample[..., 1] > 0.5
-        agree = float((pred == act_t[:8192])[mask].float().mean()) if mask.any() else float("nan")
-    return agree
+    with torch.no_grad():
+        sample = slice(0, min(n, 8192))
+        pred = policy.get_distribution(obs_t[sample]).mode()
+        same = pred == act_t[sample]
+        c, ch = controlled[sample], changed[sample]
+        return {"controlled": round(float(same[c].float().mean()), 3) if c.any() else None,
+                "changes": round(float(same[ch].float().mean()), 3) if ch.any() else None,
+                "share_of_changes": round(float(ch.sum() / max(c.sum(), 1)), 3)}
 
 
 def write_run_row(row: dict) -> None:
@@ -169,15 +191,16 @@ def main() -> None:
     teacher_rows = [r for _, _, rows in parts for r in rows]
     agree = headstart(model, obs, acts)
     model.save(out / "model_headstart.zip")
-    record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": round(agree, 3),
+    record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
                            "minutes": round((time.time() - t0) / 60, 1)}
     with (out / "teacher_episodes.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(teacher_rows[0]))
         w.writeheader()
         w.writerows(teacher_rows)
     (out / "run.json").write_text(json.dumps(record, indent=2))
-    print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; "
-          f"agrees with the speed-only controller {agree:.0%} of the time", flush=True)
+    print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
+          f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
+          f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
 
     episodes_csv = (out / "episodes.csv").open("w", newline="")
     writer = None

@@ -8,9 +8,9 @@ clearances on fixed paths (every arrival joins final at 11 NM, downwinds south o
 centreline), and the AI sets the speeds.
 
 Every 10 seconds the AI looks at the aircraft in the landing sequence, in landing order, and
-for each picks a step: slow by 20 or 10 kt, leave it alone, or speed up by 10 or 20 kt. The
-published speed bands still apply (approach.controllers.speed), and every instruction goes
-through the safety check. It sees each aircraft in relative terms: track miles to go, the gap
+gives each a speed, as a controller says it ("speed 180"): 160 to 250 kt in 10 kt values,
+inside the published band for its stage (approach.controllers.speed). Giving its current
+speed leaves it alone. Every instruction goes through the safety check. It sees each aircraft in relative terms: track miles to go, the gap
 to the aircraft ahead and how fast it is closing, the gap it needs, the gap behind, its wake
 category, its height against the 3-to-1 profile, its margins, its position measured from the
 runway, and the wind along the runway.
@@ -58,7 +58,6 @@ FEATURES = (
 N_FEATURES = len(FEATURES)
 TARGET_BUFFER_NM = 0.5  # the gap aimed for: the minimum plus this
 MAX_SKIP = 2  # extra 10 s spells a step may skip when no aircraft is in the sequence
-LEAVE_ALONE = speed.STEPS_KT.index(0)
 
 REWARD = {
     "landing": 1.0,  # each aircraft landed
@@ -153,6 +152,9 @@ def observe(views: list, controller: RulesController, t: float) -> tuple[np.ndar
 def speed_instructions(action, slots: list[str], views: list, controller: RulesController) -> list[tuple[Instruction, bool]]:
     """Speed instructions from the AI's choices, as (instruction, chosen by the AI rather than a band edge).
 
+    An aircraft whose speed is outside its band (on entering a new stage) is brought inside it
+    whatever the choice, and that doesn't count as the AI's instruction.
+
     Aircraft not yet in the sequence (inbound or holding) are given the standard speed for
     their stage if they are outside its band.
     """
@@ -163,10 +165,10 @@ def speed_instructions(action, slots: list[str], views: list, controller: RulesC
         limits = speed.band(stage, v.along) if v and stage else None
         if limits is None:
             continue
-        step = speed.STEPS_KT[int(action[i])]
-        new = speed.apply_step(v.target_spd, step, limits)
+        new = speed.in_band(speed.SPEEDS_KT[int(action[i])], limits)
         if abs(new - v.target_spd) >= 5:
-            out.append((Instruction(cs, "speed", new), step != 0))
+            procedural = not limits[0] <= v.target_spd <= limits[1]
+            out.append((Instruction(cs, "speed", new), not procedural))
     for cs, v in by_cs.items():
         if cs in slots or controller.stage_of(cs) != "inbound":
             continue
@@ -177,13 +179,18 @@ def speed_instructions(action, slots: list[str], views: list, controller: RulesC
 
 
 def teacher_action(slots: list[str], views: list, controller: RulesController) -> np.ndarray:
-    """The speed-only rules controller's choice for each slot, as the AI's actions."""
+    """The speed-only rules controller's choice for each slot, as the AI's actions.
+
+    Empty slots and aircraft whose speed isn't the controller's to give get their current speed.
+    """
     by_cs = {v.cs: v for v in views}
-    action = np.full(N_MAX, LEAVE_ALONE, dtype=np.int64)
+    action = np.full(N_MAX, speed.nearest_choice(speed.STANDARD_KT["downwind"]), dtype=np.int64)
     for i, cs in enumerate(slots):
         p, v = controller.plans.get(cs), by_cs.get(cs)
-        if p is not None and v is not None:
-            action[i] = speed.STEPS_KT.index(controller.slot_step(p, v))
+        if p is None or v is None:
+            continue
+        target = controller.slot_target(p, v)
+        action[i] = speed.nearest_choice(target if target is not None else v.target_spd)
     return action
 
 
@@ -248,7 +255,7 @@ class SpeedEnv(gym.Env if gym else object):
         self.rng = random.Random(seed)
         self._days: dict[str, dict] = {}
         self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, N_FEATURES), dtype=np.float32)
-        self.action_space = spaces.MultiDiscrete([len(speed.STEPS_KT)] * N_MAX)
+        self.action_space = spaces.MultiDiscrete([len(speed.SPEEDS_KT)] * N_MAX)
         self.session: LiveSession | None = None
         self.slots: list[str] = []
 

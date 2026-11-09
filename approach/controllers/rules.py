@@ -27,8 +27,10 @@ It follows the stage 0 spec (docs/stage0-gatwick-spec.md):
 Stage 1a options. With ``fixed_paths`` every arrival joins final at the same distance
 (no stretching), so speed is the only way to make the gaps. ``speeds`` chooses who sets
 speeds: "rules" (the stage 0 speeds above), "slot" (the speed-only competitor: every
-10 s it steps each aircraft's speed towards its landing slot, with the same steps and
-bands as the AI, from approach.controllers.speed) or "none" (the AI sets them).
+10 s it gives each aircraft the speed that makes its landing slot, from the same speeds and
+bands as the AI, in approach.controllers.speed) or "none" (the AI sets them). With fixed
+paths the landing slots are planned about 4.5 NM apart (FIXED_PATH_MARGIN_NM), the real
+controllers' typical spacing with no departure in between, to leave speed room to work.
 
 Positions are worked in the runway frame: ``along`` (NM out from the threshold on
 the extended centreline) and ``lateral`` (NM right of the centreline as seen by an
@@ -63,6 +65,9 @@ DOWNWIND_OFFSET_NM = 6.0
 TARGET_SPACING_NM = 3.0
 MIXED_MODE_SPACING_NM = 6.0  # for when departures are modelled
 PLANNING_MARGIN_NM = 1.0  # plan slightly long: the final director can close a gap but not open one
+# Stage 1a (fixed paths): plan gaps about 4.5 NM, the real controllers' median with no departure in between
+# (data/real/egkk/landing_gaps.csv). Speed alone can't open a gap that was planned too tight.
+FIXED_PATH_MARGIN_NM = 1.5
 SPEED_DOWNWIND, SPEED_BASE, SPEED_FINAL = 220, 180, 160
 GS_DOWNWIND, GS_BASE = 235.0, 190.0  # rough ground speeds used for timing (no wind)
 REISSUE_DEG = 8.0
@@ -136,6 +141,9 @@ class RulesController(Controller):
                 d += 0.5
             self._max_join[side] = best if best is not None else -1.0
         return self._max_join[side]
+
+    def _margin(self) -> float:
+        return FIXED_PATH_MARGIN_NM if self.fixed_paths else PLANNING_MARGIN_NM
 
     def _south_side(self) -> float:
         """The side of the centreline (-1 left, +1 right, as seen on final) that lies to the south."""
@@ -218,7 +226,7 @@ class RulesController(Controller):
                 probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
                 need = t
                 if prev_t is not None:
-                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
+                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
                     need = prev_t + gap_nm / 150.0 * 3600.0
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
@@ -242,7 +250,7 @@ class RulesController(Controller):
                 p.landing_t = t + self._eta(v, p)
                 p.slot_t = p.landing_t
                 if prev_t is not None:
-                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
+                    gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
                     p.slot_t = max(p.landing_t, prev_t + gap_nm / 150.0 * 3600.0)
                 prev_t, prev_type = p.slot_t, p.actype
                 continue
@@ -373,25 +381,22 @@ class RulesController(Controller):
         return p.stage if p else None
 
     def _slot_speeds(self, views: dict) -> None:
-        """The speed-only competitor: step each aircraft's speed towards making its landing slot.
+        """The speed-only competitor: give each aircraft the speed that makes its landing slot.
 
-        Early for its slot: slow down; late: speed up; within SLOT_DEADBAND_S: back towards
-        the standard speed for its stage. One step (10 or 20 kt) per aircraft every 10 s.
+        Early for its slot: the slowest speed in its band; late: the fastest; within
+        SLOT_DEADBAND_S: the standard speed for its stage. Reviewed every 10 s.
         """
         for p in self.plans.values():
             v = views.get(p.cs)
-            limits = speed.band(p.stage, v.along) if v else None
-            if limits is None:
-                continue
-            new = speed.apply_step(v.target_spd, self.slot_step(p, v), limits)
-            if abs(new - v.target_spd) >= 5:
-                self._say(p, "speed", new)
+            target = self.slot_target(p, v) if v else None
+            if target is not None and abs(target - v.target_spd) >= 5:
+                self._say(p, "speed", target)
 
-    def slot_step(self, p: Plan, v) -> int:
-        """The speed-only competitor's step for one aircraft: towards the speed that makes its slot."""
+    def slot_target(self, p: Plan, v) -> int | None:
+        """The speed-only competitor's speed for one aircraft, or None where speed isn't the controller's to give."""
         limits = speed.band(p.stage, v.along)
         if limits is None:
-            return 0
+            return None
         early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
         if early > SLOT_DEADBAND_S:
             target = limits[0]
@@ -399,8 +404,7 @@ class RulesController(Controller):
             target = limits[1]
         else:
             target = speed.STANDARD_KT[p.stage]
-        diff = target - v.target_spd
-        return 0 if abs(diff) < 5 else int(max(-20, min(20, round(diff / 10.0) * 10)))
+        return speed.in_band(target, limits)
 
     def _stack_levels(self, views: dict) -> None:
         """Each stack fills from the bottom: the earliest in the sequence gets the lowest level."""

@@ -1,13 +1,16 @@
-"""Speed control in stage 1a: the published speed bands and the steps a controller may give.
+"""Speed control in stage 1a: the published speed bands and the speeds a controller may give.
 
-The AI and the speed-only rules controller use exactly the same steps and bands, so the only
-difference between them is how they choose.
+Every 10 seconds a controller may give each aircraft in the sequence a speed, as a controller
+says it ("speed 180"), from 160 to 250 kt in 10 kt values and inside the band for the
+aircraft's stage. Giving its current speed means leaving it alone. The AI and the speed-only
+rules controller choose from exactly the same speeds and bands, so the only difference
+between them is how they choose.
 """
 
 from __future__ import annotations
 
 DECISION_S = 10.0  # how often speeds are reviewed
-STEPS_KT = (-20, -10, 0, 10, 20)  # the choices for each aircraft at each review; 0 = leave it alone
+SPEEDS_KT = tuple(range(160, 260, 10))  # the choices: 160, 170, ... 250 kt
 FINAL_FREE_NM = 7.0  # inside this the pilot flies the approach speeds itself
 
 # Indicated airspeed bands by stage of the approach (kt).
@@ -27,15 +30,12 @@ def band(stage: str, along_nm: float) -> tuple[int, int] | None:
     return BANDS_KT.get(stage)
 
 
-def apply_step(assigned_kt: float, step_kt: int, limits: tuple[int, int]) -> int:
-    """The new assigned speed after a step, kept inside the band and on a 10 kt value.
-
-    An aircraft above or below the band is brought straight to its edge, as a controller
-    would when it enters a new stage, whatever the step.
-    """
+def in_band(speed_kt: float, limits: tuple[int, int]) -> int:
+    """A speed brought inside the band, on a 10 kt value."""
     lo, hi = limits
-    if assigned_kt > hi:
-        return hi
-    if assigned_kt < lo:
-        return lo
-    return int(min(hi, max(lo, round((assigned_kt + step_kt) / 10.0) * 10)))
+    return int(min(hi, max(lo, round(speed_kt / 10.0) * 10)))
+
+
+def nearest_choice(speed_kt: float) -> int:
+    """The index in SPEEDS_KT of the speed nearest to this one."""
+    return min(range(len(SPEEDS_KT)), key=lambda i: abs(SPEEDS_KT[i] - speed_kt))
