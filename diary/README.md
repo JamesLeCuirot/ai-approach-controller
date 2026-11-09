@@ -7,6 +7,7 @@ Videos and screenshots from before 6 November 2026 show an older commit ID: see 
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-09 | `stage1-04-groundwork` | [Stage 1a groundwork: a faster simulator, the competitor and the training world](2026-11-09-stage1-04-groundwork/README.md) |
 | 2026-11-06 | `stage1-03-rma-and-holds` | [Staying inside the RMA: holds instead of long downwinds](2026-11-06-stage1-03-rma-and-holds/README.md) |
 | 2026-11-06 | `stage1-02-real-traffic` | [Real Gatwick traffic: the rules controller against real controllers](2026-11-06-stage1-02-real-traffic/README.md) |
 | 2026-11-06 | `stage1-01-real-wind` | [Real winds from NOAA's weather model](2026-11-06-stage1-01-real-wind/README.md) |

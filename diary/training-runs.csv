@@ -1,0 +1,2 @@
+run,started,code_version,decisions,envs,seed,headstart_episodes,status,finished,hours,notes
+stage1a-01,2026-11-09 16:18 UTC,5fc9a66+changes,1000000,4,1,32,running,,,"First stage 1a run: head start from the speed-only rules controller, then PPO. Winds still downloading, so hours are drawn from those already downloaded."

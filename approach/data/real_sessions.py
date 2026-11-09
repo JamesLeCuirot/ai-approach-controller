@@ -220,6 +220,18 @@ def parse_hour(text: str) -> float:
     return datetime.fromisoformat(t).replace(tzinfo=timezone.utc).timestamp()
 
 
+def controller_title(kind: str) -> str:
+    """A readable name for a controller, for replay titles and the diary."""
+    names = {"rules": "Rules controller", "rules_speed": "Speed-only rules controller", "ai_speed": "Speed AI (final)"}
+    if kind in names:
+        return names[kind]
+    if kind.startswith("ai_speed_"):
+        tag = kind[len("ai_speed_"):]
+        return {"untrained": "Speed AI, untrained", "headstart": "Speed AI after its head start"}.get(
+            tag, f"Speed AI after {tag} decisions")
+    return f"{kind.capitalize()} controller"
+
+
 def session_log(spec: str, milestone: str = "", hours: float = 1.0) -> SessionLog:
     """A session for one real hour: 'real:2025-06-27T15' (the real controllers) or 'rules:2025-06-27T15'
     (our rules controller on the same traffic, in the same winds, with the real tracks as ghosts)."""
@@ -245,7 +257,7 @@ def session_log(spec: str, milestone: str = "", hours: float = 1.0) -> SessionLo
         with wake.scheme(wake.scheme_for(day_str, airport.icao)) as scheme:  # the controller and its scoring alike
             log = run_scenario(scenario, controller=kind, milestone=milestone)
         log.meta["wake_scheme"] = scheme
-        log.meta["title"] = f"{kind.capitalize()} controller on real traffic: Gatwick {day_str}, {_utc(start)}-{_utc(end)} UTC"
+        log.meta["title"] = f"{controller_title(kind)} on real traffic: Gatwick {day_str}, {_utc(start)}-{_utc(end)} UTC"
         log.meta["t0_epoch"] = start
         log.meta["source"] = day["source"]
         log.ghosts = ghosts(day, airport, start, end)
