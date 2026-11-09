@@ -10,6 +10,11 @@ Everything about the run goes in runs/<run>/ (not committed: models and logs are
   model_final.zip: the AI at each point, for replays and the "watching it learn" diary entry
 
 and one row per run in diary/training-runs.csv (committed), so every run is on the record.
+
+A cloud machine can be reclaimed mid-run, so the run's record, episode log and saved AIs are
+committed to the repo, and a run can carry on from its last saved AI on a fresh machine:
+
+    python -m approach.ai.train --run stage1a-03 --resume runs/stage1a-03/model_100k.zip
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ RUNS_CSV = ROOT / "diary" / "training-runs.csv"
 RUN_FIELDS = ["run", "started", "code_version", "decisions", "envs", "seed", "headstart_episodes", "status",
               "finished", "hours", "notes"]
 CHECKPOINTS = {10_000: "10k", 100_000: "100k", 300_000: "300k"}
+LATEST_EVERY = 50_000  # also save model_latest.zip this often, to resume from
 PPO_SETTINGS = dict(n_steps=512, batch_size=256, n_epochs=5, learning_rate=2e-4, gamma=0.99, gae_lambda=0.95,
                     clip_range=0.15, ent_coef=0.005, vf_coef=0.5, max_grad_norm=0.5)
 
@@ -141,6 +147,7 @@ def main() -> None:
     ap.add_argument("--headstart-episodes", type=int, default=32)
     ap.add_argument("--cached-winds-only", action="store_true", help="draw only hours whose winds are downloaded")
     ap.add_argument("--notes", default="")
+    ap.add_argument("--resume", default="", help="carry on from a saved AI of this run (skips the head start)")
     args = ap.parse_args()
 
     import torch
@@ -165,6 +172,9 @@ def main() -> None:
         "observation": {"aircraft": N_MAX, "features": N_FEATURES}, "training_hours": len(training_hours()),
         "notes": args.notes,
     }
+    if args.resume and (out / "run.json").is_file():
+        record = {**json.loads((out / "run.json").read_text()), "resumed_from": args.resume,
+                  "resumed_code_version": code_version()}
     (out / "run.json").write_text(json.dumps(record, indent=2))
     write_run_row({**record, "status": "running"})
     print(f"Run {args.run}: {out}", flush=True)
@@ -174,35 +184,39 @@ def main() -> None:
 
     venv = VecNormalize(VecMonitor(SubprocVecEnv([make(k) for k in range(args.envs)])), norm_obs=False,
                         norm_reward=True, gamma=PPO_SETTINGS["gamma"])
-    model = PPO("MlpPolicy", venv, policy_kwargs=POLICY_KWARGS, seed=args.seed, device="cpu", verbose=0,
-                **PPO_SETTINGS)
-    n_params = sum(p.numel() for p in model.policy.parameters())
-    record["parameters"] = n_params
-    model.save(out / "model_untrained.zip")
-    print(f"Network: {n_params:,} parameters", flush=True)
+    if args.resume:
+        model = PPO.load(args.resume, env=venv, device="cpu")
+        print(f"Resuming from {args.resume} at {model.num_timesteps:,} decisions", flush=True)
+    else:
+        model = PPO("MlpPolicy", venv, policy_kwargs=POLICY_KWARGS, seed=args.seed, device="cpu", verbose=0,
+                    **PPO_SETTINGS)
+        n_params = sum(p.numel() for p in model.policy.parameters())
+        record["parameters"] = n_params
+        model.save(out / "model_untrained.zip")
+        print(f"Network: {n_params:,} parameters", flush=True)
+    if not args.resume:  # head start: copy the speed-only rules controller
+        t0 = time.time()
+        per = max(1, args.headstart_episodes // args.envs)
+        with Pool(args.envs) as pool:
+            parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only) for k in range(args.envs)])
+        obs = np.concatenate([np.array(o) for o, _, _ in parts])
+        acts = np.concatenate([np.array(a) for _, a, _ in parts])
+        teacher_rows = [r for _, _, rows in parts for r in rows]
+        agree = headstart(model, obs, acts)
+        model.save(out / "model_headstart.zip")
+        record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
+                               "minutes": round((time.time() - t0) / 60, 1)}
+        with (out / "teacher_episodes.csv").open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(teacher_rows[0]))
+            w.writeheader()
+            w.writerows(teacher_rows)
+        (out / "run.json").write_text(json.dumps(record, indent=2))
+        print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
+              f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
+              f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
 
-    # Head start: copy the speed-only rules controller.
-    t0 = time.time()
-    per = max(1, args.headstart_episodes // args.envs)
-    with Pool(args.envs) as pool:
-        parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only) for k in range(args.envs)])
-    obs = np.concatenate([np.array(o) for o, _, _ in parts])
-    acts = np.concatenate([np.array(a) for _, a, _ in parts])
-    teacher_rows = [r for _, _, rows in parts for r in rows]
-    agree = headstart(model, obs, acts)
-    model.save(out / "model_headstart.zip")
-    record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
-                           "minutes": round((time.time() - t0) / 60, 1)}
-    with (out / "teacher_episodes.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(teacher_rows[0]))
-        w.writeheader()
-        w.writerows(teacher_rows)
-    (out / "run.json").write_text(json.dumps(record, indent=2))
-    print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
-          f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
-          f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
-
-    episodes_csv = (out / "episodes.csv").open("w", newline="")
+    resuming_log = bool(args.resume) and (out / "episodes.csv").is_file()
+    episodes_csv = (out / "episodes.csv").open("a" if resuming_log else "w", newline="")
     writer = None
 
     class Record(BaseCallback):
@@ -212,6 +226,12 @@ def main() -> None:
             super().__init__()
             self.pending = dict(CHECKPOINTS)
             self.rewards = [0.0] * args.envs
+            self.next_latest = 0
+
+        def _on_training_start(self) -> None:
+            # A resumed run keeps the saved AIs it already has.
+            self.pending = {at: tag for at, tag in self.pending.items() if at > self.num_timesteps}
+            self.next_latest = (self.num_timesteps // LATEST_EVERY + 1) * LATEST_EVERY
 
         def _on_step(self) -> bool:
             nonlocal writer
@@ -222,11 +242,15 @@ def main() -> None:
                     row = {"trained_decisions": self.num_timesteps, **episode_row(info, self.rewards[i])}
                     if writer is None:
                         writer = csv.DictWriter(episodes_csv, fieldnames=list(row))
-                        writer.writeheader()
+                        if not resuming_log:
+                            writer.writeheader()
                     writer.writerow(row)
                     episodes_csv.flush()
                     self.rewards[i] = 0.0
             del rewards
+            if self.num_timesteps >= self.next_latest:  # for carrying on if the machine is reclaimed
+                self.model.save(out / "model_latest.zip")
+                self.next_latest += LATEST_EVERY
             for at, tag in list(self.pending.items()):
                 if self.num_timesteps >= at:
                     self.model.save(out / f"model_{tag}.zip")
@@ -236,7 +260,9 @@ def main() -> None:
             return True
 
     t1 = time.time()
-    model.learn(total_timesteps=args.decisions, callback=Record(), progress_bar=False)
+    t0 = t0 if not args.resume else t1
+    model.learn(total_timesteps=max(args.decisions - model.num_timesteps, 1), callback=Record(), progress_bar=False,
+                reset_num_timesteps=not args.resume)
     model.save(out / "model_final.zip")
     episodes_csv.close()
     venv.close()
