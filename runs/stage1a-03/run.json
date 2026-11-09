@@ -64,5 +64,8 @@
     "minutes": 2.9
   },
   "resumed_from": "runs/stage1a-03/model_100k.zip",
-  "resumed_code_version": "04d9068+changes"
+  "resumed_code_version": "04d9068+changes",
+  "finished": "2026-11-09 23:03 UTC",
+  "training_hours_wall": 3.71,
+  "status": "finished"
 }
