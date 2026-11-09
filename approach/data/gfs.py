@@ -19,8 +19,11 @@ NOAA data is in the public domain. We still credit it.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import math
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -56,8 +59,15 @@ def _get(url: str, byte_range: tuple[int, int] | None = None) -> bytes:
     headers = {"User-Agent": "ai-approach-controller"}
     if byte_range:
         headers["Range"] = f"bytes={byte_range[0]}-{byte_range[1]}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as r:
-        return r.read()
+    for attempt in range(5):  # transfers are sometimes cut off mid-way: try again
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as r:
+                return r.read()
+        except (http.client.IncompleteRead, urllib.error.URLError, ConnectionError, TimeoutError):
+            if attempt == 4:
+                raise
+            time.sleep(5 * 2 ** attempt)
+    raise RuntimeError("unreachable")
 
 
 @dataclass

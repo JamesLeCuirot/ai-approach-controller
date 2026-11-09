@@ -54,19 +54,24 @@ def _run(args: tuple) -> list[dict]:
     env = SpeedEnv(hours=[s["hour"] for s in sessions])
     rows = []
     for s in sessions:
-        for who in ("rules_speed", "ai"):
-            if who == "ai" and policy is None:
-                continue
-            options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"],
-                       "teacher": who == "rules_speed"}
-            obs, _ = env.reset(options=options)
-            done, total = False, 0.0
-            while not done:
-                act = env.teacher_action() if who == "rules_speed" else policy(obs)
-                obs, r, done, _, info = env.step(act)
-                total += r
-            rows.append({"session": s["id"], "controller": who, "hour": f"{s['hour'][0]}T{s['hour'][1]:02d}",
-                         "offset_min": round(s["offset_s"] / 60), **episode_row(info, total)})
+        try:
+            pair = []
+            for who in ("rules_speed", "ai"):
+                if who == "ai" and policy is None:
+                    continue
+                options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"],
+                           "teacher": who == "rules_speed"}
+                obs, _ = env.reset(options=options)
+                done, total = False, 0.0
+                while not done:
+                    act = env.teacher_action() if who == "rules_speed" else policy(obs)
+                    obs, r, done, _, info = env.step(act)
+                    total += r
+                pair.append({"session": s["id"], "controller": who, "hour": f"{s['hour'][0]}T{s['hour'][1]:02d}",
+                             "offset_min": round(s["offset_s"] / 60), **episode_row(info, total)})
+            rows += pair  # both controllers or neither, so the comparison stays like for like
+        except Exception as e:  # noqa: BLE001 - one failed session must not stop the test
+            print(f"session {s['id']} {s['hour']} skipped: {e}", flush=True)
     return rows
 
 
@@ -111,6 +116,14 @@ def main() -> None:
     hours = test_hours()
     sessions = [{"id": k, "hour": rng.choice(hours), "offset_s": rng.uniform(0, 3600), "pilot_seed": rng.randrange(1 << 30)}
                 for k in range(args.sessions)]
+    # Download the winds first, so the test itself only flies.
+    from approach.data.gfs import _prefetch_one
+
+    needed = sorted({f"{d}T{h:02d}" for d, h in (s["hour"] for s in sessions)})
+    with Pool(3) as pool:
+        for err in pool.imap_unordered(_prefetch_one, needed):
+            if err:
+                print("winds:", err, flush=True)
     chunks = [(args.model, sessions[k::args.workers]) for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
