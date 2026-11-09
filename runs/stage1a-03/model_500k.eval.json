@@ -1,0 +1,35 @@
+{
+  "model": "runs/stage1a-03/model_500k.zip",
+  "sessions": 40,
+  "test_hours": 625,
+  "seed": 2026,
+  "ai": {
+    "sessions": 40,
+    "landed": 524,
+    "mean_gap_error_nm": 2.505,
+    "gaps_inside_minimum": 22,
+    "separation_losses": 53,
+    "wake_infringements": 2,
+    "go_arounds": 30,
+    "speed_instructions_per_arrival": 4.09,
+    "mean_reward": -3.01
+  },
+  "rules_speed": {
+    "sessions": 40,
+    "landed": 533,
+    "mean_gap_error_nm": 2.435,
+    "gaps_inside_minimum": 23,
+    "separation_losses": 56,
+    "wake_infringements": 2,
+    "go_arounds": 27,
+    "speed_instructions_per_arrival": 3.89,
+    "mean_reward": -2.73
+  },
+  "gate": {
+    "closer_gaps": false,
+    "no_separation_losses": false,
+    "no_wake_infringements": false,
+    "no_more_instructions": false,
+    "passed": false
+  }
+}
