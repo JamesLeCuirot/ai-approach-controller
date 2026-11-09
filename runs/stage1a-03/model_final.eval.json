@@ -1,0 +1,35 @@
+{
+  "model": "runs/stage1a-03/model_final.zip",
+  "sessions": 40,
+  "test_hours": 625,
+  "seed": 2026,
+  "ai": {
+    "sessions": 40,
+    "landed": 531,
+    "mean_gap_error_nm": 2.357,
+    "gaps_inside_minimum": 18,
+    "separation_losses": 52,
+    "wake_infringements": 2,
+    "go_arounds": 22,
+    "speed_instructions_per_arrival": 4.74,
+    "mean_reward": -1.73
+  },
+  "rules_speed": {
+    "sessions": 40,
+    "landed": 533,
+    "mean_gap_error_nm": 2.435,
+    "gaps_inside_minimum": 23,
+    "separation_losses": 56,
+    "wake_infringements": 2,
+    "go_arounds": 27,
+    "speed_instructions_per_arrival": 3.89,
+    "mean_reward": -2.73
+  },
+  "gate": {
+    "closer_gaps": true,
+    "no_separation_losses": false,
+    "no_wake_infringements": false,
+    "no_more_instructions": false,
+    "passed": false
+  }
+}
