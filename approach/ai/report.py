@@ -76,21 +76,21 @@ def chart(run: Path, out: Path) -> None:
         if t:
             ref = t[key][0].sum() / max(t[key][1].sum(), 1)
             ax.axhline(ref, color=REFERENCE, linewidth=1.5, linestyle=(0, (5, 4)),
-                       label="Speed-only rules controller")
-            ax.annotate("speed-only rules controller", (x[-1], ref), xytext=(0, 4), textcoords="offset points",
-                        ha="right", va="bottom", color=REFERENCE, fontsize=9)
+                       label="Speed-only rules controller (its head-start episodes)")
         ax.set_ylabel(label)
         ax.grid(axis="y", color=GRID, linewidth=0.8)
         ax.spines[["top", "right"]].set_visible(False)
         ax.set_ylim(bottom=0)
-    axes[0].legend(loc="upper right", frameon=False, fontsize=9)
     axes[-1].set_xlabel("Decisions practised")
     axes[-1].xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1000:,.0f}k"))
     fig.suptitle(f"Training run {run.name}: the AI's results as it practises", x=0.07, ha="left", fontsize=13,
                  color=INK, fontweight="bold")
-    fig.text(0.07, 0.935, "Training sessions only, each a real hour from the training days; "
-             "the test against unseen days is separate.", fontsize=9, color=REFERENCE)
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.text(0.07, 0.94, "Training sessions only, each a real hour from the training days. In practice the AI picks "
+             "its speeds with some\nrandomness, to try things out; the test on unseen days uses its best choice.",
+             fontsize=9, color=REFERENCE, va="top")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.06, 0.905), ncol=2, frameon=False, fontsize=9)
+    fig.tight_layout(rect=(0, 0, 1, 0.87))
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150, facecolor=SURFACE)
     print(f"Wrote {out}")
