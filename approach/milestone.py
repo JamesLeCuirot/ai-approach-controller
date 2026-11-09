@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import shutil
 import subprocess
@@ -32,7 +33,7 @@ AUTO_END = "<!-- AUTO:END -->"
 SCORE_FIELDS = [
     "date", "milestone", "scenario", "controller", "code_version", "arrivals", "landed",
     "separation_losses", "wake_violations", "min_spacing_nm", "mean_spacing_nm", "track_miles_per_arrival",
-    "instructions_per_arrival", "safety_blocks", "go_arounds", "stable_at_1000ft_pct",
+    "instructions_per_arrival", "safety_blocks", "go_arounds", "stable_at_1000ft_pct", "log_sha256",
 ]
 
 
@@ -72,6 +73,7 @@ def score_row(day: str, slug: str, scenario: str, log) -> dict:
            "code_version": log.meta.get("code_version")}
     for f in SCORE_FIELDS[5:]:
         row[f] = s.get(f, "")
+    row["log_sha256"] = log.meta.get("log_sha256", "")
     return row
 
 
@@ -178,6 +180,8 @@ def main(argv: list[str] | None = None) -> None:
             log = run_scenario(scenario, milestone=args.slug)
             title = scenario.title
         log.save(out / f"{name}.json")
+        # The log's checksum goes in scores.csv beside its scores, so a log changed afterwards would show.
+        log.meta["log_sha256"] = hashlib.sha256((out / f"{name}.json").read_bytes()).hexdigest()
         html = replay.write(log, out / f"{name}.html")
         shot, video, note = out / f"{name}.png", None, "not recorded"
         if not args.no_video:

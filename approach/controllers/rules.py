@@ -383,18 +383,24 @@ class RulesController(Controller):
             limits = speed.band(p.stage, v.along) if v else None
             if limits is None:
                 continue
-            early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
-            if early > SLOT_DEADBAND_S:
-                target = limits[0]
-            elif early < -SLOT_DEADBAND_S:
-                target = limits[1]
-            else:
-                target = speed.STANDARD_KT[p.stage]
-            diff = target - v.target_spd
-            step = 0 if abs(diff) < 5 else int(max(-20, min(20, round(diff / 10.0) * 10)))
-            new = speed.apply_step(v.target_spd, step, limits)
+            new = speed.apply_step(v.target_spd, self.slot_step(p, v), limits)
             if abs(new - v.target_spd) >= 5:
                 self._say(p, "speed", new)
+
+    def slot_step(self, p: Plan, v) -> int:
+        """The speed-only competitor's step for one aircraft: towards the speed that makes its slot."""
+        limits = speed.band(p.stage, v.along)
+        if limits is None:
+            return 0
+        early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
+        if early > SLOT_DEADBAND_S:
+            target = limits[0]
+        elif early < -SLOT_DEADBAND_S:
+            target = limits[1]
+        else:
+            target = speed.STANDARD_KT[p.stage]
+        diff = target - v.target_spd
+        return 0 if abs(diff) < 5 else int(max(-20, min(20, round(diff / 10.0) * 10)))
 
     def _stack_levels(self, views: dict) -> None:
         """Each stack fills from the bottom: the earliest in the sequence gets the lowest level."""

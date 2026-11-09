@@ -24,6 +24,15 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
         c = RulesController(airport, scenario.runway, fixed_paths=True, speeds="slot")
         c.name = "rules_speed"
         return c
+    if name.startswith("ai_speed"):  # stage 1a's AI: ai_speed (the final model) or ai_speed_<checkpoint>, e.g. ai_speed_100k
+        import os
+        from pathlib import Path
+
+        from approach.ai.env import AISpeedController, load_policy
+
+        tag = name[len("ai_speed_"):] or "final"
+        path = os.environ.get("APPROACH_AI_MODEL") or str(Path(os.environ["APPROACH_AI_RUN"]) / f"model_{tag}.zip")
+        return AISpeedController(airport, scenario.runway, policy=load_policy(path), name=name)
     return NoController()
 
 

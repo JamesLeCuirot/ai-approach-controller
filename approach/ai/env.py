@@ -15,7 +15,11 @@ to the aircraft ahead and how fast it is closing, the gap it needs, the gap behi
 category, its height against the 3-to-1 profile, its margins, its position measured from the
 runway, and the wind along the runway.
 
-The score (REWARD) has a weight for every term so each training run can record them.
+What the AI sees (`observe`) and how its choices become instructions (`speed_instructions`)
+are shared with AISpeedController, which flies a trained AI in ordinary sessions, so replays
+and the benchmark run exactly what was trained. `teacher_action` is the speed-only rules
+controller's choice in the same terms, for the head start (behaviour cloning) and the
+comparison. The score (REWARD) has a weight for every term so each run can record them.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ except ImportError:  # the simulator itself doesn't need gymnasium
 from approach import wake
 from approach.airports import egkk
 from approach.controllers import speed
+from approach.controllers.base import Controller
 from approach.controllers.rules import INTERCEPT_LEG_NM, RulesController
 from approach.data.arrivals import REAL_DIR, load_day
 from approach.geo import distance_xy
@@ -52,6 +57,7 @@ FEATURES = (
 )
 N_FEATURES = len(FEATURES)
 TARGET_BUFFER_NM = 0.5  # the gap aimed for: the minimum plus this
+LEAVE_ALONE = speed.STEPS_KT.index(0)
 
 REWARD = {
     "landing": 1.0,  # each aircraft landed
@@ -69,33 +75,190 @@ REWARD = {
 
 
 def training_hours(split: str = "train", min_arrivals: int = 3) -> list[tuple[str, int]]:
-    """(day, hour) for every hour of real traffic on the chosen days of a split."""
+    """(day, hour) for every hour of real traffic on the chosen days of a split (or several, comma-separated)."""
+    splits = set(split.split(","))
     rows = csv.DictReader((REAL_DIR / "egkk" / "real_controller_hours.csv").open())
-    return [(r["day"], int(r["hour"])) for r in rows if r["split"] == split and int(r["arrivals"]) >= min_arrivals]
+    return [(r["day"], int(r["hour"])) for r in rows if r["split"] in splits and int(r["arrivals"]) >= min_arrivals]
 
 
+def winds_cached(day: str, hour: int) -> bool:
+    from approach.data.gfs import CACHE_DIR
+
+    return (CACHE_DIR / f"egkk_{day.replace('-', '')}{hour:02d}.json").is_file()
+
+
+# ---- what the AI sees, and what its choices become (shared by training and AISpeedController) ----
+def track_miles(controller: RulesController, v) -> float:
+    """Distance to fly to touchdown on the aircraft's planned path."""
+    p = controller.plans.get(v.cs)
+    if p is None:
+        return max(v.along, 0.0)
+    pts = controller._points(p)
+    if p.stage == "downwind":
+        return distance_xy(v.x, v.y, *pts["D"]) + distance_xy(*pts["D"], *pts["B"]) + INTERCEPT_LEG_NM + p.d_join
+    if p.stage == "base":
+        return distance_xy(v.x, v.y, *pts["B"]) + INTERCEPT_LEG_NM + p.d_join
+    if v.loc:
+        return max(v.along, 0.0)
+    return distance_xy(v.x, v.y, *pts["J"]) + p.d_join
+
+
+def observe(views: list, controller: RulesController, t: float) -> tuple[np.ndarray, list[str]]:
+    """The AI's picture: one row per aircraft in the landing sequence, in landing order; empty rows after."""
+    from shapely.geometry import Point
+
+    airport, runway, rma = controller.airport, controller.runway, controller.rma
+    by_cs = {v.cs: v for v in views}
+    plans = [p for p in controller.plans.values() if p.cs in by_cs and p.stage in ("downwind", "base", "cleared")]
+    plans.sort(key=lambda p: (p.slot_t or p.landing_t))
+    slots = [p.cs for p in plans][:N_MAX]
+    obs = np.zeros((N_MAX, N_FEATURES), dtype=np.float32)
+    tm = {cs: track_miles(controller, by_cs[cs]) for cs in slots}
+    course = math.radians(runway.course_true)
+    for i, cs in enumerate(slots):
+        v, p = by_cs[cs], controller.plans[cs]
+        limits = speed.band(p.stage, v.along)
+        ahead = slots[i - 1] if i > 0 else None
+        behind = slots[i + 1] if i + 1 < len(slots) else None
+        need = max(wake.RADAR_MINIMUM_NM, wake.separation_nm(by_cs[ahead].actype, v.actype)) if ahead else 3.0
+        cat = wake.category(v.actype)
+        minimum = airport.minimum_altitude_ft(v.x, v.y) or 0.0
+        inside = 0.0
+        if rma is not None:
+            d = rma.polygon.exterior.distance(Point(v.x, v.y))
+            inside = d if rma.contains(v.x, v.y) else -d
+        headwind = -(v.wind_e_kt * math.sin(course) + v.wind_n_kt * math.cos(course))
+        row = {
+            "present": 1.0, "controllable": 1.0 if limits else 0.0,
+            "downwind": float(p.stage == "downwind"), "base": float(p.stage == "base"),
+            "cleared": float(p.stage == "cleared"),
+            "track_miles": tm[cs] / 30.0, "time_to_go": max(p.landing_t - t, 0.0) / 900.0,
+            "assigned_kt": v.target_spd / 250.0, "cas_kt": v.cas_kt / 250.0, "gs_kt": v.gs_kt / 250.0,
+            "gap_ahead_nm": (tm[cs] - tm[ahead]) / 10.0 if ahead else 1.0, "has_ahead": float(ahead is not None),
+            "gap_needed_nm": (need + TARGET_BUFFER_NM) / 10.0,
+            "closing_kt": (v.gs_kt - by_cs[ahead].gs_kt) / 60.0 if ahead else 0.0,
+            "gap_behind_nm": (tm[behind] - tm[cs]) / 10.0 if behind else 1.0, "has_behind": float(behind is not None),
+            **{f"wake_{c}": float(cat == c) for c in wake.CATEGORIES},
+            "above_profile_ft": (v.alt_ft - tm[cs] * 1000.0 / 3.0) / 3000.0,
+            "above_minimum_ft": (v.alt_ft - minimum) / 3000.0,
+            "inside_rma_nm": inside / 10.0, "along_nm": v.along / 30.0, "lateral_nm": v.lateral / 10.0,
+            "headwind_kt": headwind / 40.0,
+            "band_lo_kt": (limits[0] if limits else 0) / 250.0, "band_hi_kt": (limits[1] if limits else 0) / 250.0,
+        }
+        obs[i] = [row[f] for f in FEATURES]
+    return np.clip(obs, -5.0, 5.0), slots
+
+
+def speed_instructions(action, slots: list[str], views: list, controller: RulesController) -> list[tuple[Instruction, bool]]:
+    """Speed instructions from the AI's choices, as (instruction, chosen by the AI rather than a band edge).
+
+    Aircraft not yet in the sequence (inbound or holding) are given the standard speed for
+    their stage if they are outside its band.
+    """
+    by_cs = {v.cs: v for v in views}
+    out = []
+    for i, cs in enumerate(slots):
+        v, stage = by_cs.get(cs), controller.stage_of(cs)
+        limits = speed.band(stage, v.along) if v and stage else None
+        if limits is None:
+            continue
+        step = speed.STEPS_KT[int(action[i])]
+        new = speed.apply_step(v.target_spd, step, limits)
+        if abs(new - v.target_spd) >= 5:
+            out.append((Instruction(cs, "speed", new), step != 0))
+    for cs, v in by_cs.items():
+        if cs in slots or controller.stage_of(cs) != "inbound":
+            continue
+        limits = speed.band("inbound", v.along)
+        if limits and not limits[0] <= v.target_spd <= limits[1]:
+            out.append((Instruction(cs, "speed", speed.STANDARD_KT["inbound"]), False))
+    return out
+
+
+def teacher_action(slots: list[str], views: list, controller: RulesController) -> np.ndarray:
+    """The speed-only rules controller's choice for each slot, as the AI's actions."""
+    by_cs = {v.cs: v for v in views}
+    action = np.full(N_MAX, LEAVE_ALONE, dtype=np.int64)
+    for i, cs in enumerate(slots):
+        p, v = controller.plans.get(cs), by_cs.get(cs)
+        if p is not None and v is not None:
+            action[i] = speed.STEPS_KT.index(controller.slot_step(p, v))
+    return action
+
+
+class AISpeedController(Controller):
+    """Stage 1a in an ordinary session: the rules controller on fixed paths, with a policy setting speeds.
+
+    `policy` maps the AI's picture (observe) to its choices. With policy=None the speed-only
+    rules controller's choices are used (teacher_action), which is how the comparison runs.
+    """
+
+    name = "ai_speed"
+
+    def __init__(self, airport, runway: str, policy=None, name: str = "ai_speed"):
+        self.rules = RulesController(airport, runway, fixed_paths=True, speeds="none")
+        self.policy = policy
+        self.name = name
+        self.last_t = -1e9
+
+    @property
+    def plans(self):
+        return self.rules.plans
+
+    def decide(self, t: float, views: list) -> list[Instruction]:
+        out = self.rules.decide(t, views)
+        if t - self.last_t >= speed.DECISION_S:
+            self.last_t = t
+            obs, slots = observe(views, self.rules, t)
+            action = self.policy(obs) if self.policy is not None else teacher_action(slots, views, self.rules)
+            out += [instr for instr, _ in speed_instructions(action, slots, views, self.rules)]
+        return out
+
+    def on_event(self, event: dict) -> None:
+        self.rules.on_event(event)
+
+
+def load_policy(path: str):
+    """A trained AI saved by approach.ai.train, as a function from the AI's picture to its choices."""
+    from stable_baselines3 import PPO
+
+    model = PPO.load(path, device="cpu")
+    return lambda obs: model.predict(obs, deterministic=True)[0]
+
+
+# ---- the training world ----------------------------------------------------------------------
 class SpeedEnv(gym.Env if gym else object):
     """One episode = one real hour of arrivals; one step = 10 seconds."""
 
     metadata = {"render_modes": []}
 
     def __init__(self, split: str = "train", window_s: int = 3600, other_wind_p: float = 0.25, seed: int | None = None,
-                 hours: list[tuple[str, int]] | None = None, reward: dict | None = None, frames: bool = True):
+                 hours: list[tuple[str, int]] | None = None, reward: dict | None = None, frames: bool = True,
+                 cached_winds_only: bool = False):
         if gym is None:
             raise ImportError("pip install gymnasium")
         self.airport = egkk.load()
-        self.hours = hours or training_hours(split)
+        self.all_hours = hours or training_hours(split)
         self.window_s = window_s
         self.other_wind_p = other_wind_p
         self.reward_w = {**REWARD, **(reward or {})}
         self.frames = frames
+        self.cached_winds_only = cached_winds_only
         self.rng = random.Random(seed)
         self._days: dict[str, dict] = {}
         self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, N_FEATURES), dtype=np.float32)
         self.action_space = spaces.MultiDiscrete([len(speed.STEPS_KT)] * N_MAX)
         self.session: LiveSession | None = None
+        self.slots: list[str] = []
 
-    # ---- episodes ------------------------------------------------------------------
+    @property
+    def hours(self) -> list[tuple[str, int]]:
+        """The hours to draw from: while winds are still downloading, optionally only those already here."""
+        if not self.cached_winds_only:
+            return self.all_hours
+        ready = [h for h in self.all_hours if winds_cached(*h)]
+        return ready or self.all_hours
+
     def _day(self, d: str) -> dict:
         if d not in self._days:
             if len(self._days) > 6:
@@ -111,33 +274,34 @@ class SpeedEnv(gym.Env if gym else object):
         from approach.data.gfs import fetch_for_airport, parse_time
 
         options = options or {}
+        hours = self.hours
         for _ in range(20):  # skip windows with no arrivals
-            d, h = options.get("hour") or self.rng.choice(self.hours)
+            d, h = options.get("hour") or self.rng.choice(hours)
             day = self._day(d)
             midnight = datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
-            start = midnight + h * 3600 + (options.get("offset_s", self.rng.uniform(0, 3600)))
+            start = midnight + h * 3600 + options.get("offset_s", self.rng.uniform(0, 3600))
             if real_sessions.window_arrivals(day, start, start + self.window_s):
                 break
         scenario = real_sessions.real_scenario(day, self.airport, start, start + self.window_s, wind=False)
-        wind_hour = datetime.fromtimestamp(start + self.window_s / 2, tz=timezone.utc).strftime("%Y-%m-%dT%H")
-        if self.rng.random() < self.other_wind_p and "hour" not in options:
-            od, oh = self.rng.choice(self.hours)
+        wind_hour = options.get("wind_hour") or datetime.fromtimestamp(start + self.window_s / 2, tz=timezone.utc).strftime("%Y-%m-%dT%H")
+        if "wind_hour" not in options and "hour" not in options and self.rng.random() < self.other_wind_p:
+            od, oh = self.rng.choice(hours)
             wind_hour = f"{od}T{oh:02d}"
         self.wind_hour = wind_hour
         wind = fetch_for_airport(parse_time(wind_hour), self.airport)
         self.scheme = wake.scheme_for(d)
+        self.teacher = bool(options.get("teacher"))
         self.controller = RulesController(self.airport, scenario.runway, fixed_paths=True, speeds="none")
-        self.controller.name = "ai_speed"
+        self.controller.name = "rules_speed" if self.teacher else "ai_speed"
         log = SessionLog(meta={"scenario": scenario.name, "runway": scenario.runway, "wind": wind_hour,
-                               "controller": "ai_speed", "wake_scheme": self.scheme}, map={})
+                               "controller": self.controller.name, "wake_scheme": self.scheme}, map={})
+        seed_pilots = options.get("pilot_seed", self.rng.randrange(1 << 30))
         with wake.scheme(self.scheme):
-            self.session = LiveSession(self.airport, scenario, self.controller, log,
-                                       seed=self.rng.randrange(1 << 30), wind=wind, frames=self.frames)
-        self.runway = self.airport.runways[scenario.runway]
-        self.rma = self.airport.rma(scenario.runway)
+            self.session = LiveSession(self.airport, scenario, self.controller, log, seed=seed_pilots, wind=wind,
+                                       frames=self.frames)
         self.in_conflict: set[tuple[str, str]] = set()
         self.wake_flagged: set[tuple[str, str]] = set()
-        self.slots: list[str] = []
+        self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final
         self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "wake_infringements": 0,
                        "instructions": 0, "blocked": 0, "decisions": 0}
         with wake.scheme(self.scheme):
@@ -146,6 +310,10 @@ class SpeedEnv(gym.Env if gym else object):
                 self._advance(speed.DECISION_S)
                 obs = self._observe()
         return obs, {"scenario": scenario.name, "wind": wind_hour}
+
+    def teacher_action(self) -> np.ndarray:
+        """What the speed-only rules controller would choose now."""
+        return teacher_action(self.slots, self.session.world.views(), self.controller)
 
     def step(self, action):
         r = 0.0
@@ -164,41 +332,21 @@ class SpeedEnv(gym.Env if gym else object):
             info = {}
             if terminated:
                 log = self.session.finish()
-                info = {"scores": log.scores, "counts": dict(self.counts), "scenario": log.meta["scenario"],
-                        "wind": self.wind_hour}
+                info = {"scores": log.scores, "counts": dict(self.counts), "gaps": list(self.gaps),
+                        "scenario": log.meta["scenario"], "wind": self.wind_hour}
         return obs, float(r), terminated, False, info
 
-    # ---- acting -------------------------------------------------------------------------
     def _act(self, action) -> float:
         s, r = self.session, 0.0
-        views = {v.cs: v for v in s.world.views()}
-        s.views = list(views.values())
-        acted = set()
-        for i, cs in enumerate(self.slots):
-            v = views.get(cs)
-            stage = self.controller.stage_of(cs)
-            limits = speed.band(stage, v.along) if v and stage else None
-            if limits is None:
-                continue
-            step = speed.STEPS_KT[int(action[i])]
-            new = speed.apply_step(v.target_spd, step, limits)
-            if abs(new - v.target_spd) >= 5:
-                ok, _ = s.instruct(Instruction(cs, "speed", new), notify_controller=False)
-                if step != 0:  # a change the AI chose, not just a band edge on entering a stage
-                    self.counts["instructions"] += 1
-                    r -= self.reward_w["instruction"]
-                if not ok:
-                    self.counts["blocked"] += 1
-                    r -= self.reward_w["blocked"]
-            acted.add(cs)
-        # Aircraft the AI doesn't control yet (inbound or holding) fly the standard speed for their stage.
-        for cs, v in views.items():
-            stage = self.controller.stage_of(cs)
-            if cs in acted or stage != "inbound":
-                continue
-            limits = speed.band(stage, v.along)
-            if limits and not limits[0] <= v.target_spd <= limits[1]:
-                s.instruct(Instruction(cs, "speed", speed.STANDARD_KT["inbound"]), notify_controller=False)
+        s.views = s.world.views()
+        for instr, chosen in speed_instructions(action, self.slots, s.views, self.controller):
+            ok, _ = s.instruct(instr, notify_controller=False)
+            if chosen:
+                self.counts["instructions"] += 1
+                r -= self.reward_w["instruction"]
+            if not ok:
+                self.counts["blocked"] += 1
+                r -= self.reward_w["blocked"]
         return r
 
     def _advance(self, seconds: float) -> tuple[float, list[dict]]:
@@ -218,8 +366,7 @@ class SpeedEnv(gym.Env if gym else object):
                 elif e["kind"] == "go_around":
                     self.counts["go_arounds"] += 1
                     r -= w["go_around"]
-            n = len(s.world.pilots)
-            r -= w["per_aircraft_minute"] * n / 60.0
+            r -= w["per_aircraft_minute"] * len(s.world.pilots) / 60.0
             if s.t % 2 == 0:
                 r += self._conflicts()
         return r, events
@@ -232,6 +379,7 @@ class SpeedEnv(gym.Env if gym else object):
             return 0.0
         f = followers[0]
         target = max(wake.RADAR_MINIMUM_NM, wake.separation_nm(lead.actype, f.actype)) + TARGET_BUFFER_NM
+        self.gaps.append((round(f.along, 2), round(target, 2)))
         err = f.along - target
         if err < 0:
             return -self.reward_w["gap_too_close_per_nm"] * -err
@@ -266,64 +414,9 @@ class SpeedEnv(gym.Env if gym else object):
                 r -= self.reward_w["wake_infringement"]
         return r
 
-    # ---- what the AI sees ---------------------------------------------------------------
-    def _track_miles(self, cs: str, v) -> float:
-        p = self.controller.plans.get(cs)
-        if p is None:
-            return max(v.along, 0.0)
-        pts = self.controller._points(p)
-        if p.stage == "downwind":
-            return (distance_xy(v.x, v.y, *pts["D"]) + distance_xy(*pts["D"], *pts["B"]) + INTERCEPT_LEG_NM + p.d_join)
-        if p.stage == "base":
-            return distance_xy(v.x, v.y, *pts["B"]) + INTERCEPT_LEG_NM + p.d_join
-        if v.loc:
-            return max(v.along, 0.0)
-        return distance_xy(v.x, v.y, *pts["J"]) + p.d_join
-
     def _observe(self) -> np.ndarray:
-        s = self.session
-        views = {v.cs: v for v in s.world.views()}
-        plans = [p for p in self.controller.plans.values()
-                 if p.cs in views and p.stage in ("downwind", "base", "cleared")]
-        plans.sort(key=lambda p: (p.slot_t or p.landing_t))
-        self.slots = [p.cs for p in plans][:N_MAX]
-        obs = np.zeros((N_MAX, N_FEATURES), dtype=np.float32)
-        tm = {cs: self._track_miles(cs, views[cs]) for cs in self.slots}
-        course = math.radians(self.runway.course_true)
-        from shapely.geometry import Point
-
-        for i, cs in enumerate(self.slots):
-            v, p = views[cs], self.controller.plans[cs]
-            limits = speed.band(p.stage, v.along)
-            ahead = self.slots[i - 1] if i > 0 else None
-            behind = self.slots[i + 1] if i + 1 < len(self.slots) else None
-            need = max(wake.RADAR_MINIMUM_NM, wake.separation_nm(views[ahead].actype, v.actype)) if ahead else 3.0
-            cat = wake.category(v.actype)
-            minimum = self.airport.minimum_altitude_ft(v.x, v.y) or 0.0
-            inside = 0.0
-            if self.rma is not None:
-                d = self.rma.polygon.exterior.distance(Point(v.x, v.y))
-                inside = d if self.rma.contains(v.x, v.y) else -d
-            headwind = -(v.wind_e_kt * math.sin(course) + v.wind_n_kt * math.cos(course))
-            row = {
-                "present": 1.0, "controllable": 1.0 if limits else 0.0,
-                "downwind": float(p.stage == "downwind"), "base": float(p.stage == "base"),
-                "cleared": float(p.stage == "cleared"),
-                "track_miles": tm[cs] / 30.0, "time_to_go": max(p.landing_t - s.t, 0.0) / 900.0,
-                "assigned_kt": v.target_spd / 250.0, "cas_kt": v.cas_kt / 250.0, "gs_kt": v.gs_kt / 250.0,
-                "gap_ahead_nm": (tm[cs] - tm[ahead]) / 10.0 if ahead else 1.0, "has_ahead": float(ahead is not None),
-                "gap_needed_nm": (need + TARGET_BUFFER_NM) / 10.0,
-                "closing_kt": (v.gs_kt - views[ahead].gs_kt) / 60.0 if ahead else 0.0,
-                "gap_behind_nm": (tm[behind] - tm[cs]) / 10.0 if behind else 1.0, "has_behind": float(behind is not None),
-                **{f"wake_{c}": float(cat == c) for c in wake.CATEGORIES},
-                "above_profile_ft": (v.alt_ft - tm[cs] * 1000.0 / 3.0) / 3000.0,
-                "above_minimum_ft": (v.alt_ft - minimum) / 3000.0,
-                "inside_rma_nm": inside / 10.0, "along_nm": v.along / 30.0, "lateral_nm": v.lateral / 10.0,
-                "headwind_kt": headwind / 40.0,
-                "band_lo_kt": (limits[0] if limits else 0) / 250.0, "band_hi_kt": (limits[1] if limits else 0) / 250.0,
-            }
-            obs[i] = [row[f] for f in FEATURES]
-        return np.clip(obs, -5.0, 5.0)
+        obs, self.slots = observe(self.session.world.views(), self.controller, self.session.t)
+        return obs
 
     def _shaping(self, obs: np.ndarray) -> float:
         """Small rewards along the way: gaps on target and aircraft on profile."""
