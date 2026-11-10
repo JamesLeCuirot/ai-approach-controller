@@ -68,5 +68,8 @@
       "share_of_changes": 0.085
     },
     "minutes": 3.1
-  }
+  },
+  "finished": "2026-11-10 15:51 UTC",
+  "training_hours_wall": 5.65,
+  "status": "finished"
 }
