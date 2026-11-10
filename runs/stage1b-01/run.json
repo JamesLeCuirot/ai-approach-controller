@@ -67,5 +67,19 @@
     "base_turns": "ai"
   },
   "training_hours": 963,
-  "notes": "Stage 1b: the AI turns aircraft onto base (plus speeds) in a world timed with the wind that releases aircraft from the hold eagerly; competitor: the eager speed-then-stretch rule. Same learning as stage1a-04 (only effective choices count, fading pull to the head start). Restarted at the head start: with the rule's turns counting 10 times it agreed with only 83% of the rule's waits (turning early); now counted once."
+  "notes": "Stage 1b: the AI turns aircraft onto base (plus speeds) in a world timed with the wind that releases aircraft from the hold eagerly; competitor: the eager speed-then-stretch rule. Same learning as stage1a-04 (only effective choices count, fading pull to the head start). Restarted at the head start: with the rule's turns counting 10 times it agreed with only 83% of the rule's waits (turning early); now counted once.",
+  "parameters": 167425,
+  "headstart": {
+    "episodes": 48,
+    "decisions": 20436,
+    "agreement": {
+      "controlled": 0.943,
+      "changes": 0.87,
+      "share_of_changes": 0.083,
+      "turns": 0.326,
+      "waits": 0.976,
+      "share_of_turns": 0.091
+    },
+    "minutes": 3.5
+  }
 }

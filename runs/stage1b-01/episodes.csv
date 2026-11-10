@@ -1,0 +1,4 @@
+trained_decisions,scenario,wind,landed,separation_losses,losses_at_stack,wake_infringements,go_arounds,speed_instructions,blocked,decisions,base_turns,gaps,mean_gap_error_nm,gaps_inside_minimum,scored_separation_losses,scored_wake,mean_spacing_nm,minutes_per_arrival,reward,anchor_coef,anchor_kl,uncertainty
+892,real_2024-06-22_2318,2024-06-22T23,8,0,0,0,0,33,0,223,6,7,5.484,0,0,0,8.9,15.0,2.209,0.5,0.0,0.0
+1196,real_2024-07-04_0135,2025-08-24T08,4,0,0,0,0,10,0,299,2,0,,0,0,0,,14.3,3.575,0.5,0.0,0.0
+1276,real_2024-03-09_0534,2024-03-09T06,6,0,0,0,0,23,0,319,1,1,0.27,0,0,0,4.7,16.8,5.227,0.5,0.0,0.0
