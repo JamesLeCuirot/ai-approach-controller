@@ -57,5 +57,16 @@
     "features": 30
   },
   "training_hours": 963,
-  "notes": "Holding stacks like real ones (first come first served, lowest leaves first, levels only once vacated, climb out of a taken level); only aircraft whose speed the AI gives count in its action probabilities and uncertainty; uncertainty reward 0.001; fading penalty (0.5 to 0.05) for moving away from the head start."
+  "notes": "Holding stacks like real ones (first come first served, lowest leaves first, levels only once vacated, climb out of a taken level); only aircraft whose speed the AI gives count in its action probabilities and uncertainty; uncertainty reward 0.001; fading penalty (0.5 to 0.05) for moving away from the head start.",
+  "parameters": 163201,
+  "headstart": {
+    "episodes": 48,
+    "decisions": 19823,
+    "agreement": {
+      "controlled": 0.947,
+      "changes": 0.904,
+      "share_of_changes": 0.085
+    },
+    "minutes": 3.1
+  }
 }
