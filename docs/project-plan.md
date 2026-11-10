@@ -317,9 +317,14 @@ Then the rules controller gets the fixes any competent programmer would make, su
 
 ### 1b: speed plus when to turn base
 
-- **Adds one decision per aircraft:** when to turn from the downwind onto base, which lengthens or shortens its path. That is how controllers absorb larger delays.
+Stage 1a showed why this comes next: with paths fixed, the AI matched a good speed rule but couldn't beat it, because most separation losses are decided by the gap each aircraft joins final with, which speed can't change ([diary entry of 10 November](../diary/2026-11-10-stage1-06-speed-alone/README.md)). In 1b the AI sets that gap.
+
+- **Adds one decision per aircraft:** every 10 seconds, for each aircraft on the downwind, "turn base now" or "not yet". A later turn lengthens the path and an earlier one shortens it, which is how controllers set the gap and absorb larger delays. It can't turn so early that the final is shorter than 11 NM, and it must turn before the base would leave the RMA; if it hasn't by then, the turn is made for it. It keeps choosing speeds as in 1a. The rules controller still does the headings, descents and ILS clearance, and the planner still decides when aircraft leave the hold (one new control at a time; hold release is a candidate for a stage 1c).
+- **Adds to what it sees,** for each aircraft on the downwind: how far behind the aircraft ahead it would land if it turned base now, and how much room is left before it must turn.
 - **Allows real bunches of arrivals,** up to the busy-hour stress tests.
-- **Competitor:** the full stage 0 rules controller, which stretches the downwind.
+- **Competitor:** the strongest rules controller with the same two controls: it plans each base turn to make the landing slot (stretching or cutting short the downwind), with its timing corrected for the wind. Stage 0's controller timed everything for still air, and the agent must beat a rules controller that has been given the obvious fixes.
+- **Two checks before any training.** How much the base turn matters (the same test sessions with every aircraft turning at a fixed point, against base turns planned to the slot), and how good the competitor is (it must beat stage 1a's speed-only controller, or the comparison is too easy).
+- **Time-boxed.** What carries into stage 2 is what the agent sees, the competitor, the head start and the testing; the base-turn decision itself is replaced by headings there. If one or two runs don't beat the competitor beyond chance, 1b is written up and the project moves on to stage 2.
 
 ### Training and testing
 
@@ -334,7 +339,7 @@ Then the rules controller gets the fixes any competent programmer would make, su
 4. Testing on sessions the agent never practised on, from the 14 held-back days and the most recent weeks: 120 for each saved copy, with every total given as the agent minus the competitor and a 95% range, because separation losses swing so much from session to session that 40 sessions could not tell a real difference from chance; about 200 for the final word.
 5. Every run recorded with its reward weights, seed, code version and results, so each change to the score can be traced to its effect.
 
-**Gates.** 1a: across the test sessions, gaps closer to the target than the speed-only rules controller, with no separation losses, no wake infringements and no more speed instructions. 1b: the same against the full rules controller, plus more landings per hour on the busy-hour stress tests.
+**Gates.** 1a: across the test sessions, gaps closer to the target than the speed-only rules controller, with no separation losses, no wake infringements and no more speed instructions. No speed controller can pass it: most losses happen at the holding stacks and on final inside 7 NM, where speed can't reach. 1b, rewritten so that it asks only for what the agent's controls can reach, and judged beyond chance on the 120 test sessions: fewer separation losses away from the holding stacks than the competitor, fewer gaps inside the minimum, and no more go-arounds or instructions; on the busy-hour stress tests, at least as many landings per hour. Losses at the stacks are reported apart.
 
 **Diary.** "Watching it learn": the same scenario recorded at 0, 10,000, 100,000 and 1 million practice decisions, from near-random speed changes to clean, even gaps.
 
@@ -425,7 +430,7 @@ Each stage produces a result worth publishing, so the project can put out papers
 | Licence | MIT for the code. The real traffic data in `data/real/` stays under adsb.lol's ODbL. The VATSIM UK sector file (GPL-3) is fetched by script, not bundled |
 | Synthetic voice | Not now. A possible nice-to-have later |
 | Arrival traffic | Real Gatwick arrivals from adsb.lol's open ADS-B data (ODbL), every day since late December 2023. The AI takes over each aircraft the first time it is within 40 NM and at or below FL150, wherever it is: heading for a hold, on a direct or on a heading from the previous controller. OpenSky's full data is only for research institutions, and the EUROCONTROL PRC 2024 dataset covers only a few percent of Gatwick's flights |
-| Live demo | Possible with adsb.lol's free live feed: aircraft arrive live and change colour when the AI takes them over, with the real track continuing in faint grey behind. The radar replay already does this for past days |
+| Live demo | Possible with adsb.lol's free live feed: aircraft arrive live and change colour when the AI takes them over, with the real track continuing in faint grey behind. The radar replay already does this for past days. It needs a live data link and a simulator running in real time, so it can be built with the rules controller first and the AI swapped in later |
 | The AI model | A small neural network trained locally with reinforcement learning. No paid APIs. Model-free (PPO) first; model-based learning is the long-term direction, starting with a learned prediction model in stage 2 |
 | One controller or many | One AI controller for all the traffic, as approach control works today. A team of agents is a later comparison |
 | Role of real data | Realistic traffic and the yardstick, not the main teacher. The AI learns mainly by practice in the simulator; copying real controllers is an optional head start |

@@ -252,7 +252,10 @@ class SpeedEnv(gym.Env if gym else object):
 
     def __init__(self, split: str = "train", window_s: int = 3600, other_wind_p: float = 0.25, seed: int | None = None,
                  hours: list[tuple[str, int]] | None = None, reward: dict | None = None, frames: bool = True,
-                 cached_winds_only: bool = False):
+                 cached_winds_only: bool = False, planner: dict | None = None):
+        """``planner`` overrides the rules controller's settings (fixed_paths, speeds, wind_aware): stage 1a's world
+        is fixed paths with the speeds left to the AI; other settings fly other rules controllers on the same
+        sessions, for comparison."""
         if gym is None:
             raise ImportError("pip install gymnasium")
         self.airport = egkk.load()
@@ -262,6 +265,7 @@ class SpeedEnv(gym.Env if gym else object):
         self.reward_w = {**REWARD, **(reward or {})}
         self.frames = frames
         self.cached_winds_only = cached_winds_only
+        self.planner = {"fixed_paths": True, "speeds": "none", **(planner or {})}
         self.rng = random.Random(seed)
         self._days: dict[str, dict] = {}
         self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, N_FEATURES), dtype=np.float32)
@@ -316,7 +320,7 @@ class SpeedEnv(gym.Env if gym else object):
         wind = wind or fetch_for_airport(parse_time(wind_hour), self.airport)
         self.scheme = wake.scheme_for(d)
         self.teacher = bool(options.get("teacher"))
-        self.controller = RulesController(self.airport, scenario.runway, fixed_paths=True, speeds="none")
+        self.controller = RulesController(self.airport, scenario.runway, **self.planner)
         self.controller.name = "rules_speed" if self.teacher else "ai_speed"
         log = SessionLog(meta={"scenario": scenario.name, "runway": scenario.runway, "wind": wind_hour,
                                "controller": self.controller.name, "wake_scheme": self.scheme}, map={})

@@ -113,10 +113,14 @@ class Plan:
 class RulesController(Controller):
     name = "rules"
 
-    def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules"):
+    def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
+                 wind_aware: bool = False):
+        """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
+        timing is for still air, as in stage 0 and stage 1a, whose results it keeps."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         self.fixed_paths = fixed_paths
+        self.wind_aware = wind_aware
         self.speeds = speeds
         self.last_speed_t = -1e9
         self.airport = airport
@@ -178,30 +182,44 @@ class RulesController(Controller):
         # Left of the centreline (side -1) the aircraft must head right of the course to close it.
         return (self.runway.course_true - p.side * INTERCEPT_DEG) % 360
 
+    def _gs(self, v, speed_kt: float, track_deg: float) -> float:
+        """Ground speed along a track: the airspeed itself in still-air timing, else with the wind at the aircraft."""
+        if not self.wind_aware:
+            return speed_kt
+        b = math.radians(track_deg)
+        along = v.wind_e_kt * math.sin(b) + v.wind_n_kt * math.cos(b)
+        cross = v.wind_e_kt * math.cos(b) - v.wind_n_kt * math.sin(b)
+        return max(60.0, math.sqrt(max(speed_kt * speed_kt - cross * cross, 100.0)) + along)
+
+    def _final_gs(self, v) -> float:
+        """Ground speed on final, for turning a gap in miles into a gap in time."""
+        return self._gs(v, 150.0, self.runway.course_true)
+
     def _eta(self, v, p: Plan, d_join: float | None = None) -> float:
         """Seconds from now to touchdown on the planned path."""
         q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
         pts = self._points(q)
-        legs = []
+        legs = []  # (distance, airspeed, track)
         icpt = self._intercept_heading(q)
         base_hdg = bearing_xy(*pts["D"], *pts["B"])
         if q.stage in ("downwind", "inbound"):
-            downwind_gs = max(v.tas_kt, 200.0)  # true airspeed is faster than indicated at altitude
+            downwind_kt = max(v.tas_kt, 200.0)  # true airspeed is faster than indicated at altitude
             to_d = bearing_xy(v.x, v.y, *pts["D"])
             legs += [
-                (distance_xy(v.x, v.y, *pts["D"]) - self._corner_saving(to_d, base_hdg, downwind_gs), downwind_gs),
-                (distance_xy(*pts["D"], *pts["B"]) - self._corner_saving(base_hdg, icpt, GS_BASE), GS_BASE),
+                (distance_xy(v.x, v.y, *pts["D"]) - self._corner_saving(to_d, base_hdg, downwind_kt), downwind_kt, to_d),
+                (distance_xy(*pts["D"], *pts["B"]) - self._corner_saving(base_hdg, icpt, GS_BASE), GS_BASE, base_hdg),
             ]
         elif q.stage == "base":
             to_b = bearing_xy(v.x, v.y, *pts["B"])
-            legs.append((distance_xy(v.x, v.y, *pts["B"]) - self._corner_saving(to_b, icpt, GS_BASE), GS_BASE))
+            legs.append((distance_xy(v.x, v.y, *pts["B"]) - self._corner_saving(to_b, icpt, GS_BASE), GS_BASE, to_b))
         if q.stage in ("downwind", "base", "inbound"):
-            legs.append((INTERCEPT_LEG_NM, GS_BASE))
+            legs.append((INTERCEPT_LEG_NM, GS_BASE, icpt))
             final = q.d_join
         else:
             final = max(v.along, 0.0)
-        legs += [(max(final - 4.0, 0.0), 160.0), (min(final, 4.0), float(wake.approach_speed(q.actype)))]
-        return sum(d / gs * 3600.0 for d, gs in legs)
+        course = self.runway.course_true
+        legs += [(max(final - 4.0, 0.0), 160.0, course), (min(final, 4.0), float(wake.approach_speed(q.actype)), course)]
+        return sum(d / self._gs(v, kt, trk) * 3600.0 for d, kt, trk in legs)
 
     @staticmethod
     def _corner_saving(from_hdg: float, to_hdg: float, tas_kt: float) -> float:
@@ -235,7 +253,7 @@ class RulesController(Controller):
                 need = t
                 if prev_t is not None:
                     gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
-                    need = prev_t + gap_nm / 150.0 * 3600.0
+                    need = prev_t + gap_nm / self._final_gs(v) * 3600.0
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
                     can_go = (longest >= D_JOIN_FIXED_NM and self._inside(v.x, v.y)
@@ -261,12 +279,12 @@ class RulesController(Controller):
                 p.slot_t = p.landing_t
                 if prev_t is not None:
                     gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
-                    p.slot_t = max(p.landing_t, prev_t + gap_nm / 150.0 * 3600.0)
+                    p.slot_t = max(p.landing_t, prev_t + gap_nm / self._final_gs(v) * 3600.0)
                 prev_t, prev_type = p.slot_t, p.actype
                 continue
             if p.stage == "downwind" and prev_t is not None:
                 gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
-                need = prev_t + gap_nm / 150.0 * 3600.0  # landing time that keeps the gap
+                need = prev_t + gap_nm / self._final_gs(v) * 3600.0  # landing time that keeps the gap
                 lo, hi = D_JOIN_MIN_NM, max(D_JOIN_MIN_NM, self.max_join(p.side))
                 if t + self._eta(v, p, hi) < need:
                     p.d_join = hi
@@ -480,7 +498,7 @@ class RulesController(Controller):
             want = max(TARGET_SPACING_NM, wake.separation_nm(lead.actype, follow.actype))
             # Where the follower will be when the leader lands, at the speeds both will fly from here.
             lead_s = self._eta(lv, lead)
-            gap = fv.along - lead_s * 155.0 / 3600.0
+            gap = fv.along - lead_s * self._gs(fv, 155.0, self.runway.course_true) / 3600.0
             speed = 180 if gap > want + 1.0 else SPEED_FINAL
             if follow.spd_cmd != speed:
                 self._say(follow, "speed", speed)
