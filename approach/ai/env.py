@@ -57,9 +57,10 @@ FEATURES = (
 )
 N_FEATURES = len(FEATURES)
 # Stage 1b adds, for an aircraft on the downwind: whether the AI can turn it onto base now, the gap (NM) it would
-# land with behind the aircraft ahead if it did, how far it can still fly on before it must turn, and how far it is
-# from where the planner would turn it (speed first, then a longer downwind): the plan, to follow or improve on.
-FEATURES_1B = FEATURES + ("can_turn", "gap_if_turn_now_nm", "room_to_turn_nm", "planned_turn_in_nm")
+# land with behind the aircraft ahead if it did, how far it can still fly on before it must turn, how far it is from
+# where the planner would turn it (speed first, then a longer downwind), and whether the planner would turn it before
+# the next decision: the plan, to follow or improve on.
+FEATURES_1B = FEATURES + ("can_turn", "gap_if_turn_now_nm", "room_to_turn_nm", "planned_turn_in_nm", "planned_turn_now")
 # Stage 1b's world: fixed paths that the AI can stretch by turning base later, aircraft released from the hold as
 # soon as their slot can be made with the longest downwind and speed, everything timed with the wind.
 PLANNER_1B = {"fixed_paths": True, "speeds": "none", "wind_aware": True, "stretch": True, "release": "eager",
@@ -173,16 +174,19 @@ def observe(views: list, controller: RulesController, t: float, base_turns: bool
 def base_turn_features(controller: RulesController, v, p, lead, by_cs: dict, t: float) -> dict:
     """Stage 1b's extra inputs for one aircraft (zero unless it is on the downwind and not yet turned)."""
     if not controller.can_turn_base(v, p):
-        return {"can_turn": 0.0, "gap_if_turn_now_nm": 0.0, "room_to_turn_nm": 0.0, "planned_turn_in_nm": 0.0}
+        return {"can_turn": 0.0, "gap_if_turn_now_nm": 0.0, "room_to_turn_nm": 0.0, "planned_turn_in_nm": 0.0,
+                "planned_turn_now": 0.0}
     gap = 1.0  # nothing ahead: plenty of room
     if lead is not None:
         landing = t + controller.eta_if_turned_now(v, p)
         gap = (landing - lead.landing_t) * controller._final_gs(v) / 3600.0 / 10.0
     now = controller.final_if_turned_now(v, p)
     room = controller._turn_d(p) - now
-    planned = p.d_join - now  # p.d_join is the planner's choice until the AI turns the aircraft
+    to_turn = controller.to_planned_turn_nm(v, p)
     return {"can_turn": 1.0, "gap_if_turn_now_nm": gap, "room_to_turn_nm": room / 10.0,
-            "planned_turn_in_nm": planned / 10.0}
+            "planned_turn_in_nm": to_turn / 10.0,
+            # the planner would turn it before the AI's next decision (10 s from now)
+            "planned_turn_now": float(to_turn <= v.gs_kt * speed.DECISION_S / 3600.0)}
 
 
 def speed_instructions(action, slots: list[str], views: list, controller: RulesController) -> list[tuple[Instruction, bool]]:

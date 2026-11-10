@@ -95,7 +95,7 @@ def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, li
 
 
 def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
-              change_weight: float = 5.0, turn_weight: float = 1.0) -> dict:
+              change_weight: float = 5.0, turn_weight: float = 1.0, turn_block_weight: float = 10.0) -> dict:
     """Behaviour cloning: train the policy to give the speeds the speed-only rules controller gave.
 
     Only aircraft the AI controls count, and the decisions where the controller changed a speed
@@ -121,7 +121,10 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
     if base_turns:  # stage 1b: the base turns, where the AI could turn; the turns themselves count more
         can_turn = obs_t[..., FEATURES_1B.index("can_turn")] > 0.5
         turned = can_turn & (act_t[:, N_MAX:] == 1)
-        weight = torch.cat([weight, can_turn.float() * (1.0 + (turn_weight - 1.0) * turned.float())], dim=1)
+        # Every turn-or-wait choice counts turn_block_weight times (they are few beside 16 speeds a step, and
+        # otherwise barely learned); a turn counts turn_weight times a wait (more tips the AI towards turning).
+        weight = torch.cat([weight, turn_block_weight * can_turn.float() * (1.0 + (turn_weight - 1.0) * turned.float())],
+                           dim=1)
 
     def slot_log_probs(o, a):
         dist = policy.get_distribution(o)

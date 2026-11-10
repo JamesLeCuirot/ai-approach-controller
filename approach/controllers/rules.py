@@ -347,6 +347,13 @@ class RulesController(Controller):
         return (p is not None and p.stage == "downwind" and not p.ai_turn_d
                 and self.final_if_turned_now(v, p) >= D_JOIN_FIXED_NM)
 
+    def to_planned_turn_nm(self, v, p: Plan) -> float:
+        """How far the aircraft is from where the planner would turn it onto base (p.d_join, its choice until the AI
+        turns the aircraft), less the distance the turn starts before that point: at or below zero, it would turn."""
+        pts = self._points(p)
+        to_d = bearing_xy(v.x, v.y, *pts["D"])
+        return distance_xy(v.x, v.y, *pts["D"]) - self._turn_lead_nm(v, to_d, bearing_xy(*pts["D"], *pts["B"]))
+
     def turn_base_now(self, cs: str, v) -> bool:
         """The AI's instruction: turn this aircraft onto base now. Returns whether it was taken."""
         p = self.plans.get(cs)
