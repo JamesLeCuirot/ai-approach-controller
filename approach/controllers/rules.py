@@ -80,6 +80,8 @@ SPEED_HOLD = 220
 # would arrive at an occupied one), the lowest aircraft leaves first, and no aircraft is given a level until the
 # aircraft below it nearby has left it.
 VACATE_NM = 10.0  # an aircraft below and within this distance must have left a level before another descends into it
+STACK_BY_HEIGHT = True  # (being tested) the stack's order follows heights; else first come, first served
+CLIMB_TO_FREE = True  # (being tested) climb an aircraft whose level is taken
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 
@@ -346,6 +348,11 @@ class RulesController(Controller):
                     p.holding = True
                     self.notes.append(f"{p.cs} holding at {p.hold_fix}")
                     if not p.below_stack:
+                        if not STACK_BY_HEIGHT:  # first come, first served: the back of this stack's queue
+                            keys = [q.key for q in self._stack(p.hold_fix, views) if q.holding and q is not p]
+                            if keys and p.key <= max(keys):
+                                p.key = max(keys) + 1.0
+                                self.last_plan_t = -1e9
                         self._stack_levels(views)  # its place in the stack, and the queue, follow its height
                 # Down into a level once the one below has left it; up to a free level only when the aircraft's own
                 # level is taken nearby.
@@ -354,7 +361,7 @@ class RulesController(Controller):
                         level = self._free_level(p, v, views, p.stack_level)
                         if level < v.target_alt and level != p.alt_cmd:
                             self._say(p, "altitude", level)
-                    elif (p.stack_level > v.target_alt and p.alt_cmd != p.stack_level and self._level_taken(p, v, views)
+                    elif (CLIMB_TO_FREE and p.stack_level > v.target_alt and p.alt_cmd != p.stack_level and self._level_taken(p, v, views)
                           and self._clear_above(p, v, views, p.stack_level)):
                         self._say(p, "altitude", p.stack_level)
                 continue
@@ -435,7 +442,8 @@ class RulesController(Controller):
         order (the lowest first), so none ever passes through another; those on their way get the levels above."""
         for fix in STACKS:
             members = self._stack(fix, views)
-            holders = sorted((p for p in members if p.holding), key=lambda p: views[p.cs].alt_ft)
+            holders = sorted((p for p in members if p.holding),
+                             key=(lambda p: views[p.cs].alt_ft) if STACK_BY_HEIGHT else (lambda p: p.key))
             for p, key in zip(holders, sorted(p.key for p in holders)):
                 if p.key != key:  # the queue follows the stack
                     p.key = key
