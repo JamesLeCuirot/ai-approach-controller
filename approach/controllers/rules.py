@@ -76,6 +76,11 @@ PILOT_DELAY_S = 4.5
 STACKS = ("WILLO", "TIMBA")
 STACK_BASE_FT = 7000  # the minimum stack level (FL70 on a standard day)
 SPEED_HOLD = 220
+# Holding stacks work as real controllers run them: an aircraft joins at the top (climbed to a free level if it
+# would arrive at an occupied one), the lowest aircraft leaves first, and no aircraft is given a level until the
+# aircraft below it nearby has left it.
+VACATE_NM = 10.0  # an aircraft below and within this distance must have left a level before another descends into it
+VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 
 
@@ -89,6 +94,7 @@ class Plan:
     hold_fix: str = "WILLO"
     holding: bool = False
     stack_level: int = 0
+    below_stack: bool = False  # came back below the stack (a go-around) or entered below it: kept out of the stack
     direct_sent: bool = False
     d_join: float = D_JOIN_MIN_NM
     level: int = 4000
@@ -234,6 +240,8 @@ class RulesController(Controller):
                               and t + self._eta(v, probe) + SPEED_ABSORB_S >= need)
                 else:
                     can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
+                if can_go and p.holding and not p.below_stack and self._anyone_below_in_stack(p, views):
+                    can_go = False  # the lowest aircraft in a stack leaves first
                 if can_go:
                     p.stage, p.side, p.holding = "downwind", side, False
                     ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
@@ -309,6 +317,7 @@ class RulesController(Controller):
                 if v.cs in self.went_around:  # back to the front of the queue
                     self.went_around.discard(v.cs)
                     p.key = t
+                p.below_stack = v.target_alt < STACK_BASE_FT  # stays below the stack until it is vectored off
                 self.plans[v.cs] = p
                 self.last_plan_t = -1e9  # replan now
         for cs in [cs for cs in self.plans if cs not in views]:
@@ -336,15 +345,25 @@ class RulesController(Controller):
                     self._say(p, "hold", p.hold_fix)
                     p.holding = True
                     self.notes.append(f"{p.cs} holding at {p.hold_fix}")
-                # Stacks only step down, except for an aircraft coming up from below them (after a go-around),
-                # which climbs to its level in the stack.
-                climb_into_stack = v.target_alt < STACK_BASE_FT
-                if (p.stack_level and p.alt_cmd != p.stack_level and t >= p.retry_t
-                        and (p.stack_level < v.target_alt or climb_into_stack)):
-                    self._say(p, "altitude", p.stack_level)
+                    if not p.below_stack:
+                        self._stack_levels(views)  # its place in the stack, and the queue, follow its height
+                # Down into a level once the one below has left it; up to a free level only when the aircraft's own
+                # level is taken nearby.
+                if p.stack_level and not p.below_stack and t >= p.retry_t:
+                    if p.stack_level < v.target_alt:
+                        level = self._free_level(p, v, views, p.stack_level)
+                        if level < v.target_alt and level != p.alt_cmd:
+                            self._say(p, "altitude", level)
+                    elif (p.stack_level > v.target_alt and p.alt_cmd != p.stack_level and self._level_taken(p, v, views)
+                          and self._clear_above(p, v, views, p.stack_level)):
+                        self._say(p, "altitude", p.stack_level)
                 continue
             pts = self._points(p)
-            if p.alt_cmd is None and t >= p.retry_t:
+            if p.stage == "downwind" and t >= p.retry_t and v.target_alt > p.level:
+                level = self._free_level(p, v, views, p.level)  # leaving the hold: down once the level is free
+                if level < v.target_alt and level != p.alt_cmd:
+                    self._say(p, "altitude", level)
+            elif p.alt_cmd is None and t >= p.retry_t:
                 self._say(p, "altitude", p.level)
             if p.stage == "downwind":
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
@@ -406,13 +425,48 @@ class RulesController(Controller):
             target = speed.STANDARD_KT[p.stage]
         return speed.in_band(target, limits)
 
+    def _stack(self, fix: str, views: dict) -> list[Plan]:
+        """The aircraft in a stack or on their way to it (not those kept below it), in queue order."""
+        return sorted((p for p in self.plans.values() if p.stage == "inbound" and p.hold_fix == fix and p.cs in views
+                       and not p.below_stack), key=lambda p: p.key)
+
     def _stack_levels(self, views: dict) -> None:
-        """Each stack fills from the bottom: the earliest in the sequence gets the lowest level."""
+        """The aircraft holding fill each stack from the bottom in the order of their heights, and leave in that
+        order (the lowest first), so none ever passes through another; those on their way get the levels above."""
         for fix in STACKS:
-            waiting = sorted((p for p in self.plans.values() if p.stage == "inbound" and p.hold_fix == fix and p.cs in views),
-                             key=lambda p: p.key)
-            for k, p in enumerate(waiting):
+            members = self._stack(fix, views)
+            holders = sorted((p for p in members if p.holding), key=lambda p: views[p.cs].alt_ft)
+            for p, key in zip(holders, sorted(p.key for p in holders)):
+                if p.key != key:  # the queue follows the stack
+                    p.key = key
+                    self.last_plan_t = -1e9
+            for k, p in enumerate(holders + [p for p in members if not p.holding]):
                 p.stack_level = STACK_BASE_FT + 1000 * k
+
+    def _anyone_below_in_stack(self, p: Plan, views: dict) -> bool:
+        v = views[p.cs]
+        return any(q.holding and q is not p and views[q.cs].alt_ft < v.alt_ft - 300 for q in self._stack(p.hold_fix, views))
+
+    def _near(self, v, views: dict) -> list:
+        return [w for w in views.values() if w.cs != v.cs and distance_xy(v.x, v.y, w.x, w.y) < VACATE_NM]
+
+    def _level_taken(self, p: Plan, v, views: dict) -> bool:
+        """Another aircraft nearby is within 1,000 ft of the level this one is heading for."""
+        return any(abs(w.alt_ft - v.target_alt) < 1000 for w in self._near(v, views))
+
+    def _clear_above(self, p: Plan, v, views: dict, level: float) -> bool:
+        """No aircraft nearby is between this one and `level` (plus the separation above it)."""
+        return all(w.alt_ft >= level + VACATED_FT for w in self._near(v, views) if w.alt_ft > v.alt_ft + 50)
+
+    def _free_level(self, p: Plan, v, views: dict, want: float) -> float:
+        """The lowest level from `want` up to the aircraft's current one that every aircraft below it nearby has left."""
+        below = [w for w in self._near(v, views) if w.alt_ft < v.alt_ft - 50]
+        level, top = want, max(v.target_alt, want)
+        while level < top:
+            if all(w.alt_ft <= level - VACATED_FT for w in below):
+                return level
+            level += 1000
+        return top
 
     def _final_spacing(self, views: dict) -> None:
         """Final director: keep a cleared follower at least 6 NM behind the aircraft ahead.

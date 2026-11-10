@@ -1,12 +1,16 @@
 """Test a trained AI against the speed-only rules controller on traffic it never practised on.
 
-    python -m approach.ai.evaluate runs/stage1a-01/model_final.zip --sessions 120
+    python -m approach.ai.evaluate runs/stage1a-04/model_final.zip
 
 Sessions are drawn from the test days and the rolling recent set (never the training days):
 a real hour, a start minute and a pilot seed each. Both controllers fly exactly the same
 sessions, in the same winds with the same pilots, so the only difference is who chose the
 speeds. Stage 1a's gate: across the sessions, gaps closer to the target than the speed-only
 controller, with no separation losses, no wake infringements and no more speed instructions.
+
+Separation losses swing a lot from one session to the next, so the summary also gives, for the
+AI minus the speed-only controller, each total difference with its 95% range: a difference
+inside the range could be chance. 120 sessions is the default (40 left too much to chance).
 
 Writes <model>.eval.csv (one row per session and controller) and <model>.eval.json (totals and
 the gate), next to the model.
@@ -97,6 +101,21 @@ def _run(args: tuple) -> list[dict]:
     return rows
 
 
+def paired_differences(rows: list[dict]) -> dict:
+    """AI minus the speed-only controller, session by session: each total difference and its 95% range."""
+    by = {(int(r["session"]), r["controller"]): r for r in rows}
+    sessions = sorted({k for k, who in by if who == "ai" and (k, "rules_speed") in by})
+    out = {}
+    for key in ("separation_losses", "wake_infringements", "go_arounds", "gaps_inside_minimum", "landed"):
+        d = np.array([int(by[k, "ai"][key]) - int(by[k, "rules_speed"][key]) for k in sessions], dtype=float)
+        if len(d) < 2:
+            continue
+        half = 1.96 * d.std(ddof=1) * np.sqrt(len(d))
+        out[key] = {"difference": int(d.sum()), "range_95": round(float(half), 1),
+                    "beyond_chance": bool(abs(d.sum()) > half)}
+    return out
+
+
 def summarise(rows: list[dict]) -> dict:
     out = {}
     for who in sorted({r["controller"] for r in rows}):
@@ -114,7 +133,8 @@ def summarise(rows: list[dict]) -> dict:
             "speed_instructions_per_arrival": round(sum(int(r["speed_instructions"]) for r in g) / max(landed, 1), 2),
             "mean_reward": round(float(np.mean([float(r["reward"]) for r in g])), 2),
         }
-    if "ai" in out:
+    if "ai" in out and "rules_speed" in out:
+        out["ai_minus_rules_speed"] = paired_differences(rows)
         a, b = out["ai"], out["rules_speed"]
         out["gate"] = {
             "closer_gaps": a["mean_gap_error_nm"] < b["mean_gap_error_nm"],

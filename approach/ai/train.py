@@ -1,13 +1,16 @@
 """Train stage 1a's AI: a head start copying the speed-only rules controller, then practice with PPO.
 
+From run stage1a-04 on, practice uses approach.ai.ppo: only the aircraft whose speed the AI gives
+count, and a fading penalty keeps the AI close to its head start.
+
     python -m approach.ai.train --run stage1a-01 --decisions 1000000 --envs 4
 
 Everything about the run goes in runs/<run>/ (not committed: models and logs are large):
 
 * run.json: the score's weights, the settings, the seeds, the code version, the data, timings
 * episodes.csv: every training episode's results (landings, gaps, losses, instructions, score)
-* model_untrained.zip, model_headstart.zip, model_10k.zip, model_100k.zip, model_300k.zip,
-  model_final.zip: the AI at each point, for replays and the "watching it learn" diary entry
+* model_untrained.zip, model_headstart.zip, model_10k.zip ... model_750k.zip, model_final.zip:
+  the AI at each point, for replays and the "watching it learn" diary entry
 
 and one row per run in diary/training-runs.csv (committed), so every run is on the record.
 
@@ -38,7 +41,9 @@ RUN_FIELDS = ["run", "started", "code_version", "decisions", "envs", "seed", "he
 CHECKPOINTS = {10_000: "10k", 100_000: "100k", 300_000: "300k", 500_000: "500k", 750_000: "750k"}
 LATEST_EVERY = 50_000  # also save model_latest.zip this often, to resume from
 PPO_SETTINGS = dict(n_steps=512, batch_size=256, n_epochs=5, learning_rate=2e-4, gamma=0.99, gae_lambda=0.95,
-                    clip_range=0.15, ent_coef=0.005, vf_coef=0.5, max_grad_norm=0.5)
+                    clip_range=0.15, ent_coef=0.001, vf_coef=0.5, max_grad_norm=0.5)
+# The penalty for moving away from the head start (approach.ai.ppo.AnchoredPPO), fading over the run.
+ANCHOR = dict(anchor_start=0.5, anchor_end=0.05)
 
 
 def episode_row(info: dict, total_reward: float | None = None) -> dict:
@@ -151,12 +156,12 @@ def main() -> None:
     args = ap.parse_args()
 
     import torch
-    from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import BaseCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecNormalize
 
     from approach.ai.env import N_FEATURES, N_MAX, REWARD, SpeedEnv, training_hours
     from approach.ai.policy import POLICY_KWARGS
+    from approach.ai.ppo import AnchoredPPO, SpeedPolicy
 
     torch.set_num_threads(1)  # a small network: extra threads only compete with the simulations for the cores
     out = RUNS / args.run
@@ -166,7 +171,8 @@ def main() -> None:
         "run": args.run, "started": started.strftime("%Y-%m-%d %H:%M UTC"), "code_version": code_version(),
         "decisions": args.decisions, "envs": args.envs, "seed": args.seed,
         "headstart_episodes": args.headstart_episodes, "cached_winds_only": args.cached_winds_only,
-        "reward_weights": REWARD, "ppo": PPO_SETTINGS, "policy": {"extractor": "AircraftAttention",
+        "reward_weights": REWARD, "ppo": PPO_SETTINGS, "algorithm": "AnchoredPPO (approach/ai/ppo.py)",
+        "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
                                                                   "net_arch": POLICY_KWARGS["net_arch"]},
         "observation": {"aircraft": N_MAX, "features": N_FEATURES}, "training_hours": len(training_hours()),
@@ -185,11 +191,12 @@ def main() -> None:
     venv = VecNormalize(VecMonitor(SubprocVecEnv([make(k) for k in range(args.envs)])), norm_obs=False,
                         norm_reward=True, gamma=PPO_SETTINGS["gamma"])
     if args.resume:
-        model = PPO.load(args.resume, env=venv, device="cpu")
+        model = AnchoredPPO.load(args.resume, env=venv, device="cpu")
+        model.set_anchor(AnchoredPPO.load(out / "model_headstart.zip", device="cpu").policy)
         print(f"Resuming from {args.resume} at {model.num_timesteps:,} decisions", flush=True)
     else:
-        model = PPO("MlpPolicy", venv, policy_kwargs=POLICY_KWARGS, seed=args.seed, device="cpu", verbose=0,
-                    **PPO_SETTINGS)
+        model = AnchoredPPO(SpeedPolicy, venv, policy_kwargs=POLICY_KWARGS, seed=args.seed, device="cpu", verbose=0,
+                            **ANCHOR, **PPO_SETTINGS)
         n_params = sum(p.numel() for p in model.policy.parameters())
         record["parameters"] = n_params
         model.save(out / "model_untrained.zip")
@@ -204,6 +211,7 @@ def main() -> None:
         teacher_rows = [r for _, _, rows in parts for r in rows]
         agree = headstart(model, obs, acts)
         model.save(out / "model_headstart.zip")
+        model.set_anchor(model.policy)  # practice is pulled back towards this copy
         record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
                                "minutes": round((time.time() - t0) / 60, 1)}
         with (out / "teacher_episodes.csv").open("w", newline="") as f:
@@ -239,7 +247,10 @@ def main() -> None:
             for i, (done, info) in enumerate(zip(self.locals["dones"], self.locals["infos"])):
                 self.rewards[i] += float(venv.get_original_reward()[i])
                 if done and "counts" in info:
-                    row = {"trained_decisions": self.num_timesteps, **episode_row(info, self.rewards[i])}
+                    row = {"trained_decisions": self.num_timesteps, **episode_row(info, self.rewards[i]),
+                           "anchor_coef": round(self.model.anchor_coef(), 4),
+                           "anchor_kl": round(getattr(self.model, "last_anchor_kl", 0.0), 4),
+                           "uncertainty": round(getattr(self.model, "last_entropy", 0.0), 4)}
                     if writer is None:
                         writer = csv.DictWriter(episodes_csv, fieldnames=list(row))
                         if not resuming_log:
