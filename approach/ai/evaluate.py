@@ -106,8 +106,10 @@ def paired_differences(rows: list[dict]) -> dict:
     by = {(int(r["session"]), r["controller"]): r for r in rows}
     sessions = sorted({k for k, who in by if who == "ai" and (k, "rules_speed") in by})
     out = {}
-    for key in ("separation_losses", "wake_infringements", "go_arounds", "gaps_inside_minimum", "landed"):
-        d = np.array([int(by[k, "ai"][key]) - int(by[k, "rules_speed"][key]) for k in sessions], dtype=float)
+    for key in ("separation_losses", "losses_at_stack", "wake_infringements", "go_arounds", "gaps_inside_minimum",
+                "landed"):
+        d = np.array([int(by[k, "ai"].get(key) or 0) - int(by[k, "rules_speed"].get(key) or 0) for k in sessions],
+                     dtype=float)
         if len(d) < 2:
             continue
         half = 1.96 * d.std(ddof=1) * np.sqrt(len(d))
@@ -128,6 +130,7 @@ def summarise(rows: list[dict]) -> dict:
             "mean_gap_error_nm": round(sum(errs) / gaps, 3) if gaps else None,
             "gaps_inside_minimum": sum(int(r["gaps_inside_minimum"]) for r in g),
             "separation_losses": sum(int(r["separation_losses"]) for r in g),
+            "losses_at_stack": sum(int(r.get("losses_at_stack") or 0) for r in g),
             "wake_infringements": sum(int(r["wake_infringements"]) for r in g),
             "go_arounds": sum(int(r["go_arounds"]) for r in g),
             "speed_instructions_per_arrival": round(sum(int(r["speed_instructions"]) for r in g) / max(landed, 1), 2),

@@ -52,7 +52,7 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
     errs = [g - t for g, t in gaps]
     return {
         "scenario": info.get("scenario", ""), "wind": info.get("wind", ""),
-        "landed": c["landed"], "separation_losses": c["separation_losses"],
+        "landed": c["landed"], "separation_losses": c["separation_losses"], "losses_at_stack": c.get("losses_at_stack", ""),
         "wake_infringements": c["wake_infringements"], "go_arounds": c["go_arounds"],
         "speed_instructions": c["instructions"], "blocked": c["blocked"], "decisions": c["decisions"],
         "gaps": len(gaps),

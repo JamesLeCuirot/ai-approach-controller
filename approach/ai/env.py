@@ -310,8 +310,8 @@ class SpeedEnv(gym.Env if gym else object):
         self.in_conflict: set[tuple[str, str]] = set()
         self.wake_flagged: set[tuple[str, str]] = set()
         self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final
-        self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "wake_infringements": 0,
-                       "instructions": 0, "blocked": 0, "decisions": 0}
+        self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "losses_at_stack": 0,
+                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0}
         with wake.scheme(self.scheme):
             obs = self._observe()
             while not self.slots and not self.session.done:  # nothing to control yet: let the traffic arrive
@@ -413,6 +413,9 @@ class SpeedEnv(gym.Env if gym else object):
         self.in_conflict = now
         if new:
             self.counts["separation_losses"] += len(new)
+            # Losses involving an aircraft in a holding stack or on its way to one: the planner's levels, not speeds.
+            self.counts["losses_at_stack"] += sum(1 for pair in new
+                                                  if any(self.controller.stage_of(cs) == "inbound" for cs in pair))
             r -= self.reward_w["separation_loss"] * len(new)
         finals = sorted((v for v in views if v.loc), key=lambda v: v.along)
         for lead, f in zip(finals, finals[1:]):

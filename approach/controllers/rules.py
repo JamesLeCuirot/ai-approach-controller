@@ -76,13 +76,12 @@ PILOT_DELAY_S = 4.5
 STACKS = ("WILLO", "TIMBA")
 STACK_BASE_FT = 7000  # the minimum stack level (FL70 on a standard day)
 SPEED_HOLD = 220
-# Holding stacks work as real controllers run them: an aircraft joins at the top (climbed to a free level if it
-# would arrive at an occupied one), the lowest aircraft leaves first, and no aircraft is given a level until the
-# aircraft below it nearby has left it.
-VACATE_NM = 10.0  # an aircraft below and within this distance must have left a level before another descends into it
-STACK_BY_HEIGHT = True  # (being tested) the stack's order follows heights; else first come, first served
-CLIMB_TO_FREE = True  # (being tested) climb an aircraft whose level is taken
-FREE_LEVEL_ON_RELEASE = True  # (being tested) an aircraft leaving the stack also waits for the level below to be free
+# Holding stacks work as real controllers run them: first come, first served (an aircraft that starts holding
+# joins the top of the stack and the back of its queue), the lowest aircraft leaves first, no aircraft is given a
+# level until the aircraft below it nearby has left it, and an aircraft heading for a level that is taken nearby
+# is climbed to its own. (Tested against other versions on the nine test sessions with the most trouble at the
+# stack: ordering the stack by height, waiting for a free level when leaving it, or 4, 8 or 10 NM all did worse.)
+VACATE_NM = 6.0  # an aircraft below and within this distance must have left a level before another descends into it
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 
@@ -348,13 +347,12 @@ class RulesController(Controller):
                     self._say(p, "hold", p.hold_fix)
                     p.holding = True
                     self.notes.append(f"{p.cs} holding at {p.hold_fix}")
-                    if not p.below_stack:
-                        if not STACK_BY_HEIGHT:  # first come, first served: the back of this stack's queue
-                            keys = [q.key for q in self._stack(p.hold_fix, views) if q.holding and q is not p]
-                            if keys and p.key <= max(keys):
-                                p.key = max(keys) + 1.0
-                                self.last_plan_t = -1e9
-                        self._stack_levels(views)  # its place in the stack, and the queue, follow its height
+                    if not p.below_stack:  # first come, first served: the back of this stack's queue
+                        keys = [q.key for q in self._stack(p.hold_fix, views) if q.holding and q is not p]
+                        if keys and p.key <= max(keys):
+                            p.key = max(keys) + 1.0
+                            self.last_plan_t = -1e9
+                        self._stack_levels(views)
                 # Down into a level once the one below has left it; up to a free level only when the aircraft's own
                 # level is taken nearby.
                 if p.stack_level and not p.below_stack and t >= p.retry_t:
@@ -362,16 +360,12 @@ class RulesController(Controller):
                         level = self._free_level(p, v, views, p.stack_level)
                         if level < v.target_alt and level != p.alt_cmd:
                             self._say(p, "altitude", level)
-                    elif (CLIMB_TO_FREE and p.stack_level > v.target_alt and p.alt_cmd != p.stack_level and self._level_taken(p, v, views)
+                    elif (p.stack_level > v.target_alt and p.alt_cmd != p.stack_level and self._level_taken(p, v, views)
                           and self._clear_above(p, v, views, p.stack_level)):
                         self._say(p, "altitude", p.stack_level)
                 continue
             pts = self._points(p)
-            if FREE_LEVEL_ON_RELEASE and p.stage == "downwind" and t >= p.retry_t and v.target_alt > p.level:
-                level = self._free_level(p, v, views, p.level)  # leaving the hold: down once the level is free
-                if level < v.target_alt and level != p.alt_cmd:
-                    self._say(p, "altitude", level)
-            elif p.alt_cmd is None and t >= p.retry_t:
+            if p.alt_cmd is None and t >= p.retry_t:
                 self._say(p, "altitude", p.level)
             if p.stage == "downwind":
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
@@ -439,17 +433,12 @@ class RulesController(Controller):
                        and not p.below_stack), key=lambda p: p.key)
 
     def _stack_levels(self, views: dict) -> None:
-        """The aircraft holding fill each stack from the bottom in the order of their heights, and leave in that
-        order (the lowest first), so none ever passes through another; those on their way get the levels above."""
+        """The aircraft holding fill each stack from the bottom in the order they joined it; those on their way
+        get the levels above."""
         for fix in STACKS:
             members = self._stack(fix, views)
-            holders = sorted((p for p in members if p.holding),
-                             key=(lambda p: views[p.cs].alt_ft) if STACK_BY_HEIGHT else (lambda p: p.key))
-            for p, key in zip(holders, sorted(p.key for p in holders)):
-                if p.key != key:  # the queue follows the stack
-                    p.key = key
-                    self.last_plan_t = -1e9
-            for k, p in enumerate(holders + [p for p in members if not p.holding]):
+            ordered = [p for p in members if p.holding] + [p for p in members if not p.holding]
+            for k, p in enumerate(ordered):
                 p.stack_level = STACK_BASE_FT + 1000 * k
 
     def _anyone_below_in_stack(self, p: Plan, views: dict) -> bool:
