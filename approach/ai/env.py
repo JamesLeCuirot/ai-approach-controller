@@ -58,6 +58,16 @@ FEATURES = (
 N_FEATURES = len(FEATURES)
 TARGET_BUFFER_NM = 0.5  # the gap aimed for: the minimum plus this
 MAX_SKIP = 2  # extra 10 s spells a step may skip when no aircraft is in the sequence
+MAX_TAILWIND_KT = 15.0  # another hour's wind is used only if its tailwind on the runway is no more than this
+
+
+def tailwind_kt(wind, airport, runway: str, heights_ft: tuple[float, ...] = (1000.0, 2000.0, 3000.0)) -> float:
+    """The strongest tailwind (negative: headwind) along a runway's landing direction, near its threshold, over the
+    heights of the final approach."""
+    rwy = airport.runways[runway]
+    course = math.radians(rwy.course_true)
+    return max(u * math.sin(course) + v * math.cos(course)
+               for u, v in (wind.uv(rwy.threshold.lat, rwy.threshold.lon, h) for h in heights_ft))
 
 REWARD = {
     "landing": 1.0,  # each aircraft landed
@@ -292,11 +302,18 @@ class SpeedEnv(gym.Env if gym else object):
                 break
         scenario = real_sessions.real_scenario(day, self.airport, start, start + self.window_s, wind=False)
         wind_hour = options.get("wind_hour") or datetime.fromtimestamp(start + self.window_s / 2, tz=timezone.utc).strftime("%Y-%m-%dT%H")
+        wind = None
         if "wind_hour" not in options and "hour" not in options and self.rng.random() < self.other_wind_p:
-            od, oh = self.rng.choice(hours)
-            wind_hour = f"{od}T{oh:02d}"
+            # Another hour's wind, for variety, but only one the runway in use could really be landed in: a summer
+            # day's traffic in a storm's tailwind (run stage1a-04: 2 landings, 30 go-arounds) teaches nothing.
+            for _ in range(10):
+                od, oh = self.rng.choice(hours)
+                other = fetch_for_airport(parse_time(f"{od}T{oh:02d}"), self.airport)
+                if tailwind_kt(other, self.airport, scenario.runway) <= MAX_TAILWIND_KT:
+                    wind_hour, wind = f"{od}T{oh:02d}", other
+                    break
         self.wind_hour = wind_hour
-        wind = fetch_for_airport(parse_time(wind_hour), self.airport)
+        wind = wind or fetch_for_airport(parse_time(wind_hour), self.airport)
         self.scheme = wake.scheme_for(d)
         self.teacher = bool(options.get("teacher"))
         self.controller = RulesController(self.airport, scenario.runway, fixed_paths=True, speeds="none")
