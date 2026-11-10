@@ -67,5 +67,19 @@
     "base_turns": "ai"
   },
   "training_hours": 963,
-  "notes": "Stage 1b, second run: as stage1b-01, but the AI also sees the planner's base turn (distance to it, and whether it would turn before the next decision), and its head start weights every turn-or-wait choice 10 times."
+  "notes": "Stage 1b, second run: as stage1b-01, but the AI also sees the planner's base turn (distance to it, and whether it would turn before the next decision), and its head start weights every turn-or-wait choice 10 times.",
+  "parameters": 167489,
+  "headstart": {
+    "episodes": 48,
+    "decisions": 20436,
+    "agreement": {
+      "controlled": 0.931,
+      "changes": 0.845,
+      "share_of_changes": 0.083,
+      "turns": 0.888,
+      "waits": 0.982,
+      "share_of_turns": 0.091
+    },
+    "minutes": 5.5
+  }
 }
