@@ -1,0 +1,67 @@
+{
+  "version": "fixed_turn",
+  "settings": {
+    "fixed_paths": true,
+    "speeds": "slot",
+    "wind_aware": true
+  },
+  "sessions": 120,
+  "seed": 2026,
+  "competitor": "seed2026_n120_57ee061c5e8b.csv",
+  "ai": {
+    "sessions": 120,
+    "landed": 1695,
+    "mean_gap_error_nm": 2.404,
+    "gaps_inside_minimum": 36,
+    "separation_losses": 113,
+    "losses_at_stack": 50,
+    "wake_infringements": 5,
+    "go_arounds": 51,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": 1.3
+  },
+  "rules_speed": {
+    "sessions": 120,
+    "landed": 1751,
+    "mean_gap_error_nm": 2.415,
+    "gaps_inside_minimum": 91,
+    "separation_losses": 179,
+    "losses_at_stack": 40,
+    "wake_infringements": 11,
+    "go_arounds": 101,
+    "speed_instructions_per_arrival": 3.84,
+    "mean_reward": -3.46
+  },
+  "ai_minus_rules_speed": {
+    "separation_losses": {
+      "difference": -66,
+      "range_95": 41.3,
+      "beyond_chance": true
+    },
+    "losses_at_stack": {
+      "difference": 10,
+      "range_95": 17.5,
+      "beyond_chance": false
+    },
+    "wake_infringements": {
+      "difference": -6,
+      "range_95": 6.7,
+      "beyond_chance": false
+    },
+    "go_arounds": {
+      "difference": -50,
+      "range_95": 25.0,
+      "beyond_chance": true
+    },
+    "gaps_inside_minimum": {
+      "difference": -55,
+      "range_95": 24.6,
+      "beyond_chance": true
+    },
+    "landed": {
+      "difference": -56,
+      "range_95": 55.9,
+      "beyond_chance": true
+    }
+  }
+}
