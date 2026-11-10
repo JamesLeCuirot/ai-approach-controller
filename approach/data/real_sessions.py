@@ -225,6 +225,10 @@ def controller_title(kind: str) -> str:
     names = {"rules": "Rules controller", "rules_speed": "Speed-only rules controller", "ai_speed": "Speed AI (final)"}
     if kind in names:
         return names[kind]
+    from approach.controllers.versions import TITLES
+
+    if kind.startswith("rules_") and kind[len("rules_"):] in TITLES:
+        return TITLES[kind[len("rules_"):]]
     if kind.startswith("ai_speed_"):
         tag = kind[len("ai_speed_"):]
         return {"untrained": "Speed AI, untrained", "headstart": "Speed AI after its head start"}.get(

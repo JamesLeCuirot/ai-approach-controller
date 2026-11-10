@@ -24,6 +24,14 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
         c = RulesController(airport, scenario.runway, fixed_paths=True, speeds="slot")
         c.name = "rules_speed"
         return c
+    if name.startswith("rules_"):  # a named version of the rules controller (approach.controllers.versions)
+        from approach.controllers.rules import RulesController
+        from approach.controllers.versions import VERSIONS
+
+        if name[len("rules_"):] in VERSIONS:
+            c = RulesController(airport, scenario.runway, **VERSIONS[name[len("rules_"):]])
+            c.name = name
+            return c
     if name.startswith("ai_speed"):  # stage 1a's AI: ai_speed (the final model) or ai_speed_<checkpoint>, e.g. ai_speed_100k
         import os
         from pathlib import Path
