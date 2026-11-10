@@ -28,6 +28,12 @@ VERSIONS = {
     "fixed_turn": {"fixed_paths": True, "speeds": "slot", "wind_aware": True},
     # The same, timed for still air: should fly like stage 1a's speed-only controller (a check on this script).
     "fixed_turn_still_air": {"fixed_paths": True, "speeds": "slot", "wind_aware": False},
+    # Speed first, then the path: the fixed turn, with the downwind run longer only when an aircraft has more delay
+    # to lose than speed can absorb. Leaves the hold as the fixed turn does ("careful") ...
+    "speed_then_stretch": {"fixed_paths": True, "speeds": "slot", "wind_aware": True, "stretch": True},
+    # ... or as soon as its slot can be made with the longest downwind and speed ("eager").
+    "speed_then_stretch_eager": {"fixed_paths": True, "speeds": "slot", "wind_aware": True, "stretch": True,
+                                 "release": "eager"},
     # The base turn planned to make each landing slot (the downwind stretched or cut short), timed with the wind.
     "stretch": {"fixed_paths": False, "speeds": "slot", "wind_aware": True},
     # ... with stage 0's final director (160 or 180 kt on final to keep the gap) instead of the standard speeds.

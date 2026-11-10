@@ -114,13 +114,22 @@ class RulesController(Controller):
     name = "rules"
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
-                 wind_aware: bool = False):
+                 wind_aware: bool = False, stretch: bool = False, release: str = "careful"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
-        timing is for still air, as in stage 0 and stage 1a, whose results it keeps."""
+        timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
+
+        With fixed paths, ``stretch`` lets a downwind run longer (the base turn later) when an aircraft has more
+        delay to lose than speed alone can absorb: speed first, then the path, as a controller would. ``release``
+        decides when an aircraft leaves the hold: "careful" when its slot can be made on the fixed path with speed,
+        "eager" when it can be made with the longest downwind and speed."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
+        if release not in ("careful", "eager"):
+            raise ValueError(f"release must be careful or eager, not {release!r}")
         self.fixed_paths = fixed_paths
         self.wind_aware = wind_aware
+        self.stretch = stretch
+        self.release = release
         self.speeds = speeds
         self.last_speed_t = -1e9
         self.airport = airport
@@ -256,8 +265,9 @@ class RulesController(Controller):
                     need = prev_t + gap_nm / self._final_gs(v) * 3600.0
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
+                    reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
                     can_go = (longest >= D_JOIN_FIXED_NM and self._inside(v.x, v.y)
-                              and t + self._eta(v, probe) + SPEED_ABSORB_S >= need)
+                              and t + self._eta(v, probe, reach) + SPEED_ABSORB_S >= need)
                 else:
                     can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
                 if can_go and p.holding and not p.below_stack and self._anyone_below_in_stack(p, views):
@@ -274,7 +284,10 @@ class RulesController(Controller):
                     prev_t, prev_type = p.landing_t, p.actype
                     continue
             if self.fixed_paths and p.stage != "cleared":
-                p.d_join = D_JOIN_FIXED_NM
+                if not self.stretch:
+                    p.d_join = D_JOIN_FIXED_NM
+                elif p.stage == "downwind":
+                    p.d_join = self._stretched_join(t, v, p, prev_t, prev_type)
                 p.landing_t = t + self._eta(v, p)
                 p.slot_t = p.landing_t
                 if prev_t is not None:
@@ -304,6 +317,27 @@ class RulesController(Controller):
             p.landing_t = t + self._eta(v, p)
             p.slot_t = p.landing_t
             prev_t, prev_type = p.landing_t, p.actype
+
+    def _stretched_join(self, t: float, v, p: Plan, prev_t: float | None, prev_type: str | None) -> float:
+        """The final length for an aircraft on the downwind: the fixed one, or longer if it has more delay to lose
+        than speed alone can absorb. Never shorter than already planned, so the base turn point is always ahead."""
+        d = max(p.d_join, D_JOIN_FIXED_NM)
+        if prev_t is None:
+            return d
+        gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
+        want = prev_t + gap_nm / self._final_gs(v) * 3600.0 - SPEED_ABSORB_S  # speed takes the rest
+        if t + self._eta(v, p, d) >= want:
+            return d
+        lo, hi = d, max(d, self.max_join(p.side))
+        if t + self._eta(v, p, hi) < want:
+            return hi
+        for _ in range(20):
+            mid = (lo + hi) / 2
+            if t + self._eta(v, p, mid) < want:
+                lo = mid
+            else:
+                hi = mid
+        return hi
 
     # ---- instructions ----------------------------------------------------------
     def _say(self, p: Plan, kind: str, value) -> None:
