@@ -82,6 +82,7 @@ SPEED_HOLD = 220
 VACATE_NM = 10.0  # an aircraft below and within this distance must have left a level before another descends into it
 STACK_BY_HEIGHT = True  # (being tested) the stack's order follows heights; else first come, first served
 CLIMB_TO_FREE = True  # (being tested) climb an aircraft whose level is taken
+FREE_LEVEL_ON_RELEASE = True  # (being tested) an aircraft leaving the stack also waits for the level below to be free
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 
@@ -366,7 +367,7 @@ class RulesController(Controller):
                         self._say(p, "altitude", p.stack_level)
                 continue
             pts = self._points(p)
-            if p.stage == "downwind" and t >= p.retry_t and v.target_alt > p.level:
+            if FREE_LEVEL_ON_RELEASE and p.stage == "downwind" and t >= p.retry_t and v.target_alt > p.level:
                 level = self._free_level(p, v, views, p.level)  # leaving the hold: down once the level is free
                 if level < v.target_alt and level != p.alt_cmd:
                     self._say(p, "altitude", level)
