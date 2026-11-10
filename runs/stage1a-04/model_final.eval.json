@@ -1,0 +1,69 @@
+{
+  "model": "runs/stage1a-04/model_final.zip",
+  "sessions": 120,
+  "test_hours": 625,
+  "seed": 2026,
+  "ai": {
+    "sessions": 120,
+    "landed": 1756,
+    "mean_gap_error_nm": 2.398,
+    "gaps_inside_minimum": 80,
+    "separation_losses": 167,
+    "losses_at_stack": 38,
+    "wake_infringements": 11,
+    "go_arounds": 95,
+    "speed_instructions_per_arrival": 4.21,
+    "mean_reward": -2.75
+  },
+  "rules_speed": {
+    "sessions": 120,
+    "landed": 1751,
+    "mean_gap_error_nm": 2.415,
+    "gaps_inside_minimum": 91,
+    "separation_losses": 179,
+    "losses_at_stack": 40,
+    "wake_infringements": 11,
+    "go_arounds": 101,
+    "speed_instructions_per_arrival": 3.84,
+    "mean_reward": -3.46
+  },
+  "ai_minus_rules_speed": {
+    "separation_losses": {
+      "difference": -12,
+      "range_95": 28.4,
+      "beyond_chance": false
+    },
+    "losses_at_stack": {
+      "difference": -2,
+      "range_95": 8.3,
+      "beyond_chance": false
+    },
+    "wake_infringements": {
+      "difference": 0,
+      "range_95": 3.9,
+      "beyond_chance": false
+    },
+    "go_arounds": {
+      "difference": -6,
+      "range_95": 19.7,
+      "beyond_chance": false
+    },
+    "gaps_inside_minimum": {
+      "difference": -11,
+      "range_95": 19.5,
+      "beyond_chance": false
+    },
+    "landed": {
+      "difference": 5,
+      "range_95": 9.4,
+      "beyond_chance": false
+    }
+  },
+  "gate": {
+    "closer_gaps": true,
+    "no_separation_losses": false,
+    "no_wake_infringements": false,
+    "no_more_instructions": false,
+    "passed": false
+  }
+}
