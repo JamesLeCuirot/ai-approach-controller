@@ -299,7 +299,7 @@ Then the rules controller gets the fixes any competent programmer would make, su
 
 ### 1a: speed only
 
-- **What the agent does:** every 10 seconds, for each aircraft, speed up or slow down by 10 or 20 kt, or leave it alone. Leaving it alone is the default, and every speed instruction has a small cost. Speeds stay within the published bands (up to 250 kt on the downwind, 160–180 kt on base and intercept, 160 kt by 7 NM), and everything goes through the safety check.
+- **What the agent does:** every 10 seconds, for each aircraft, it chooses a speed as a controller says it ("speed 180"), from 160 to 250 kt in 10 kt values. Choosing the aircraft's current speed means leaving it alone, and every speed instruction has a small cost. Speeds stay within the published bands (up to 250 kt on the downwind, 160–180 kt on base and intercept, the pilot's own speeds inside 7 NM), and everything goes through the safety check. (The first runs offered "10 or 20 kt faster or slower, or leave it": the AI learned to leave every speed alone.)
 - **What it sees, for each aircraft, in relative terms:**
   - planned track miles to touchdown, from the rules controller's path, updated whenever that path changes, and the time to go
   - its speed, and how fast it is closing on the aircraft ahead
@@ -312,6 +312,8 @@ Then the rules controller gets the fixes any competent programmer would make, su
   No memory of past moments yet: pilots don't make mistakes until stage 2. The gaps are distances: time-based spacing only changes the gaps behind heavy and super aircraft (see Open questions), which come in stage 3.
 - **Paths are fixed,** with every downwind south of the extended centreline, so speed is the only lever. The traffic is arranged so that speed alone can make the gaps, which is up to about 2 minutes of delay per aircraft.
 - **Competitor:** a speed-only rules controller on the same paths.
+- **Holding stacks work like real ones** (from run `stage1a-04`): the lowest aircraft leaves first, no aircraft is given a level until the one below it has left it, and an aircraft that would arrive at a taken level is climbed to its own. Before this, about a third of the speed-only controller's separation losses involved the stack, which no speed controller could prevent.
+- **Runs so far** are in [the training runs log](../diary/training-runs.csv). The first full run (`stage1a-03`, a million decisions) ended no better than its head start and more random, because the reward for keeping its options open counted every aircraft place, including empty ones (diary entry [2026-11-09](../diary/2026-11-09-stage1-05-first-training/README.md)).
 
 ### 1b: speed plus when to turn base
 
@@ -321,15 +323,15 @@ Then the rules controller gets the fixes any competent programmer would make, su
 
 ### Training and testing
 
-1. A head start: the agent first copies the rules controller.
-2. Practice with PPO, many simulations in parallel, never the same session twice.
+1. A head start: the agent first copies the rules controller (in 1a the speed-only one), with its speed changes counting more than the times it leaves a speed alone.
+2. Practice with PPO, many simulations in parallel, never the same session twice. Only the aircraft whose speed the agent gives count, both in what it learns from and in its reward for keeping its options open, and a penalty for moving away from its head start fades over the run, so it changes only where practice shows clearly that it should.
 3. Scoring:
    - a reward per landing
    - a penalty for how far each gap is from the target, much larger if too close
    - small rewards along the way for gaps on target and aircraft on profile
    - small costs per instruction and per minute in the sector
    - large penalties for separation losses, blocked instructions and go-arounds, including those caused by arriving too high
-4. Testing on about 200 sessions the agent never practised on, from the 14 held-back days and the most recent weeks.
+4. Testing on sessions the agent never practised on, from the 14 held-back days and the most recent weeks: 120 for each saved copy, with every total given as the agent minus the competitor and a 95% range, because separation losses swing so much from session to session that 40 sessions could not tell a real difference from chance; about 200 for the final word.
 5. Every run recorded with its reward weights, seed, code version and results, so each change to the score can be traced to its effect.
 
 **Gates.** 1a: across the test sessions, gaps closer to the target than the speed-only rules controller, with no separation losses, no wake infringements and no more speed instructions. 1b: the same against the full rules controller, plus more landings per hour on the busy-hour stress tests.
