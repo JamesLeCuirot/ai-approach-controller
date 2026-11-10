@@ -26,6 +26,8 @@ from approach.ai import evaluate  # noqa: E402
 VERSIONS = {
     # Stage 1a's competitor, timed with the wind: every arrival turns base at the same point (an 11 NM final).
     "fixed_turn": {"fixed_paths": True, "speeds": "slot", "wind_aware": True},
+    # The same, timed for still air: should fly like stage 1a's speed-only controller (a check on this script).
+    "fixed_turn_still_air": {"fixed_paths": True, "speeds": "slot", "wind_aware": False},
     # The base turn planned to make each landing slot (the downwind stretched or cut short), timed with the wind.
     "stretch": {"fixed_paths": False, "speeds": "slot", "wind_aware": True},
     # ... with stage 0's final director (160 or 180 kt on final to keep the gap) instead of the standard speeds.
