@@ -28,14 +28,20 @@ from stable_baselines3.common.utils import explained_variance
 from torch.distributions import kl_divergence
 from torch.nn import functional as F
 
-from approach.ai.env import FEATURES
+from approach.ai.env import FEATURES, FEATURES_1B
 
 CONTROLLABLE = FEATURES.index("controllable")
+CAN_TURN = FEATURES_1B.index("can_turn")
 
 
-def controlled(obs: th.Tensor) -> th.Tensor:
-    """1.0 for each aircraft place whose speed is the controller's to give, else 0.0: shape (batch, places)."""
-    return (obs[..., CONTROLLABLE] > 0.5).float()
+def controlled(obs: th.Tensor, n_choices: int | None = None) -> th.Tensor:
+    """1.0 for each choice that can have an effect, else 0.0: shape (batch, choices). The first choices are the
+    speeds, one per aircraft place (those whose speed is the controller's to give); in stage 1b they are followed
+    by a base turn per place (those the AI can turn now)."""
+    speeds = (obs[..., CONTROLLABLE] > 0.5).float()
+    if n_choices is None or n_choices == speeds.shape[-1]:
+        return speeds
+    return th.cat([speeds, (obs[..., CAN_TURN] > 0.5).float()], dim=-1)
 
 
 class SpeedPolicy(ActorCriticPolicy):
@@ -59,7 +65,7 @@ class SpeedPolicy(ActorCriticPolicy):
         values = self.value_net(latent_vf)
         distribution = self._get_action_dist_from_latent(latent_pi)
         actions = distribution.get_actions(deterministic=deterministic)
-        log_prob, _ = self._masked(distribution, actions, controlled(obs))
+        log_prob, _ = self._masked(distribution, actions, controlled(obs, len(distribution.distribution)))
         return actions.reshape((-1, *self.action_space.shape)), values, log_prob
 
     def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor):
@@ -69,7 +75,7 @@ class SpeedPolicy(ActorCriticPolicy):
     def evaluate_with_distribution(self, obs: th.Tensor, actions: th.Tensor):
         latent_pi, latent_vf = self._latent(obs)
         distribution = self._get_action_dist_from_latent(latent_pi)
-        log_prob, entropy = self._masked(distribution, actions, controlled(obs))
+        log_prob, entropy = self._masked(distribution, actions, controlled(obs, len(distribution.distribution)))
         return self.value_net(latent_vf), log_prob, entropy, distribution
 
 
@@ -146,7 +152,8 @@ class AnchoredPPO(PPO):
                 if coef > 0:
                     with th.no_grad():
                         anchor_distribution = self.anchor.get_distribution(obs)
-                    anchor_loss = divergence(distribution, anchor_distribution, controlled(obs)).mean()
+                    mask = controlled(obs, len(distribution.distribution))
+                    anchor_loss = divergence(distribution, anchor_distribution, mask).mean()
                     anchor_kls.append(anchor_loss.item())
 
                 loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss + coef * anchor_loss

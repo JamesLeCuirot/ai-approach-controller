@@ -72,12 +72,12 @@ def code_hash() -> str:
 
 
 def _run(args: tuple) -> list[dict]:
-    model_path, sessions, with_competitor = args
+    model_path, sessions, with_competitor, base_turns = (*args, False)[:4]
     from approach.ai.env import SpeedEnv, load_policy
     from approach.ai.train import episode_row
 
     policy = load_policy(model_path) if model_path else None
-    env = SpeedEnv(hours=[s["hour"] for s in sessions])
+    env = SpeedEnv(hours=[s["hour"] for s in sessions], base_turns=base_turns)
     rows = []
     for s in sessions:
         try:
@@ -156,6 +156,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--out", default="")
+    ap.add_argument("--base-turns", action="store_true",
+                    help="stage 1b: the AI also turns aircraft onto base; the competitor is the eager base-turn rule")
     args = ap.parse_args()
     rng = random.Random(args.seed)
     hours = test_hours()
@@ -169,11 +171,11 @@ def main() -> None:
         for err in pool.imap_unordered(_prefetch_one, needed):
             if err:
                 print("winds:", err, flush=True)
-    cache = COMPETITOR_DIR / f"seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
+    cache = COMPETITOR_DIR / f"{'1b_' if args.base_turns else ''}seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
     saved = list(csv.DictReader(cache.open())) if cache.is_file() else []
     if saved:
         print(f"Reusing the speed-only controller's results from {cache.name}", flush=True)
-    chunks = [(args.model, sessions[k::args.workers], not saved) for k in range(args.workers)]
+    chunks = [(args.model, sessions[k::args.workers], not saved, args.base_turns) for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
     if saved:

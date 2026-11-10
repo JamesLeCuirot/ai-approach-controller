@@ -56,6 +56,13 @@ FEATURES = (
     "inside_rma_nm", "along_nm", "lateral_nm", "headwind_kt", "band_lo_kt", "band_hi_kt",
 )
 N_FEATURES = len(FEATURES)
+# Stage 1b adds, for an aircraft on the downwind: whether the AI can turn it onto base now, the gap (NM) it would
+# land with behind the aircraft ahead if it did, and how far it can still fly on before it must turn.
+FEATURES_1B = FEATURES + ("can_turn", "gap_if_turn_now_nm", "room_to_turn_nm")
+# Stage 1b's world: fixed paths that the AI can stretch by turning base later, aircraft released from the hold as
+# soon as their slot can be made with the longest downwind and speed, everything timed with the wind.
+PLANNER_1B = {"fixed_paths": True, "speeds": "none", "wind_aware": True, "stretch": True, "release": "eager",
+              "base_turns": "ai"}
 TARGET_BUFFER_NM = 0.5  # the gap aimed for: the minimum plus this
 MAX_SKIP = 2  # extra 10 s spells a step may skip when no aircraft is in the sequence
 MAX_TAILWIND_KT = 15.0  # another hour's wind is used only if its tailwind on the runway is no more than this
@@ -113,8 +120,9 @@ def track_miles(controller: RulesController, v) -> float:
     return distance_xy(v.x, v.y, *pts["J"]) + p.d_join
 
 
-def observe(views: list, controller: RulesController, t: float) -> tuple[np.ndarray, list[str]]:
+def observe(views: list, controller: RulesController, t: float, base_turns: bool = False) -> tuple[np.ndarray, list[str]]:
     """The AI's picture: one row per aircraft in the landing sequence, in landing order; empty rows after."""
+    features = FEATURES_1B if base_turns else FEATURES
     from shapely.geometry import Point
 
     airport, runway, rma = controller.airport, controller.runway, controller.rma
@@ -122,7 +130,7 @@ def observe(views: list, controller: RulesController, t: float) -> tuple[np.ndar
     plans = [p for p in controller.plans.values() if p.cs in by_cs and p.stage in ("downwind", "base", "cleared")]
     plans.sort(key=lambda p: (p.slot_t or p.landing_t))
     slots = [p.cs for p in plans][:N_MAX]
-    obs = np.zeros((N_MAX, N_FEATURES), dtype=np.float32)
+    obs = np.zeros((N_MAX, len(features)), dtype=np.float32)
     tm = {cs: track_miles(controller, by_cs[cs]) for cs in slots}
     course = math.radians(runway.course_true)
     for i, cs in enumerate(slots):
@@ -155,8 +163,22 @@ def observe(views: list, controller: RulesController, t: float) -> tuple[np.ndar
             "headwind_kt": headwind / 40.0,
             "band_lo_kt": (limits[0] if limits else 0) / 250.0, "band_hi_kt": (limits[1] if limits else 0) / 250.0,
         }
-        obs[i] = [row[f] for f in FEATURES]
+        if base_turns:
+            row.update(base_turn_features(controller, v, p, controller.plans[ahead] if ahead else None, by_cs, t))
+        obs[i] = [row[f] for f in features]
     return np.clip(obs, -5.0, 5.0), slots
+
+
+def base_turn_features(controller: RulesController, v, p, lead, by_cs: dict, t: float) -> dict:
+    """Stage 1b's extra inputs for one aircraft (zero unless it is on the downwind and not yet turned)."""
+    if not controller.can_turn_base(v, p):
+        return {"can_turn": 0.0, "gap_if_turn_now_nm": 0.0, "room_to_turn_nm": 0.0}
+    gap = 1.0  # nothing ahead: plenty of room
+    if lead is not None:
+        landing = t + controller.eta_if_turned_now(v, p)
+        gap = (landing - lead.landing_t) * controller._final_gs(v) / 3600.0 / 10.0
+    room = controller._turn_d(p) - controller.final_if_turned_now(v, p)
+    return {"can_turn": 1.0, "gap_if_turn_now_nm": gap, "room_to_turn_nm": room / 10.0}
 
 
 def speed_instructions(action, slots: list[str], views: list, controller: RulesController) -> list[tuple[Instruction, bool]]:
@@ -213,10 +235,14 @@ class AISpeedController(Controller):
 
     name = "ai_speed"
 
-    def __init__(self, airport, runway: str, policy=None, name: str = "ai_speed"):
-        self.rules = RulesController(airport, runway, fixed_paths=True, speeds="none")
+    def __init__(self, airport, runway: str, policy=None, name: str = "ai_speed", base_turns: bool = False):
+        planner = {**PLANNER_1B} if base_turns else {"fixed_paths": True, "speeds": "none"}
+        if base_turns and policy is None:
+            planner["base_turns"] = "rule"  # the comparison: the rule turns aircraft onto base itself
+        self.rules = RulesController(airport, runway, **planner)
         self.policy = policy
         self.name = name
+        self.base_turns = base_turns
         self.last_t = -1e9
 
     @property
@@ -227,9 +253,14 @@ class AISpeedController(Controller):
         out = self.rules.decide(t, views)
         if t - self.last_t >= speed.DECISION_S:
             self.last_t = t
-            obs, slots = observe(views, self.rules, t)
+            obs, slots = observe(views, self.rules, t, self.base_turns)
             action = self.policy(obs) if self.policy is not None else teacher_action(slots, views, self.rules)
-            out += [instr for instr, _ in speed_instructions(action, slots, views, self.rules)]
+            if self.base_turns and len(action) > N_MAX:
+                by_cs = {v.cs: v for v in views}
+                for i, cs in enumerate(slots):
+                    if int(action[N_MAX + i]) == 1 and cs in by_cs:
+                        self.rules.turn_base_now(cs, by_cs[cs])
+            out += [instr for instr, _ in speed_instructions(action[:N_MAX], slots, views, self.rules)]
         return out
 
     def on_event(self, event: dict) -> None:
@@ -252,10 +283,12 @@ class SpeedEnv(gym.Env if gym else object):
 
     def __init__(self, split: str = "train", window_s: int = 3600, other_wind_p: float = 0.25, seed: int | None = None,
                  hours: list[tuple[str, int]] | None = None, reward: dict | None = None, frames: bool = True,
-                 cached_winds_only: bool = False, planner: dict | None = None):
+                 cached_winds_only: bool = False, planner: dict | None = None, base_turns: bool = False):
         """``planner`` overrides the rules controller's settings (fixed_paths, speeds, wind_aware): stage 1a's world
         is fixed paths with the speeds left to the AI; other settings fly other rules controllers on the same
-        sessions, for comparison."""
+        sessions, for comparison. ``base_turns`` is stage 1b: the AI also turns aircraft onto base, in
+        PLANNER_1B's world unless ``planner`` says otherwise; its actions are a speed for each aircraft place and
+        then, for each place, 1 to turn that aircraft onto base now."""
         if gym is None:
             raise ImportError("pip install gymnasium")
         self.airport = egkk.load()
@@ -265,11 +298,14 @@ class SpeedEnv(gym.Env if gym else object):
         self.reward_w = {**REWARD, **(reward or {})}
         self.frames = frames
         self.cached_winds_only = cached_winds_only
-        self.planner = {"fixed_paths": True, "speeds": "none", **(planner or {})}
+        self.base_turns = base_turns
+        self.planner = {**({**PLANNER_1B} if base_turns else {"fixed_paths": True, "speeds": "none"}), **(planner or {})}
+        self.turned: set[str] = set()  # aircraft turned onto base during the last step (for the head start's labels)
         self.rng = random.Random(seed)
         self._days: dict[str, dict] = {}
-        self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, N_FEATURES), dtype=np.float32)
-        self.action_space = spaces.MultiDiscrete([len(speed.SPEEDS_KT)] * N_MAX)
+        n_features = len(FEATURES_1B) if base_turns else N_FEATURES
+        self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, n_features), dtype=np.float32)
+        self.action_space = spaces.MultiDiscrete([len(speed.SPEEDS_KT)] * N_MAX + ([2] * N_MAX if base_turns else []))
         self.session: LiveSession | None = None
         self.slots: list[str] = []
 
@@ -320,7 +356,8 @@ class SpeedEnv(gym.Env if gym else object):
         wind = wind or fetch_for_airport(parse_time(wind_hour), self.airport)
         self.scheme = wake.scheme_for(d)
         self.teacher = bool(options.get("teacher"))
-        self.controller = RulesController(self.airport, scenario.runway, **self.planner)
+        planner = {**self.planner, **({"base_turns": "rule"} if self.teacher and self.base_turns else {})}
+        self.controller = RulesController(self.airport, scenario.runway, **planner)  # the teacher turns by the rule
         self.controller.name = "rules_speed" if self.teacher else "ai_speed"
         log = SessionLog(meta={"scenario": scenario.name, "runway": scenario.runway, "wind": wind_hour,
                                "controller": self.controller.name, "wake_scheme": self.scheme}, map={})
@@ -332,7 +369,7 @@ class SpeedEnv(gym.Env if gym else object):
         self.wake_flagged: set[tuple[str, str]] = set()
         self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final
         self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "losses_at_stack": 0,
-                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0}
+                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0, "base_turns": 0}
         with wake.scheme(self.scheme):
             obs = self._observe()
             while not self.slots and not self.session.done:  # nothing to control yet: let the traffic arrive
@@ -341,8 +378,10 @@ class SpeedEnv(gym.Env if gym else object):
         return obs, {"scenario": scenario.name, "wind": wind_hour}
 
     def teacher_action(self) -> np.ndarray:
-        """What the speed-only rules controller would choose now."""
-        return teacher_action(self.slots, self.session.world.views(), self.controller)
+        """What the speed-only rules controller would choose now. In stage 1b the teacher's controller turns
+        aircraft onto base by the rule itself; those turns show in `turned` after the step (no turn chosen here)."""
+        speeds = teacher_action(self.slots, self.session.world.views(), self.controller)
+        return np.concatenate([speeds, np.zeros(N_MAX, dtype=np.int64)]) if self.base_turns else speeds
 
     def step(self, action):
         r = 0.0
@@ -350,6 +389,8 @@ class SpeedEnv(gym.Env if gym else object):
             r += self._act(action)
             r_adv, _ = self._advance(speed.DECISION_S)
             r += r_adv
+            self.turned = {cs for cs in self._downwind
+                           if cs in self.controller.plans and self.controller.plans[cs].stage != "downwind"}
             obs = self._observe()
             for _ in range(MAX_SKIP):  # skip a little through quiet spells, but keep steps alike in cost:
                 if self.slots or self.session.done:  # parallel training waits for the slowest simulation
@@ -370,7 +411,14 @@ class SpeedEnv(gym.Env if gym else object):
     def _act(self, action) -> float:
         s, r = self.session, 0.0
         s.views = s.world.views()
-        for instr, chosen in speed_instructions(action, self.slots, s.views, self.controller):
+        self.turned = set()
+        self._downwind = {cs for cs, p in self.controller.plans.items() if p.stage == "downwind"}
+        if self.base_turns:
+            by_cs = {v.cs: v for v in s.views}
+            for i, cs in enumerate(self.slots):
+                if int(action[N_MAX + i]) == 1 and cs in by_cs and self.controller.turn_base_now(cs, by_cs[cs]):
+                    self.counts["base_turns"] += 1
+        for instr, chosen in speed_instructions(action[:N_MAX], self.slots, s.views, self.controller):
             ok, _ = s.instruct(instr, notify_controller=False)
             if chosen:
                 self.counts["instructions"] += 1
@@ -449,7 +497,7 @@ class SpeedEnv(gym.Env if gym else object):
         return r
 
     def _observe(self) -> np.ndarray:
-        obs, self.slots = observe(self.session.world.views(), self.controller, self.session.t)
+        obs, self.slots = observe(self.session.world.views(), self.controller, self.session.t, self.base_turns)
         return obs
 
     def _shaping(self, obs: np.ndarray) -> float:

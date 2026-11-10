@@ -55,6 +55,7 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
         "landed": c["landed"], "separation_losses": c["separation_losses"], "losses_at_stack": c.get("losses_at_stack", ""),
         "wake_infringements": c["wake_infringements"], "go_arounds": c["go_arounds"],
         "speed_instructions": c["instructions"], "blocked": c["blocked"], "decisions": c["decisions"],
+        "base_turns": c.get("base_turns", ""),
         "gaps": len(gaps),
         "mean_gap_error_nm": round(float(np.mean(np.abs(errs))), 3) if errs else "",
         "gaps_inside_minimum": sum(1 for g, t in gaps if g < t - 0.5),
@@ -64,28 +65,37 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
     }
 
 
-def _teacher_episodes(args: tuple[int, int, bool]) -> tuple[list, list, list]:
-    """Episodes flown by the speed-only rules controller: its observations and choices, and its results."""
-    seed, episodes, cached = args
-    from approach.ai.env import SpeedEnv
+def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, list]:
+    """Episodes flown by the rules controller the AI copies: its observations and choices, and its results.
 
-    env = SpeedEnv(seed=seed, cached_winds_only=cached)
+    In stage 1b the rule turns aircraft onto base itself; a turn made during a step is recorded as the choice
+    "turn now" for that aircraft at that step."""
+    seed, episodes, cached, base_turns = args
+    from approach.ai.env import N_MAX, SpeedEnv
+
+    env = SpeedEnv(seed=seed, cached_winds_only=cached, base_turns=base_turns)
     obs_all, act_all, rows = [], [], []
     for _ in range(episodes):
         obs, _ = env.reset(options={"teacher": True})
         done, total = False, 0.0
         while not done:
             act = env.teacher_action()
-            obs_all.append(obs)
-            act_all.append(act)
+            slots = list(env.slots)
+            before = obs
             obs, r, done, _, info = env.step(act)
+            if base_turns:
+                for i, cs in enumerate(slots):
+                    if cs in env.turned:
+                        act[N_MAX + i] = 1
+            obs_all.append(before)
+            act_all.append(act)
             total += r
         rows.append(episode_row(info, total))
     return obs_all, act_all, rows
 
 
 def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
-              change_weight: float = 5.0) -> dict:
+              change_weight: float = 5.0, turn_weight: float = 10.0) -> dict:
     """Behaviour cloning: train the policy to give the speeds the speed-only rules controller gave.
 
     Only aircraft the AI controls count, and the decisions where the controller changed a speed
@@ -95,7 +105,7 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
     """
     import torch
 
-    from approach.ai.env import FEATURES
+    from approach.ai.env import FEATURES, FEATURES_1B, N_MAX
     from approach.controllers import speed
 
     policy = model.policy
@@ -105,8 +115,13 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
     speeds = torch.as_tensor(speed.SPEEDS_KT, dtype=torch.float32)
     controlled = obs_t[..., FEATURES.index("controllable")] > 0.5
     assigned = obs_t[..., FEATURES.index("assigned_kt")] * 250.0
-    changed = controlled & ((speeds[act_t] - assigned).abs() >= 5)
+    changed = controlled & ((speeds[act_t[:, :N_MAX]] - assigned).abs() >= 5)
     weight = controlled.float() * (1.0 + (change_weight - 1.0) * changed.float())
+    base_turns = act_t.shape[1] > N_MAX
+    if base_turns:  # stage 1b: the base turns, where the AI could turn; the turns themselves count more
+        can_turn = obs_t[..., FEATURES_1B.index("can_turn")] > 0.5
+        turned = can_turn & (act_t[:, N_MAX:] == 1)
+        weight = torch.cat([weight, can_turn.float() * (1.0 + (turn_weight - 1.0) * turned.float())], dim=1)
 
     def slot_log_probs(o, a):
         dist = policy.get_distribution(o)
@@ -129,9 +144,16 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
         pred = policy.get_distribution(obs_t[sample]).mode()
         same = pred == act_t[sample]
         c, ch = controlled[sample], changed[sample]
-        return {"controlled": round(float(same[c].float().mean()), 3) if c.any() else None,
-                "changes": round(float(same[ch].float().mean()), 3) if ch.any() else None,
-                "share_of_changes": round(float(ch.sum() / max(c.sum(), 1)), 3)}
+        out = {"controlled": round(float(same[:, :N_MAX][c].float().mean()), 3) if c.any() else None,
+               "changes": round(float(same[:, :N_MAX][ch].float().mean()), 3) if ch.any() else None,
+               "share_of_changes": round(float(ch.sum() / max(c.sum(), 1)), 3)}
+        if base_turns:
+            ct, tu = can_turn[sample], turned[sample]
+            wait = ct & ~tu
+            out.update({"turns": round(float(same[:, N_MAX:][tu].float().mean()), 3) if tu.any() else None,
+                        "waits": round(float(same[:, N_MAX:][wait].float().mean()), 3) if wait.any() else None,
+                        "share_of_turns": round(float(tu.sum() / max(ct.sum(), 1)), 3)})
+        return out
 
 
 def write_run_row(row: dict) -> None:
@@ -153,13 +175,14 @@ def main() -> None:
     ap.add_argument("--cached-winds-only", action="store_true", help="draw only hours whose winds are downloaded")
     ap.add_argument("--notes", default="")
     ap.add_argument("--resume", default="", help="carry on from a saved AI of this run (skips the head start)")
+    ap.add_argument("--base-turns", action="store_true", help="stage 1b: the AI also turns aircraft onto base")
     args = ap.parse_args()
 
     import torch
     from stable_baselines3.common.callbacks import BaseCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecNormalize
 
-    from approach.ai.env import N_FEATURES, N_MAX, REWARD, SpeedEnv, training_hours
+    from approach.ai.env import FEATURES_1B, N_FEATURES, N_MAX, PLANNER_1B, REWARD, SpeedEnv, training_hours
     from approach.ai.policy import POLICY_KWARGS
     from approach.ai.ppo import AnchoredPPO, SpeedPolicy
 
@@ -175,7 +198,9 @@ def main() -> None:
         "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
                                                                   "net_arch": POLICY_KWARGS["net_arch"]},
-        "observation": {"aircraft": N_MAX, "features": N_FEATURES}, "training_hours": len(training_hours()),
+        "observation": {"aircraft": N_MAX, "features": len(FEATURES_1B) if args.base_turns else N_FEATURES},
+        "stage": "1b" if args.base_turns else "1a", "planner": PLANNER_1B if args.base_turns else None,
+        "training_hours": len(training_hours()),
         "notes": args.notes,
     }
     if args.resume and (out / "run.json").is_file():
@@ -186,7 +211,8 @@ def main() -> None:
     print(f"Run {args.run}: {out}", flush=True)
 
     def make(rank: int):
-        return lambda: SpeedEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only)
+        return lambda: SpeedEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only,
+                                base_turns=args.base_turns)
 
     venv = VecNormalize(VecMonitor(SubprocVecEnv([make(k) for k in range(args.envs)])), norm_obs=False,
                         norm_reward=True, gamma=PPO_SETTINGS["gamma"])
@@ -205,7 +231,8 @@ def main() -> None:
         t0 = time.time()
         per = max(1, args.headstart_episodes // args.envs)
         with Pool(args.envs) as pool:
-            parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only) for k in range(args.envs)])
+            parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only, args.base_turns)
+                                                 for k in range(args.envs)])
         obs = np.concatenate([np.array(o) for o, _, _ in parts])
         acts = np.concatenate([np.array(a) for _, a, _ in parts])
         teacher_rows = [r for _, _, rows in parts for r in rows]
@@ -222,6 +249,9 @@ def main() -> None:
         print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
               f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
               f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
+        if args.base_turns and agree.get("turns") is not None:
+            print(f"Base turns: turns where the rule turned {agree['turns']:.0%}, waits where it waited "
+                  f"{agree['waits']:.0%} (turns are {agree['share_of_turns']:.1%} of the chances)", flush=True)
 
     resuming_log = bool(args.resume) and (out / "episodes.csv").is_file()
     episodes_csv = (out / "episodes.csv").open("a" if resuming_log else "w", newline="")

@@ -92,3 +92,30 @@ def test_only_controlled_aircraft_count_and_the_anchor_holds(tmp_path):
     model.save(tmp_path / "m.zip")
     act = load_policy(str(tmp_path / "m.zip"))(obs[0].numpy())
     assert act.shape == (N_MAX,)
+
+
+@needs_gym
+@needs_bluesky
+@needs_sector_file
+def test_stage_1b_turns_aircraft_onto_base_when_told():
+    """Stage 1b: the AI's 'turn now' turns an aircraft on the downwind onto base; without it, it flies on."""
+    from approach.ai.env import FEATURES_1B, N_MAX, SpeedEnv
+
+    env = SpeedEnv(window_s=1800, seed=3, hours=[("2026-05-30", 12)], base_turns=True)
+    obs, _ = env.reset(options={"hour": ("2026-05-30", 12), "offset_s": 0, "pilot_seed": 1})
+    assert obs.shape == (N_MAX, len(FEATURES_1B)) and len(env.action_space.nvec) == 2 * N_MAX
+    ct = FEATURES_1B.index("can_turn")
+    for _ in range(400):
+        chance = [i for i in range(len(env.slots)) if obs[i, ct] > 0.5]
+        if chance:
+            break
+        obs, _, done, _, _ = env.step(np.full(2 * N_MAX, 0, dtype=np.int64) + np.r_[[6] * N_MAX, [0] * N_MAX])
+        assert not done
+    assert chance, "no aircraft reached the point where it could turn base"
+    cs = env.slots[chance[0]]
+    act = np.r_[[6] * N_MAX, [0] * N_MAX].astype(np.int64)
+    act[N_MAX + chance[0]] = 1
+    env.step(act)
+    env.step(np.r_[[6] * N_MAX, [0] * N_MAX].astype(np.int64))
+    assert env.controller.plans[cs].stage != "downwind"
+    assert env.counts["base_turns"] == 1

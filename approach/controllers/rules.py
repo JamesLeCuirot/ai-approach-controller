@@ -108,24 +108,33 @@ class Plan:
     retry_t: float = -1e9  # after a blocked altitude, wait before asking again
     slot_t: float = 0.0  # the landing time that keeps the gap behind the aircraft ahead
     warned: bool = False
+    ai_turn_d: float = 0.0  # base_turns="ai": the final length the AI chose by turning base (0: not yet)
+    turn_now: bool = False  # ... and the turn is still to be given
 
 
 class RulesController(Controller):
     name = "rules"
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
-                 wind_aware: bool = False, stretch: bool = False, release: str = "careful"):
+                 wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
         With fixed paths, ``stretch`` lets a downwind run longer (the base turn later) when an aircraft has more
         delay to lose than speed alone can absorb: speed first, then the path, as a controller would. ``release``
         decides when an aircraft leaves the hold: "careful" when its slot can be made on the fixed path with speed,
-        "eager" when it can be made with the longest downwind and speed."""
+        "eager" when it can be made with the longest downwind and speed.
+
+        ``base_turns`` = "ai" (stage 1b) leaves the base turn to the AI through turn_base_now(): until it turns an
+        aircraft, the aircraft flies on along the downwind, and it is turned at the last point that keeps its base
+        inside the RMA. The rule's own choice is still planned, for the landing times the AI sees."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
             raise ValueError(f"release must be careful or eager, not {release!r}")
+        if base_turns not in ("rule", "ai"):
+            raise ValueError(f"base_turns must be rule or ai, not {base_turns!r}")
+        self.base_turns = base_turns
         self.fixed_paths = fixed_paths
         self.wind_aware = wind_aware
         self.stretch = stretch
@@ -287,7 +296,7 @@ class RulesController(Controller):
                 if not self.stretch:
                     p.d_join = D_JOIN_FIXED_NM
                 elif p.stage == "downwind":
-                    p.d_join = self._stretched_join(t, v, p, prev_t, prev_type)
+                    p.d_join = p.ai_turn_d or self._stretched_join(t, v, p, prev_t, prev_type)
                 p.landing_t = t + self._eta(v, p)
                 p.slot_t = p.landing_t
                 if prev_t is not None:
@@ -317,6 +326,41 @@ class RulesController(Controller):
             p.landing_t = t + self._eta(v, p)
             p.slot_t = p.landing_t
             prev_t, prev_type = p.landing_t, p.actype
+
+    # ---- stage 1b: the AI's base turns ------------------------------------------
+    BASE_LEAD_NM = INTERCEPT_LEG_NM * math.cos(math.radians(INTERCEPT_DEG)) + 1.0  # the base turn point, before J
+
+    def _turn_d(self, p: Plan) -> float:
+        """The final length the aircraft will fly: the AI's choice, or the longest that keeps its base in the RMA."""
+        return p.ai_turn_d or max(self.max_join(p.side), D_JOIN_FIXED_NM)
+
+    def final_if_turned_now(self, v, p: Plan) -> float:
+        """The final length (NM) if the aircraft turned base now: from its position along the downwind, allowing
+        for the turn itself (the rule starts its turn this far before the turn point too)."""
+        pts = self._points(Plan(**{**vars(p), "d_join": D_JOIN_FIXED_NM}))
+        outbound = (self.runway.course_true + 180.0) % 360.0
+        return v.along - self.BASE_LEAD_NM + self._turn_lead_nm(v, outbound, bearing_xy(*pts["D"], *pts["B"]))
+
+    def can_turn_base(self, v, p: Plan | None) -> bool:
+        """An aircraft on the downwind not yet turned, far enough out for an 11 NM final (in either mode, so the
+        AI sees the same picture when it copies the rule)."""
+        return (p is not None and p.stage == "downwind" and not p.ai_turn_d
+                and self.final_if_turned_now(v, p) >= D_JOIN_FIXED_NM)
+
+    def turn_base_now(self, cs: str, v) -> bool:
+        """The AI's instruction: turn this aircraft onto base now. Returns whether it was taken."""
+        p = self.plans.get(cs)
+        if self.base_turns != "ai" or not self.can_turn_base(v, p):
+            return False
+        p.ai_turn_d = min(self.final_if_turned_now(v, p), self._turn_d(p))
+        p.turn_now = True  # given at the controller's next look, whatever the aircraft's distance from the line
+        self.last_plan_t = -1e9  # replan with the new path
+        return True
+
+    def eta_if_turned_now(self, v, p: Plan) -> float:
+        """Seconds to touchdown if the aircraft turned base now (or at the earliest point, if not yet there)."""
+        d = min(max(self.final_if_turned_now(v, p), D_JOIN_FIXED_NM), self._turn_d(p))
+        return self._eta(v, p, d)
 
     def _stretched_join(self, t: float, v, p: Plan, prev_t: float | None, prev_type: str | None) -> float:
         """The final length for an aircraft on the downwind: the fixed one, or longer if it has more delay to lose
@@ -420,10 +464,14 @@ class RulesController(Controller):
             if p.alt_cmd is None and t >= p.retry_t:
                 self._say(p, "altitude", p.level)
             if p.stage == "downwind":
+                if self.base_turns == "ai":  # fly on until the AI turns it, or the last point inside the RMA
+                    pts = self._points(Plan(**{**vars(p), "d_join": self._turn_d(p)}))
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
                 base_hdg = bearing_xy(*pts["D"], *pts["B"])
                 self._steer(t, p, v, pts["D"])
-                if distance_xy(v.x, v.y, *pts["D"]) <= self._turn_lead_nm(v, to_d, base_hdg):
+                if p.turn_now or distance_xy(v.x, v.y, *pts["D"]) <= self._turn_lead_nm(v, to_d, base_hdg):
+                    if self.base_turns == "ai":
+                        p.d_join, p.turn_now = self._turn_d(p), False
                     p.stage = "base"
                     self._steer(t, p, v, pts["B"], force=True)
                     self._say(p, "altitude", 3000)

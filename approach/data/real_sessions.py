@@ -229,6 +229,12 @@ def controller_title(kind: str) -> str:
 
     if kind.startswith("rules_") and kind[len("rules_"):] in TITLES:
         return TITLES[kind[len("rules_"):]]
+    if kind == "ai_base":
+        return "Base-turn AI (final)"
+    if kind.startswith("ai_base_"):
+        tag = kind[len("ai_base_"):]
+        return {"untrained": "Base-turn AI, untrained", "headstart": "Base-turn AI after its head start"}.get(
+            tag, f"Base-turn AI after {tag} decisions")
     if kind.startswith("ai_speed_"):
         tag = kind[len("ai_speed_"):]
         return {"untrained": "Speed AI, untrained", "headstart": "Speed AI after its head start"}.get(
