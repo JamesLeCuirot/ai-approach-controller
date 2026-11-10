@@ -95,7 +95,7 @@ def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, li
 
 
 def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
-              change_weight: float = 5.0, turn_weight: float = 10.0) -> dict:
+              change_weight: float = 5.0, turn_weight: float = 1.0) -> dict:
     """Behaviour cloning: train the policy to give the speeds the speed-only rules controller gave.
 
     Only aircraft the AI controls count, and the decisions where the controller changed a speed
@@ -176,6 +176,9 @@ def main() -> None:
     ap.add_argument("--notes", default="")
     ap.add_argument("--resume", default="", help="carry on from a saved AI of this run (skips the head start)")
     ap.add_argument("--base-turns", action="store_true", help="stage 1b: the AI also turns aircraft onto base")
+    ap.add_argument("--turn-weight", type=float, default=1.0,
+                    help="how much more the rule's base turns count in the head start (1: as often as they happen; "
+                         "more makes the AI turn early, as 10 did in stage1b-01's first head start)")
     args = ap.parse_args()
 
     import torch
@@ -194,6 +197,7 @@ def main() -> None:
         "run": args.run, "started": started.strftime("%Y-%m-%d %H:%M UTC"), "code_version": code_version(),
         "decisions": args.decisions, "envs": args.envs, "seed": args.seed,
         "headstart_episodes": args.headstart_episodes, "cached_winds_only": args.cached_winds_only,
+        "turn_weight": args.turn_weight if args.base_turns else None,
         "reward_weights": REWARD, "ppo": PPO_SETTINGS, "algorithm": "AnchoredPPO (approach/ai/ppo.py)",
         "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
@@ -236,7 +240,7 @@ def main() -> None:
         obs = np.concatenate([np.array(o) for o, _, _ in parts])
         acts = np.concatenate([np.array(a) for _, a, _ in parts])
         teacher_rows = [r for _, _, rows in parts for r in rows]
-        agree = headstart(model, obs, acts)
+        agree = headstart(model, obs, acts, turn_weight=args.turn_weight)
         model.save(out / "model_headstart.zip")
         model.set_anchor(model.policy)  # practice is pulled back towards this copy
         record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
