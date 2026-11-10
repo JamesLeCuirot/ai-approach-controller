@@ -33,3 +33,7 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-09,stage1-05-first-training,ai_speed_headstart_2026-05-30T12,ai_speed_headstart,70158bf,28,28,2,1,2.9,4.9,64.3,19.3,23,1,100,837c0dcb9abf980d1ea85768bad71c5ae6268d4643dd25c4e1dd3e950b9f6d21
 2026-11-09,stage1-05-first-training,ai_speed_300k_2026-05-30T12,ai_speed_300k,70158bf,28,28,6,0,2.8,5.9,75.5,21.8,55,3,100,87ccea2f3db93d9970a81289dd806c2b56bc883a001192aca6e7ca0d04231672
 2026-11-09,stage1-05-first-training,ai_speed_2026-05-30T12,ai_speed,70158bf,28,28,1,0,2.7,5.2,61.0,22.0,37,0,100,aa32ecd3faa7bd7f0f168e6ca50b7c9b1b5e6dc6001a89f1e5d85f2d7ed32dc1
+2026-11-10,stage1-06-speed-alone,rules_speed_2026-05-30T12,rules_speed,2f27a8f,28,28,3,0,2.6,5.3,63.1,20.5,33,2,100,714fbcf2bcbf6c6e9c713ddc45a436f8cf285fc55a7e058b3e3f8172775571c1
+2026-11-10,stage1-06-speed-alone,ai_speed_headstart_2026-05-30T12,ai_speed_headstart,2f27a8f,28,28,1,0,2.5,5.1,61.1,19.8,22,0,100,c3eaf380c8f9a12751f616b1a53cd6847371c839db6aedb24167019959e7e2ed
+2026-11-10,stage1-06-speed-alone,ai_speed_500k_2026-05-30T12,ai_speed_500k,2f27a8f,28,28,1,0,2.7,5.1,61.5,19.8,23,0,100,37fe415d0a2c89f9d879732ee7a8e6c52bab07c44a94317ab50f936129a7c8b8
+2026-11-10,stage1-06-speed-alone,ai_speed_2026-05-30T12,ai_speed,2f27a8f,28,28,1,0,2.6,5.1,61.5,19.8,23,0,100,db206eae469e66ebcaa59dce836f630d2027a445f06b678864f1a44f734bfc56
