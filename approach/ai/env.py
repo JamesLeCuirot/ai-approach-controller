@@ -299,12 +299,14 @@ class SpeedEnv(gym.Env if gym else object):
 
     def __init__(self, split: str = "train", window_s: int = 3600, other_wind_p: float = 0.25, seed: int | None = None,
                  hours: list[tuple[str, int]] | None = None, reward: dict | None = None, frames: bool = True,
-                 cached_winds_only: bool = False, planner: dict | None = None, base_turns: bool = False):
+                 cached_winds_only: bool = False, planner: dict | None = None, base_turns: bool = False,
+                 pilots: str = "bluesky"):
         """``planner`` overrides the rules controller's settings (fixed_paths, speeds, wind_aware): stage 1a's world
         is fixed paths with the speeds left to the AI; other settings fly other rules controllers on the same
         sessions, for comparison. ``base_turns`` is stage 1b: the AI also turns aircraft onto base, in
         PLANNER_1B's world unless ``planner`` says otherwise; its actions are a speed for each aircraft place and
-        then, for each place, 1 to turn that aircraft onto base now."""
+        then, for each place, 1 to turn that aircraft onto base now. ``pilots`` is the World's pilot model: "bluesky"
+        (every stage 1 result) or "measured" (pilots who turn, descend and slow down like real Gatwick arrivals)."""
         if gym is None:
             raise ImportError("pip install gymnasium")
         self.airport = egkk.load()
@@ -315,6 +317,7 @@ class SpeedEnv(gym.Env if gym else object):
         self.frames = frames
         self.cached_winds_only = cached_winds_only
         self.base_turns = base_turns
+        self.pilots = pilots
         self.planner = {**({**PLANNER_1B} if base_turns else {"fixed_paths": True, "speeds": "none"}), **(planner or {})}
         self.turned: set[str] = set()  # aircraft turned onto base during the last step (for the head start's labels)
         self.rng = random.Random(seed)
@@ -380,7 +383,7 @@ class SpeedEnv(gym.Env if gym else object):
         seed_pilots = options.get("pilot_seed", self.rng.randrange(1 << 30))
         with wake.scheme(self.scheme):
             self.session = LiveSession(self.airport, scenario, self.controller, log, seed=seed_pilots, wind=wind,
-                                       frames=self.frames)
+                                       frames=self.frames, pilots=self.pilots)
         self.in_conflict: set[tuple[str, str]] = set()
         self.wake_flagged: set[tuple[str, str]] = set()
         self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final

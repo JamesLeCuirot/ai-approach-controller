@@ -16,16 +16,31 @@ Wind (optional) comes from a real weather model (approach.data.gfs). Assigned
 headings are flown as headings, so the wind makes aircraft drift, as it does in
 real life; pilots correct for drift only when they fly a track themselves: on
 the localiser and when flying direct to a fix.
+
+How hard aircraft turn, how fast they descend and how fast they change speed
+depend on ``pilots``:
+
+* ``"bluesky"`` (the default, which every result before stage 2 used):
+  BlueSky's own values, the same for every aircraft: 25 degrees of bank,
+  1,500 ft/min, and speed changes of 2 to 3 kt a second.
+* ``"measured"``: each pilot gets its own bank angle, descent rate and rates of
+  slowing down and speeding up, drawn from what real Gatwick arrivals do
+  (approach.data.response, data/real/<airport>/response.json). Real arrivals
+  bank about 21 degrees, descend at about 900 ft/min and slow down at about
+  0.6 kt a second in level flight.
 """
 
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
+import json
 import math
 import os
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from approach import wake
@@ -48,6 +63,37 @@ MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilo
 # BlueSky's time step. Its own default is 0.05 s; 0.5 s gives the same results on the stage 0 tests and the Storm
 # Darragh hour, about ten times faster, and it is used for training and the benchmark alike (same physics in both).
 SIM_DT_S = float(os.environ.get("APPROACH_SIM_DT", "0.5"))
+
+PILOT_MODELS = ("bluesky", "measured")
+FPM_TO_MS = 0.00508
+REAL_DIR = Path(__file__).resolve().parents[2] / "data" / "real"
+# Physical bounds on each measured quantity, for the tails beyond the 10th and 90th percentiles.
+_BOUNDS = {"bank_deg": (8.0, 25.0), "descent_fpm": (400.0, 1800.0), "decel_kt_s": (0.2, 1.2),
+           "decel_desc_kt_s": (0.15, 1.0), "accel_kt_s": (0.15, 1.0)}
+
+
+@functools.lru_cache(maxsize=None)
+def response_quantiles(airport_icao: str) -> dict[str, dict[str, float]]:
+    """The measured quantiles each pilot is drawn from (approach.data.response)."""
+    r = json.loads((REAL_DIR / airport_icao.lower() / "response.json").read_text())
+    return {"bank_deg": r["turns"]["bank_deg"], "descent_fpm": r["descent"]["rate_fpm"],
+            "decel_kt_s": r["speed"]["decel_level_kt_s"], "decel_desc_kt_s": r["speed"]["decel_descending_kt_s"],
+            "accel_kt_s": r["speed"]["accel_kt_s"]}
+
+
+def draw(quantiles: dict[str, float], u: float, bounds: tuple[float, float]) -> float:
+    """A value at cumulative probability u from the 10th-90th percentiles, linear between them and out to the
+    bounds in the tails."""
+    qs = [0.1, 0.25, 0.5, 0.75, 0.9]
+    vs = [quantiles[f"p{int(q * 100)}"] for q in qs]
+    lo = max(bounds[0], vs[0] - (vs[1] - vs[0]) * 0.1 / 0.15)
+    hi = min(bounds[1], vs[-1] + (vs[-1] - vs[-2]) * 0.1 / 0.15)
+    xs, ys = [0.0] + qs + [1.0], [lo] + vs + [hi]
+    for k in range(len(xs) - 1):
+        if u <= xs[k + 1]:
+            f = (u - xs[k]) / (xs[k + 1] - xs[k])
+            return ys[k] + f * (ys[k + 1] - ys[k])
+    return hi
 
 
 def _bluesky(sim_dt: float = SIM_DT_S):
@@ -118,6 +164,14 @@ class Pilot:
     stable_checked: bool = False
     go_around_stage: int = 0
     reason: str = ""
+    # How this pilot flies ("measured" pilots only; "bluesky" pilots leave it to BlueSky)
+    bank_deg: float = 25.0
+    descent_fpm: float = 1500.0
+    decel_kt_s: float = 0.0
+    decel_desc_kt_s: float = 0.0
+    accel_kt_s: float = 0.0
+    spd_goal: float | None = None  # the speed it is changing to, at its own rate
+    spd_set: float | None = None  # the speed currently set in the autopilot on the way there
 
     @property
     def wake(self) -> str:
@@ -130,7 +184,9 @@ class Pilot:
 
 class World:
     def __init__(self, airport: Airport, runway: str, seed: int = 1, pilot_delay_s: tuple[float, float] = (3.0, 6.0),
-                 wind: "WindProfile | None" = None, sim_dt: float | None = None):
+                 wind: "WindProfile | None" = None, sim_dt: float | None = None, pilots: str = "bluesky"):
+        if pilots not in PILOT_MODELS:
+            raise ValueError(f"pilots must be one of {PILOT_MODELS}")
         self.bs = _bluesky(sim_dt or SIM_DT_S)
         from bluesky import stack
 
@@ -138,6 +194,9 @@ class World:
         self.airport = airport
         self.runway = airport.runways[runway]
         self.rng = random.Random(seed)
+        self.pilot_model = pilots
+        # Their own generator, so measured pilots leave the response delays exactly as they were.
+        self.pilot_rng = random.Random(seed * 7919 + 17)
         self.pilot_delay_s = pilot_delay_s
         self.pilots: dict[str, Pilot] = {}
         self._last_hdg: dict[str, float] = {}
@@ -166,7 +225,17 @@ class World:
     def spawn(self, cs: str, actype: str, lat: float, lon: float, hdg_true: float, alt_ft: float, cas_kt: float) -> None:
         self.stack(f"CRE {cs} {actype} {lat:.6f} {lon:.6f} {hdg_true:.1f} {alt_ft:.0f} {cas_kt:.0f}")
         self.bs.sim.step()  # process the command so the aircraft exists
-        self.pilots[cs] = Pilot(cs, actype, self.t, hdg_true, alt_ft, cas_kt)
+        p = Pilot(cs, actype, self.t, hdg_true, alt_ft, cas_kt)
+        if self.pilot_model == "measured":
+            q = response_quantiles(self.airport.icao)
+            for name in _BOUNDS:
+                setattr(p, name, draw(q[name], self.pilot_rng.random(), _BOUNDS[name]))
+            i = self._idx(cs)
+            if i >= 0:
+                self.bs.traf.ap.bankdef[i] = math.radians(p.bank_deg)
+                self.bs.traf.ap.vsdef[i] = p.descent_fpm * FPM_TO_MS
+            p.spd_set = cas_kt
+        self.pilots[cs] = p
 
     def remove(self, cs: str) -> None:
         self.stack(f"DEL {cs}")
@@ -247,7 +316,7 @@ class World:
             if not p.gs:
                 self.stack(f"ALT {cs} {float(instr.value):.0f}")
         elif instr.kind == "speed":
-            self.stack(f"SPD {cs} {float(instr.value):.0f}")
+            self._speed(p, float(instr.value))
         elif instr.kind == "direct":
             p.direct_fix = str(instr.value)
             p.hold_fix = None
@@ -268,6 +337,8 @@ class World:
             p.pending = [(tt, i) for tt, i in p.pending if tt > self.t]
             for instr in due:
                 self._apply(p, instr)
+            if p.spd_goal is not None:
+                self._speed_tick(p, v)
             if p.hold_fix:
                 self._hold_tick(p, v)
             elif p.direct_fix and p.direct_fix in self.airport.fixes:
@@ -284,6 +355,28 @@ class World:
             if follow.along - lead.along < MIN_FINAL_GAP_NM:
                 events += self._start_go_around(self.pilots[follow.cs], follow, "too close to the aircraft ahead")
         return events
+
+    def _speed(self, p: Pilot, kt: float) -> None:
+        """Set a new speed: at once for BlueSky's pilots, at the pilot's own rate for measured ones."""
+        if self.pilot_model == "measured":
+            p.spd_goal = kt
+        else:
+            self.stack(f"SPD {p.cs} {kt:.0f}")
+
+    def _speed_tick(self, p: Pilot, v: AircraftView) -> None:
+        """A measured pilot moves the autopilot's speed towards the new one a little each second: real arrivals
+        slow down at about 0.6 kt a second in level flight and 0.45 while descending, far slower than BlueSky."""
+        goal = p.spd_goal
+        now = p.spd_set if p.spd_set is not None else v.cas_kt
+        if goal > now:
+            rate = p.accel_kt_s
+        else:
+            rate = p.decel_desc_kt_s if v.vs_fpm < -300 else p.decel_kt_s
+        step = max(-rate, min(rate, goal - now))
+        p.spd_set = goal if abs(goal - now) <= rate else now + step
+        if p.spd_set == goal:
+            p.spd_goal = None
+        self.stack(f"SPD {p.cs} {p.spd_set:.1f}")
 
     def _hold_tick(self, p: Pilot, v: AircraftView) -> None:
         """Fly the published racetrack: to the fix, turn outbound, a timed leg, turn back, inbound to the fix."""
@@ -322,7 +415,10 @@ class World:
         ratio = max(-0.9, min(0.9, cross / max(v.tas_kt, 100.0)))
         return (track - math.degrees(math.asin(ratio))) % 360.0
 
-    def _turn_radius_nm(self, tas_kt: float) -> float:
+    def _turn_radius_nm(self, tas_kt: float, p: Pilot | None = None) -> float:
+        if self.pilot_model == "measured" and p is not None:  # radius = V^2 / (g tan(bank))
+            v_ms = max(tas_kt, 100.0) * 0.514444
+            return v_ms ** 2 / (9.80665 * math.tan(math.radians(p.bank_deg))) / 1852.0
         ref_radius = (TURN_RATE_REF_TAS_KT / 3600.0) / math.radians(TURN_RATE_REF_DEG_S)
         return ref_radius * (max(tas_kt, 100.0) / TURN_RATE_REF_TAS_KT) ** 2
 
@@ -333,7 +429,7 @@ class World:
         events: list[dict] = []
         if not p.loc:
             converging = (v.lateral < 0 < angle) or (v.lateral > 0 > angle) or abs(v.lateral) < 0.05
-            lead = self._turn_radius_nm(max(v.tas_kt, v.gs_kt)) * (1 - math.cos(math.radians(abs(angle)))) + 0.05
+            lead = self._turn_radius_nm(max(v.tas_kt, v.gs_kt), p) * (1 - math.cos(math.radians(abs(angle)))) + 0.05
             # Autopilots capture at steep intercepts too (the wind can make a 30 degree intercept heading a much
             # steeper track); they just overshoot more.
             if converging and abs(angle) <= MAX_CAPTURE_TRACK_DEG and abs(v.lateral) <= lead and v.along > 1.0:
@@ -356,10 +452,10 @@ class World:
             # Pilot speed management on final
             if v.along < 7.0 and p.target_spd > 160:
                 p.target_spd = 160
-                self.stack(f"SPD {p.cs} 160")
+                self._speed(p, 160)
             if v.along < 4.0 and p.target_spd > p.approach_speed:
                 p.target_spd = p.approach_speed
-                self.stack(f"SPD {p.cs} {p.approach_speed}")
+                self._speed(p, p.approach_speed)
             # Stability check at 1,000 ft above the aerodrome
             if not p.stable_checked and v.alt_ft <= rwy.elevation_ft + 1000:
                 p.stable_checked = True
@@ -390,7 +486,7 @@ class World:
         self._hdg(p.cs, self.runway.course_true)
         self.stack(f"VS {p.cs} 2000")
         self.stack(f"ALT {p.cs} 3000")
-        self.stack(f"SPD {p.cs} 200")
+        self._speed(p, 200)
         return [{"kind": "go_around", "cs": p.cs, "reason": reason, "text": f"{p.cs} going around: {reason}"}]
 
     def _go_around_tick(self, p: Pilot, v: AircraftView) -> list[dict]:

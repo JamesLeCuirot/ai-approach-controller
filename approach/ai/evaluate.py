@@ -101,15 +101,15 @@ def _run(args: tuple) -> list[dict]:
     return rows
 
 
-def paired_differences(rows: list[dict]) -> dict:
-    """AI minus the speed-only controller, session by session: each total difference and its 95% range."""
+def paired_differences(rows: list[dict], a: str = "ai", b: str = "rules_speed") -> dict:
+    """``a`` minus ``b`` (by default the AI minus the speed-only controller), session by session: each total
+    difference and its 95% range."""
     by = {(int(r["session"]), r["controller"]): r for r in rows}
-    sessions = sorted({k for k, who in by if who == "ai" and (k, "rules_speed") in by})
+    sessions = sorted({k for k, who in by if who == a and (k, b) in by})
     out = {}
     for key in ("separation_losses", "losses_at_stack", "wake_infringements", "go_arounds", "gaps_inside_minimum",
                 "landed"):
-        d = np.array([int(by[k, "ai"].get(key) or 0) - int(by[k, "rules_speed"].get(key) or 0) for k in sessions],
-                     dtype=float)
+        d = np.array([int(by[k, a].get(key) or 0) - int(by[k, b].get(key) or 0) for k in sessions], dtype=float)
         if len(d) < 2:
             continue
         half = 1.96 * d.std(ddof=1) * np.sqrt(len(d))
