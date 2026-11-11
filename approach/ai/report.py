@@ -63,6 +63,11 @@ def chart(run: Path, out: Path) -> None:
     else:  # run stage1a-01 logged each episode's own decisions: add them up for the running total
         x = np.cumsum([int(r["decisions"]) for r in rows])
     m, t = _measures(rows), _measures(teacher) if teacher else None
+    import json
+
+    stage = json.loads((run / "run.json").read_text()).get("stage", "1a") if (run / "run.json").is_file() else "1a"
+    teacher_name = ("Rules controller it copied (eager release, speed then a longer downwind)" if stage == "1b"
+                    else "Speed-only rules controller")
     panels = [("gap", "Distance from the target gap\nat landing (NM)"),
               ("losses", "Separation losses\nper 100 arrivals"),
               ("instructions", "Speed instructions\nper arrival")]
@@ -76,7 +81,7 @@ def chart(run: Path, out: Path) -> None:
         if t:
             ref = t[key][0].sum() / max(t[key][1].sum(), 1)
             ax.axhline(ref, color=REFERENCE, linewidth=1.5, linestyle=(0, (5, 4)),
-                       label="Speed-only rules controller (its head-start episodes)")
+                       label=f"{teacher_name}, its head-start episodes")
         ax.set_ylabel(label)
         ax.grid(axis="y", color=GRID, linewidth=0.8)
         ax.spines[["top", "right"]].set_visible(False)
