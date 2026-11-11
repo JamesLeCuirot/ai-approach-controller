@@ -21,6 +21,10 @@ VERSIONS = {
     "stretch_final_director": {"fixed_paths": False, "speeds": "rules", "wind_aware": True},
     # Stage 0's rules controller as it was: base turn planned to the slot, final director, timed for still air.
     "stage0_still_air": {"fixed_paths": False, "speeds": "rules", "wind_aware": False},
+    # Stage 2: the same controllers planning height as well as time, for pilots who descend at real rates.
+    "eager_planned_descent": {"fixed_paths": True, "speeds": "slot", "wind_aware": True, "stretch": True,
+                              "release": "eager", "descent": "plan"},
+    "stretch_planned_descent": {"fixed_paths": False, "speeds": "slot", "wind_aware": True, "descent": "plan"},
 }
 
 TITLES = {
@@ -31,4 +35,8 @@ TITLES = {
     "stretch": "Rules controller: base turn planned to the slot, timed with the wind",
     "stretch_final_director": "Rules controller: base turn planned to the slot, final director, timed with the wind",
     "stage0_still_air": "Rules controller: stage 0's, timed for still air",
+    "eager_planned_descent": "Rules controller: speed first, then a longer downwind (eager release), planning its "
+                             "descents",
+    "stretch_planned_descent": "Rules controller: base turn planned to the slot, timed with the wind, planning its "
+                               "descents",
 }

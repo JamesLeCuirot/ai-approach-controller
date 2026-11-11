@@ -100,9 +100,9 @@ def main() -> None:
 def measured(name: str, sessions: list[dict], args, out_dir: Path) -> None:
     """The version with measured pilots, against the same version with BlueSky's pilots on the same sessions."""
     before = out_dir / f"{name}.eval.csv"
-    if not before.is_file():
-        raise SystemExit(f"No saved results for {name} with BlueSky's pilots at {before}: run without --pilots first")
-    saved = [{**r, "controller": "bluesky"} for r in csv.DictReader(before.open()) if r["controller"] == "ai"]
+    # Versions made for measured pilots (planning their descents) have no results with BlueSky's to compare with.
+    saved = ([{**r, "controller": "bluesky"} for r in csv.DictReader(before.open()) if r["controller"] == "ai"]
+             if before.is_file() else [])
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_fly, [(name, sessions[k::args.workers], "measured")
                                               for k in range(args.workers)]) for r in part]
@@ -114,10 +114,12 @@ def measured(name: str, sessions: list[dict], args, out_dir: Path) -> None:
         w.writeheader()
         w.writerows(both)
     summary = {"version": name, "settings": VERSIONS[name], "pilots": "measured", "sessions": args.sessions,
-               "seed": args.seed, **evaluate.summarise(both),
-               "measured_minus_bluesky": evaluate.paired_differences(both, "measured", "bluesky")}
+               "seed": args.seed, **evaluate.summarise(both)}
+    if saved:
+        summary["measured_minus_bluesky"] = evaluate.paired_differences(both, "measured", "bluesky")
     (out_dir / f"{name}_measured.eval.json").write_text(json.dumps(summary, indent=2))
-    print(name, json.dumps({k: summary[k] for k in ("measured", "bluesky", "measured_minus_bluesky")}), flush=True)
+    print(name, json.dumps({k: summary[k] for k in ("measured", "bluesky", "measured_minus_bluesky") if k in summary}),
+          flush=True)
 
 
 if __name__ == "__main__":

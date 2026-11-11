@@ -32,6 +32,14 @@ bands as the AI, in approach.controllers.speed) or "none" (the AI sets them). Wi
 paths the landing slots are planned about 4.5 NM apart (FIXED_PATH_MARGIN_NM), the real
 controllers' typical spacing with no departure in between, to leave speed room to work.
 
+Stage 2 option. With ``descent="plan"`` the controller plans height as well as time, as it must once pilots
+descend at real rates (about 900 ft/min, approach.data.response) rather than BlueSky's 1,500. Each aircraft must
+reach its join point a little below the glide path there (3,750 ft at 11 NM, 5,000 ft at 15 NM), so it joins
+the glide path from below: it leaves the hold only if some path inside the RMA is long enough for that, its
+downwind runs long enough for the height still to lose, and the descent to 3,000 ft is given as soon as the
+distance left needs it, not only at the turn onto base. The distance needed is the height to lose at the
+aircraft's own rate once it is descending (800 ft/min until then), at its ground speed, plus a margin.
+
 Positions are worked in the runway frame: ``along`` (NM out from the threshold on
 the extended centreline) and ``lateral`` (NM right of the centreline as seen by an
 aircraft on final; negative is left).
@@ -84,6 +92,11 @@ SPEED_HOLD = 220
 VACATE_NM = 6.0  # an aircraft below and within this distance must have left a level before another descends into it
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
+# descent="plan": height planning for pilots who descend at real rates
+JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, which is 3,750 ft at 11 NM)
+BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the glide path, to join it from below
+PLAN_DESCENT_FPM = 800.0  # assumed until the aircraft is seen descending (real arrivals: median 900, slowest tenth 630)
+DESCENT_MARGIN_NM = 2.0  # time to start the descent, and a little to spare
 
 
 @dataclass
@@ -117,7 +130,8 @@ class RulesController(Controller):
     name = "rules"
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
-                 wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule"):
+                 wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
+                 descent: str = "base"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -136,6 +150,9 @@ class RulesController(Controller):
             raise ValueError(f"release must be careful or eager, not {release!r}")
         if base_turns not in ("rule", "ai"):
             raise ValueError(f"base_turns must be rule or ai, not {base_turns!r}")
+        if descent not in ("base", "plan"):
+            raise ValueError(f"descent must be base or plan, not {descent!r}")
+        self.descent = descent
         self.base_turns = base_turns
         self.fixed_paths = fixed_paths
         self.wind_aware = wind_aware
@@ -253,6 +270,49 @@ class RulesController(Controller):
         delta = abs(heading_difference(to_hdg, from_hdg))
         return radius * math.tan(math.radians(min(delta, 150.0)) / 2) + v.tas_kt / 3600.0 * PILOT_DELAY_S
 
+    def _track_to_join(self, v, p: Plan, d_join: float | None = None) -> float:
+        """Track miles from the aircraft to its join point on the planned path (to D, D to B, then the intercept)."""
+        q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
+        pts = self._points(q)
+        if q.stage in ("downwind", "inbound"):
+            return distance_xy(v.x, v.y, *pts["D"]) + distance_xy(*pts["D"], *pts["B"]) + INTERCEPT_LEG_NM
+        if q.stage == "base":
+            return distance_xy(v.x, v.y, *pts["B"]) + INTERCEPT_LEG_NM
+        return 0.0
+
+    def _join_alt(self, d_join: float) -> float:
+        """The height to reach the join point at: a little below the glide path there, and no lower than the level
+        given for the join."""
+        return max(JOIN_ALT_FT, self.runway.glide_path_altitude_ft(d_join) - BELOW_GLIDE_PATH_FT)
+
+    def _descent_nm(self, v, to_alt: float) -> float:
+        """Track miles needed to get down to `to_alt`: at the aircraft's own rate once it is descending, at its
+        ground speed, plus a margin."""
+        lose = v.alt_ft - to_alt
+        if lose <= 100:
+            return 0.0
+        rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
+        return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
+
+    def _height_ok(self, v, p: Plan, d_join: float) -> bool:
+        """Whether the path to a join point d_join out is long enough to get down to a little below the glide path."""
+        return self._track_to_join(v, p, d_join) >= self._descent_nm(v, self._join_alt(d_join))
+
+    def _join_for_height(self, v, p: Plan, lo: float, hi: float) -> float:
+        """The shortest final, between lo and hi, whose path is long enough to lose the aircraft's height (a longer
+        final adds track miles and raises the glide path at the join point, so both help)."""
+        if self._height_ok(v, p, lo):
+            return lo
+        if not self._height_ok(v, p, hi):
+            return hi
+        for _ in range(20):
+            mid = (lo + hi) / 2
+            if self._height_ok(v, p, mid):
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
     def _snap(self, true_hdg: float) -> float:
         """Round to a 5 degree magnetic heading, as a controller would say it."""
         mag = round(self.airport.true_to_magnetic(true_hdg) / 5.0) * 5.0
@@ -279,8 +339,12 @@ class RulesController(Controller):
                     reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
                     can_go = (longest >= D_JOIN_FIXED_NM and self._inside(v.x, v.y)
                               and t + self._eta(v, probe, reach) + SPEED_ABSORB_S >= need)
+                    height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
                     can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
+                    height_reach = longest
+                if can_go and self.descent == "plan" and not self._height_ok(v, probe, height_reach):
+                    can_go = False  # it can't get down in time on any path inside the RMA: lower in the stack first
                 if can_go and p.holding and not p.below_stack and self._anyone_below_in_stack(p, views):
                     can_go = False  # the lowest aircraft in a stack leaves first
                 if can_go:
@@ -299,6 +363,8 @@ class RulesController(Controller):
                     p.d_join = D_JOIN_FIXED_NM
                 elif p.stage == "downwind":
                     p.d_join = p.ai_turn_d or self._stretched_join(t, v, p, prev_t, prev_type)
+                    if self.descent == "plan" and not p.ai_turn_d:
+                        p.d_join = self._join_for_height(v, p, p.d_join, max(p.d_join, self.max_join(p.side)))
                 p.landing_t = t + self._eta(v, p)
                 p.slot_t = p.landing_t
                 if prev_t is not None:
@@ -325,6 +391,8 @@ class RulesController(Controller):
                     p.d_join = max(D_JOIN_MIN_NM, hi)
             elif p.stage == "downwind":
                 p.d_join = D_JOIN_MIN_NM
+            if p.stage == "downwind" and self.descent == "plan":
+                p.d_join = self._join_for_height(v, p, p.d_join, max(p.d_join, self.max_join(p.side)))
             p.landing_t = t + self._eta(v, p)
             p.slot_t = p.landing_t
             prev_t, prev_type = p.landing_t, p.actype
@@ -492,6 +560,9 @@ class RulesController(Controller):
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
                 base_hdg = bearing_xy(*pts["D"], *pts["B"])
                 self._steer(t, p, v, pts["D"])
+                if (self.descent == "plan" and p.alt_cmd not in (None, JOIN_ALT_FT) and t >= p.retry_t
+                        and self._track_to_join(v, p) <= self._descent_nm(v, self._join_alt(p.d_join)) + 2.0):
+                    self._say(p, "altitude", JOIN_ALT_FT)
                 if p.turn_now or distance_xy(v.x, v.y, *pts["D"]) <= self._turn_lead_nm(v, to_d, base_hdg):
                     if self.base_turns == "ai" and (p.ai_owns_turn or p.ai_turn_d):
                         p.d_join, p.turn_now = self._turn_d(p), False
