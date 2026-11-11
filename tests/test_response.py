@@ -241,3 +241,28 @@ def test_held_choices_fly_as_planned_when_the_ai_keeps_everything():
     assert counts[1]["instructions"] == 0
     assert holds(SimpleNamespace(action_space=VectorEnv(seed=1, cached_winds_only=True, hold=True).action_space))
     assert not holds(SimpleNamespace(action_space=VectorEnv(seed=1, cached_winds_only=True).action_space))
+
+
+def test_look_ahead_copies_leave_the_session_as_it_was():
+    from approach.ai.lookahead import fly_copies
+    from approach.ai.vector import N_MAX, VectorEnv
+
+    keep = np.zeros(3 * N_MAX, dtype=np.int64)
+
+    def fly(with_copies):
+        env = VectorEnv(seed=1, cached_winds_only=True, hold=True)
+        env.reset(seed=3)
+        out = []
+        for k in range(60):
+            if with_copies and k % 6 == 0:
+                out.append(fly_copies(env, [(7, keep), (7, keep), (8, keep)], workers=2))
+            _, _, done, _, _ = env.step(keep)
+            if done:
+                break
+        return dict(env.counts), env.session.t, out
+
+    counts, t, _ = fly(False)
+    counts2, t2, copies = fly(True)
+    assert (counts, t) == (counts2, t2)  # the copies are separate processes: the session flies on unchanged
+    assert all(c[0] == c[1] for c in copies)  # the same pilots give the same copy
+    assert all("error" not in x for c in copies for x in c)

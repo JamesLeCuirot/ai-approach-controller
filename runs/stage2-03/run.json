@@ -109,5 +109,11 @@
       }
     },
     "minutes": 4.8
+  },
+  "stopped": {
+    "at_decisions": 104908,
+    "when": "2026-11-11 20:53 UTC",
+    "saved_as": "model_100k.zip",
+    "why": "stopped after its 100k checkpoint to free the machine for the look-ahead controller (approach/ai/lookahead.py): no trained AI so far has beaten its competitor beyond chance"
   }
 }
