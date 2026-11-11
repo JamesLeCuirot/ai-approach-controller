@@ -68,8 +68,7 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
 def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, list]:
     """Episodes flown by the rules controller the AI copies: its observations and choices, and its results.
 
-    In stage 1b the rule turns aircraft onto base itself; a turn made during a step is recorded as the choice
-    "turn now" for that aircraft at that step."""
+    In stage 1b its base-turn choice is always "as planned": the planner's turns are the rule's."""
     seed, episodes, cached, base_turns = args
     from approach.ai.env import N_MAX, SpeedEnv
 
@@ -83,10 +82,7 @@ def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, li
             slots = list(env.slots)
             before = obs
             obs, r, done, _, info = env.step(act)
-            if base_turns:
-                for i, cs in enumerate(slots):
-                    if cs in env.turned:
-                        act[N_MAX + i] = 1
+            del slots
             obs_all.append(before)
             act_all.append(act)
             total += r
@@ -95,7 +91,7 @@ def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, li
 
 
 def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
-              change_weight: float = 5.0, turn_weight: float = 1.0, turn_block_weight: float = 10.0) -> dict:
+              change_weight: float = 5.0, turn_block_weight: float = 10.0, turn_smoothing: float = 0.02) -> dict:
     """Behaviour cloning: train the policy to give the speeds the speed-only rules controller gave.
 
     Only aircraft the AI controls count, and the decisions where the controller changed a speed
@@ -118,17 +114,24 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
     changed = controlled & ((speeds[act_t[:, :N_MAX]] - assigned).abs() >= 5)
     weight = controlled.float() * (1.0 + (change_weight - 1.0) * changed.float())
     base_turns = act_t.shape[1] > N_MAX
-    if base_turns:  # stage 1b: the base turns, where the AI could turn; the turns themselves count more
+    if base_turns:  # stage 1b: the base-turn choices, where the AI can turn an aircraft
         can_turn = obs_t[..., FEATURES_1B.index("can_turn")] > 0.5
-        turned = can_turn & (act_t[:, N_MAX:] == 1)
-        # Every turn-or-wait choice counts turn_block_weight times (they are few beside 16 speeds a step, and
-        # otherwise barely learned); a turn counts turn_weight times a wait (more tips the AI towards turning).
-        weight = torch.cat([weight, turn_block_weight * can_turn.float() * (1.0 + (turn_weight - 1.0) * turned.float())],
-                           dim=1)
+        # They count turn_block_weight times (few beside 16 speeds a step). The rule's choice is always "as
+        # planned"; turn_smoothing of the target goes to "turn now" and "not yet", so practice still tries them.
+        weight = torch.cat([weight, turn_block_weight * can_turn.float()], dim=1)
 
     def slot_log_probs(o, a):
         dist = policy.get_distribution(o)
-        return torch.stack([d.log_prob(x) for d, x in zip(dist.distribution, torch.unbind(a, dim=1))], dim=1)
+        out = []
+        for k, (d, x) in enumerate(zip(dist.distribution, torch.unbind(a, dim=1))):
+            if k >= N_MAX and turn_smoothing > 0:  # a smoothed target: mostly the rule's choice
+                n = d.logits.shape[-1]
+                target = torch.full_like(d.logits, turn_smoothing / (n - 1))
+                target.scatter_(1, x.unsqueeze(1), 1.0 - turn_smoothing)
+                out.append((target * d.logits).sum(dim=1))
+            else:
+                out.append(d.log_prob(x))
+        return torch.stack(out, dim=1)
 
     n = len(obs_t)
     for _ in range(epochs):
@@ -151,11 +154,10 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
                "changes": round(float(same[:, :N_MAX][ch].float().mean()), 3) if ch.any() else None,
                "share_of_changes": round(float(ch.sum() / max(c.sum(), 1)), 3)}
         if base_turns:
-            ct, tu = can_turn[sample], turned[sample]
-            wait = ct & ~tu
-            out.update({"turns": round(float(same[:, N_MAX:][tu].float().mean()), 3) if tu.any() else None,
-                        "waits": round(float(same[:, N_MAX:][wait].float().mean()), 3) if wait.any() else None,
-                        "share_of_turns": round(float(tu.sum() / max(ct.sum(), 1)), 3)})
+            ct = can_turn[sample]
+            probs = torch.stack([d.probs for d in policy.get_distribution(obs_t[sample]).distribution[N_MAX:]], dim=1)
+            out.update({"as_planned": round(float(same[:, N_MAX:][ct].float().mean()), 3) if ct.any() else None,
+                        "p_as_planned": round(float(probs[..., 0][ct].mean()), 3) if ct.any() else None})
         return out
 
 
@@ -179,9 +181,8 @@ def main() -> None:
     ap.add_argument("--notes", default="")
     ap.add_argument("--resume", default="", help="carry on from a saved AI of this run (skips the head start)")
     ap.add_argument("--base-turns", action="store_true", help="stage 1b: the AI also turns aircraft onto base")
-    ap.add_argument("--turn-weight", type=float, default=1.0,
-                    help="how much more the rule's base turns count in the head start (1: as often as they happen; "
-                         "more makes the AI turn early, as 10 did in stage1b-01's first head start)")
+    ap.add_argument("--turn-smoothing", type=float, default=0.02,
+                    help="in the head start, the share of each base-turn target given to 'turn now' and 'not yet'")
     args = ap.parse_args()
 
     import torch
@@ -200,7 +201,7 @@ def main() -> None:
         "run": args.run, "started": started.strftime("%Y-%m-%d %H:%M UTC"), "code_version": code_version(),
         "decisions": args.decisions, "envs": args.envs, "seed": args.seed,
         "headstart_episodes": args.headstart_episodes, "cached_winds_only": args.cached_winds_only,
-        "turn_weight": args.turn_weight if args.base_turns else None,
+        "turn_smoothing": args.turn_smoothing if args.base_turns else None,
         "reward_weights": REWARD, "ppo": PPO_SETTINGS, "algorithm": "AnchoredPPO (approach/ai/ppo.py)",
         "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
@@ -243,7 +244,7 @@ def main() -> None:
         obs = np.concatenate([np.array(o) for o, _, _ in parts])
         acts = np.concatenate([np.array(a) for _, a, _ in parts])
         teacher_rows = [r for _, _, rows in parts for r in rows]
-        agree = headstart(model, obs, acts, turn_weight=args.turn_weight)
+        agree = headstart(model, obs, acts, turn_smoothing=args.turn_smoothing)
         model.save(out / "model_headstart.zip")
         model.set_anchor(model.policy)  # practice is pulled back towards this copy
         record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
@@ -256,9 +257,9 @@ def main() -> None:
         print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
               f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
               f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
-        if args.base_turns and agree.get("turns") is not None:
-            print(f"Base turns: turns where the rule turned {agree['turns']:.0%}, waits where it waited "
-                  f"{agree['waits']:.0%} (turns are {agree['share_of_turns']:.1%} of the chances)", flush=True)
+        if args.base_turns and agree.get("as_planned") is not None:
+            print(f"Base turns: 'as planned' chosen at {agree['as_planned']:.0%} of the chances, with probability "
+                  f"{agree['p_as_planned']:.2f} on average", flush=True)
 
     resuming_log = bool(args.resume) and (out / "episodes.csv").is_file()
     episodes_csv = (out / "episodes.csv").open("a" if resuming_log else "w", newline="")

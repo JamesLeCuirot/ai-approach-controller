@@ -110,6 +110,7 @@ class Plan:
     warned: bool = False
     ai_turn_d: float = 0.0  # base_turns="ai": the final length the AI chose by turning base (0: not yet)
     turn_now: bool = False  # ... and the turn is still to be given
+    ai_owns_turn: bool = False  # the AI said "not yet" as the planner was about to turn it: the turn is the AI's
 
 
 class RulesController(Controller):
@@ -125,9 +126,10 @@ class RulesController(Controller):
         decides when an aircraft leaves the hold: "careful" when its slot can be made on the fixed path with speed,
         "eager" when it can be made with the longest downwind and speed.
 
-        ``base_turns`` = "ai" (stage 1b) leaves the base turn to the AI through turn_base_now(): until it turns an
-        aircraft, the aircraft flies on along the downwind, and it is turned at the last point that keeps its base
-        inside the RMA. The rule's own choice is still planned, for the landing times the AI sees."""
+        ``base_turns`` = "ai" (stage 1b): the planner still turns each aircraft at its own point unless the AI says
+        otherwise: turn_base_now() turns it now, and hold_base_turn() (as the planner is about to turn it) leaves the
+        turn to the AI, the aircraft flying on until the AI turns it or it reaches the last point that keeps its
+        base inside the RMA."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -347,6 +349,20 @@ class RulesController(Controller):
         return (p is not None and p.stage == "downwind" and not p.ai_turn_d
                 and self.final_if_turned_now(v, p) >= D_JOIN_FIXED_NM)
 
+    def planner_turns_soon(self, v, p: Plan, seconds: float) -> bool:
+        """The planner would turn this aircraft within `seconds` (and the turn is still the planner's)."""
+        return (not p.ai_owns_turn and not p.ai_turn_d
+                and self.to_planned_turn_nm(v, p) <= v.gs_kt * seconds / 3600.0)
+
+    def hold_base_turn(self, cs: str, v, seconds: float) -> bool:
+        """The AI's "not yet": if the planner is about to turn this aircraft, the turn becomes the AI's. Returns
+        whether it was taken (otherwise "not yet" is the planner's plan anyway)."""
+        p = self.plans.get(cs)
+        if self.base_turns != "ai" or not self.can_turn_base(v, p) or not self.planner_turns_soon(v, p, seconds):
+            return False
+        p.ai_owns_turn = True
+        return True
+
     def to_planned_turn_nm(self, v, p: Plan) -> float:
         """How far the aircraft is from where the planner would turn it onto base (p.d_join, its choice until the AI
         turns the aircraft), less the distance the turn starts before that point: at or below zero, it would turn."""
@@ -471,13 +487,13 @@ class RulesController(Controller):
             if p.alt_cmd is None and t >= p.retry_t:
                 self._say(p, "altitude", p.level)
             if p.stage == "downwind":
-                if self.base_turns == "ai":  # fly on until the AI turns it, or the last point inside the RMA
-                    pts = self._points(Plan(**{**vars(p), "d_join": self._turn_d(p)}))
+                if self.base_turns == "ai" and (p.ai_owns_turn or p.ai_turn_d):
+                    pts = self._points(Plan(**{**vars(p), "d_join": self._turn_d(p)}))  # the AI's turn, or the RMA edge
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
                 base_hdg = bearing_xy(*pts["D"], *pts["B"])
                 self._steer(t, p, v, pts["D"])
                 if p.turn_now or distance_xy(v.x, v.y, *pts["D"]) <= self._turn_lead_nm(v, to_d, base_hdg):
-                    if self.base_turns == "ai":
+                    if self.base_turns == "ai" and (p.ai_owns_turn or p.ai_turn_d):
                         p.d_join, p.turn_now = self._turn_d(p), False
                     p.stage = "base"
                     self._steer(t, p, v, pts["B"], force=True)

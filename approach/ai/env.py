@@ -58,9 +58,13 @@ FEATURES = (
 N_FEATURES = len(FEATURES)
 # Stage 1b adds, for an aircraft on the downwind: whether the AI can turn it onto base now, the gap (NM) it would
 # land with behind the aircraft ahead if it did, how far it can still fly on before it must turn, how far it is from
-# where the planner would turn it (speed first, then a longer downwind), and whether the planner would turn it before
-# the next decision: the plan, to follow or improve on.
-FEATURES_1B = FEATURES + ("can_turn", "gap_if_turn_now_nm", "room_to_turn_nm", "planned_turn_in_nm", "planned_turn_now")
+# where the planner would turn it (speed first, then a longer downwind), whether the planner would turn it before
+# the next decision, and whether the AI has taken the turn over: the plan, to follow or improve on.
+FEATURES_1B = FEATURES + ("can_turn", "gap_if_turn_now_nm", "room_to_turn_nm", "planned_turn_in_nm", "planned_turn_now",
+                          "ai_owns_turn")
+# For each aircraft on the downwind the AI chooses: as planned (the planner turns it at its point), turn now, or not
+# yet (as the planner is about to turn it: the turn becomes the AI's, until it turns it or the RMA edge does).
+TURN_AS_PLANNED, TURN_NOW, TURN_NOT_YET = 0, 1, 2
 # Stage 1b's world: fixed paths that the AI can stretch by turning base later, aircraft released from the hold as
 # soon as their slot can be made with the longest downwind and speed, everything timed with the wind.
 PLANNER_1B = {"fixed_paths": True, "speeds": "none", "wind_aware": True, "stretch": True, "release": "eager",
@@ -175,7 +179,7 @@ def base_turn_features(controller: RulesController, v, p, lead, by_cs: dict, t: 
     """Stage 1b's extra inputs for one aircraft (zero unless it is on the downwind and not yet turned)."""
     if not controller.can_turn_base(v, p):
         return {"can_turn": 0.0, "gap_if_turn_now_nm": 0.0, "room_to_turn_nm": 0.0, "planned_turn_in_nm": 0.0,
-                "planned_turn_now": 0.0}
+                "planned_turn_now": 0.0, "ai_owns_turn": 0.0}
     gap = 1.0  # nothing ahead: plenty of room
     if lead is not None:
         landing = t + controller.eta_if_turned_now(v, p)
@@ -185,8 +189,8 @@ def base_turn_features(controller: RulesController, v, p, lead, by_cs: dict, t: 
     to_turn = controller.to_planned_turn_nm(v, p)
     return {"can_turn": 1.0, "gap_if_turn_now_nm": gap, "room_to_turn_nm": room / 10.0,
             "planned_turn_in_nm": to_turn / 10.0,
-            # the planner would turn it before the AI's next decision (10 s from now)
-            "planned_turn_now": float(to_turn <= v.gs_kt * speed.DECISION_S / 3600.0)}
+            "planned_turn_now": float(controller.planner_turns_soon(v, p, speed.DECISION_S)),
+            "ai_owns_turn": float(p.ai_owns_turn)}
 
 
 def speed_instructions(action, slots: list[str], views: list, controller: RulesController) -> list[tuple[Instruction, bool]]:
@@ -266,8 +270,12 @@ class AISpeedController(Controller):
             if self.base_turns and len(action) > N_MAX:
                 by_cs = {v.cs: v for v in views}
                 for i, cs in enumerate(slots):
-                    if int(action[N_MAX + i]) == 1 and cs in by_cs:
+                    if cs not in by_cs:
+                        continue
+                    if int(action[N_MAX + i]) == TURN_NOW:
                         self.rules.turn_base_now(cs, by_cs[cs])
+                    elif int(action[N_MAX + i]) == TURN_NOT_YET:
+                        self.rules.hold_base_turn(cs, by_cs[cs], speed.DECISION_S)
             out += [instr for instr, _ in speed_instructions(action[:N_MAX], slots, views, self.rules)]
         return out
 
@@ -313,7 +321,7 @@ class SpeedEnv(gym.Env if gym else object):
         self._days: dict[str, dict] = {}
         n_features = len(FEATURES_1B) if base_turns else N_FEATURES
         self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, n_features), dtype=np.float32)
-        self.action_space = spaces.MultiDiscrete([len(speed.SPEEDS_KT)] * N_MAX + ([2] * N_MAX if base_turns else []))
+        self.action_space = spaces.MultiDiscrete([len(speed.SPEEDS_KT)] * N_MAX + ([3] * N_MAX if base_turns else []))
         self.session: LiveSession | None = None
         self.slots: list[str] = []
 
@@ -377,7 +385,8 @@ class SpeedEnv(gym.Env if gym else object):
         self.wake_flagged: set[tuple[str, str]] = set()
         self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final
         self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "losses_at_stack": 0,
-                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0, "base_turns": 0}
+                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0, "base_turns": 0,
+                       "turns_held": 0}
         with wake.scheme(self.scheme):
             obs = self._observe()
             while not self.slots and not self.session.done:  # nothing to control yet: let the traffic arrive
@@ -386,10 +395,10 @@ class SpeedEnv(gym.Env if gym else object):
         return obs, {"scenario": scenario.name, "wind": wind_hour}
 
     def teacher_action(self) -> np.ndarray:
-        """What the speed-only rules controller would choose now. In stage 1b the teacher's controller turns
-        aircraft onto base by the rule itself; those turns show in `turned` after the step (no turn chosen here)."""
+        """What the rules controller would choose now: its speeds, and in stage 1b "as planned" for every base turn
+        (its controller turns aircraft at the planner's points itself)."""
         speeds = teacher_action(self.slots, self.session.world.views(), self.controller)
-        return np.concatenate([speeds, np.zeros(N_MAX, dtype=np.int64)]) if self.base_turns else speeds
+        return np.concatenate([speeds, np.full(N_MAX, TURN_AS_PLANNED, dtype=np.int64)]) if self.base_turns else speeds
 
     def step(self, action):
         r = 0.0
@@ -424,8 +433,13 @@ class SpeedEnv(gym.Env if gym else object):
         if self.base_turns:
             by_cs = {v.cs: v for v in s.views}
             for i, cs in enumerate(self.slots):
-                if int(action[N_MAX + i]) == 1 and cs in by_cs and self.controller.turn_base_now(cs, by_cs[cs]):
+                choice = int(action[N_MAX + i])
+                if cs not in by_cs:
+                    continue
+                if choice == TURN_NOW and self.controller.turn_base_now(cs, by_cs[cs]):
                     self.counts["base_turns"] += 1
+                elif choice == TURN_NOT_YET and self.controller.hold_base_turn(cs, by_cs[cs], speed.DECISION_S):
+                    self.counts["turns_held"] += 1
         for instr, chosen in speed_instructions(action[:N_MAX], self.slots, s.views, self.controller):
             ok, _ = s.instruct(instr, notify_controller=False)
             if chosen:
