@@ -1,0 +1,25 @@
+{
+  "version": "stretch_planned_descent",
+  "settings": {
+    "fixed_paths": false,
+    "speeds": "slot",
+    "wind_aware": true,
+    "descent": "plan"
+  },
+  "pilots": "measured",
+  "sessions": 120,
+  "seed": 2026,
+  "measured": {
+    "sessions": 120,
+    "landed": 1613,
+    "mean_gap_error_nm": 3.354,
+    "gaps_inside_minimum": 67,
+    "separation_losses": 233,
+    "losses_at_stack": 151,
+    "wake_infringements": 8,
+    "go_arounds": 53,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -5.56,
+    "minutes_per_arrival": 24.9
+  }
+}

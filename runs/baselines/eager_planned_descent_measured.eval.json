@@ -1,0 +1,27 @@
+{
+  "version": "eager_planned_descent",
+  "settings": {
+    "fixed_paths": true,
+    "speeds": "slot",
+    "wind_aware": true,
+    "stretch": true,
+    "release": "eager",
+    "descent": "plan"
+  },
+  "pilots": "measured",
+  "sessions": 120,
+  "seed": 2026,
+  "measured": {
+    "sessions": 120,
+    "landed": 1717,
+    "mean_gap_error_nm": 3.06,
+    "gaps_inside_minimum": 58,
+    "separation_losses": 217,
+    "losses_at_stack": 136,
+    "wake_infringements": 6,
+    "go_arounds": 51,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -4.51,
+    "minutes_per_arrival": 24.7
+  }
+}

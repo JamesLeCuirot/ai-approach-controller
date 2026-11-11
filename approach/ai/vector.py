@@ -47,9 +47,12 @@ from approach.controllers.rules import RulesController
 from approach.geo import bearing_xy, distance_xy, heading_difference
 from approach.instructions import Instruction
 
-# The stage 2 planner: the base turn planned to the landing slot, slot speeds, timed with the wind, planning its
-# descents for pilots who descend at real rates.
-PLANNER_2 = {"fixed_paths": False, "speeds": "slot", "wind_aware": True, "descent": "plan"}
+# The stage 2 planner: speed first, then a longer downwind, aircraft released from the hold as soon as their slot
+# can be made, slot speeds, timed with the wind, planning its descents for pilots who descend at real rates. On the
+# 120 test sessions with measured pilots it landed 1,717 aircraft with 217 losses of separation (81 away from the
+# stacks), against 1,613 and 233 (82) for the base turn planned to the slot (runs/baselines/*_measured.eval.json).
+PLANNER_2 = {"fixed_paths": True, "speeds": "slot", "wind_aware": True, "stretch": True, "release": "eager",
+             "descent": "plan"}
 HEADING_OFFSETS = (0, -10, -5, 5, 10)  # degrees; as planned first
 LEVEL_OFFSETS = (0, -1000, 1000)  # ft
 SPEED_OFFSETS = (0, -20, -10, 10, 20)  # kt
