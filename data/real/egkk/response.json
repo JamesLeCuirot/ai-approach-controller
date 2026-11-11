@@ -387,6 +387,33 @@
    "p50": 0.399,
    "p75": 0.492,
    "p90": 0.608
+  },
+  "final_slowing_5_to_3_nm_kt_s": {
+   "note": "Slowing between 5 and 3 NM out on final, by approach speed (kt): pilots reduce from 160 kt to their approach speed from about 5 NM",
+   "125": {
+    "flights": 337,
+    "p10": 0.37,
+    "p25": 0.507,
+    "p50": 0.62,
+    "p75": 0.725,
+    "p90": 0.816
+   },
+   "140": {
+    "flights": 14306,
+    "p10": 0.075,
+    "p25": 0.197,
+    "p50": 0.323,
+    "p75": 0.446,
+    "p90": 0.554
+   },
+   "150": {
+    "flights": 1434,
+    "p10": 0.085,
+    "p25": 0.17,
+    "p50": 0.26,
+    "p75": 0.364,
+    "p90": 0.452
+   }
   }
  }
 }

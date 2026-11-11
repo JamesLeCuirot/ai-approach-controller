@@ -29,6 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
+from approach import wake
 from approach.data.arrivals import REAL_DIR, load_day
 from approach.data.gfs import CACHE_DIR, WindProfile
 
@@ -180,6 +181,24 @@ def on_final(s: dict[str, np.ndarray], airport, runway: str) -> np.ndarray:
     return (frame[:, 0] > 0.5) & (frame[:, 0] < 15.0) & (np.abs(frame[:, 1]) < 0.4) & heading_in
 
 
+def final_slowing(s: dict[str, np.ndarray], airport, runway: str) -> float | None:
+    """How fast an aircraft established on final slows between 5 and 3 NM from the threshold (kt/s), where pilots
+    reduce from 160 kt to their approach speed."""
+    if runway not in airport.runways:
+        return None
+    frame = np.array([airport.runway_frame(runway, x, y) for x, y in zip(s["x"], s["y"])])
+    cas = np.convolve(s["cas"], np.ones(3) / 3, mode="same")
+
+    def at(nm: float):
+        k = np.where((np.abs(frame[:, 1]) < 0.3) & (np.abs(frame[:, 0] - nm) < 0.25))[0]
+        return (float(cas[k[0]]), float(s["t"][k[0]])) if len(k) else None
+
+    p5, p3 = at(5.0), at(3.0)
+    if p5 is None or p3 is None or p3[1] <= p5[1]:
+        return None
+    return (p5[0] - p3[0]) / (p3[1] - p5[1])
+
+
 def speed_changes(s: dict[str, np.ndarray], final: np.ndarray | None = None) -> list[dict]:
     cas = np.convolve(s["cas"], np.ones(3) / 3, mode="same")
     rate = np.gradient(cas, STEP_S)
@@ -210,6 +229,7 @@ def measure(days: list[str], airport) -> dict:
     all_turns, all_speed = [], []
     descent_by_type: dict[str, list[float]] = defaultdict(list)
     flight_descent, captures = [], []
+    slowing_by_approach: dict[int, list[float]] = defaultdict(list)
     flights = 0
     for d in days:
         for arr in load_day(date.fromisoformat(d))["arrivals"]:
@@ -222,6 +242,9 @@ def measure(days: list[str], airport) -> dict:
                 mine += r
                 captures += c
                 all_speed += speed_changes(s, on_final(s, airport, arr["runway"]))
+                slow = final_slowing(s, airport, arr["runway"])
+                if slow is not None:
+                    slowing_by_approach[wake.approach_speed(arr["type"])].append(slow)
             if mine:
                 flight_descent.append(float(np.median(mine)))
                 descent_by_type[arr["type"]].append(float(np.median(mine)))
@@ -272,6 +295,11 @@ def measure(days: list[str], airport) -> dict:
             "decel_final_kt_s": _pct([-s["rate"] for s in decel if s["final"]]),
             "final_decelerations": sum(1 for s in decel if s["final"]),
             "accel_kt_s": _pct([s["rate"] for s in accel]),
+            "final_slowing_5_to_3_nm_kt_s": {
+                "note": "Slowing between 5 and 3 NM out on final, by approach speed (kt): pilots reduce from 160 kt "
+                        "to their approach speed from about 5 NM",
+                **{str(k): {"flights": len(v), **_pct(v)} for k, v in sorted(slowing_by_approach.items())
+                   if len(v) >= 40}},
         },
     }
 

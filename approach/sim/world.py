@@ -24,7 +24,9 @@ depend on ``pilots``:
   BlueSky's own values, the same for every aircraft: 25 degrees of bank,
   1,500 ft/min, and speed changes of 2 to 3 kt a second.
 * ``"measured"``: each pilot gets its own bank angle, descent rate and rates of
-  slowing down and speeding up, drawn from what real Gatwick arrivals do
+  slowing down and speeding up (including from 160 kt to its approach speed on
+  final, which it starts at 5 NM, as real pilots do), drawn from what real
+  Gatwick arrivals do
   (approach.data.response, data/real/<airport>/response.json). Real arrivals
   bank about 23 degrees in large turns and less in small ones (about 10 degrees
   for a 10-15 degree turn: autopilots bank in proportion to the heading still to
@@ -72,6 +74,8 @@ REAL_DIR = Path(__file__).resolve().parents[2] / "data" / "real"
 # Physical bounds on each measured quantity, for the tails beyond the 10th and 90th percentiles.
 _BOUNDS = {"bank_deg": (15.0, 26.0), "descent_fpm": (400.0, 1800.0), "decel_kt_s": (0.2, 1.2),
            "decel_desc_kt_s": (0.15, 1.0), "accel_kt_s": (0.15, 1.0)}
+FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
+APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
 # turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
 # 15-25, 25-45, 45-90 and over 90 degrees bank 13.6, 19.3, 22.4 and 23.7.
@@ -86,6 +90,14 @@ def response_quantiles(airport_icao: str) -> dict[str, dict[str, float]]:
     return {"bank_deg": r["turns"]["bank_deg"], "descent_fpm": r["descent"]["rate_fpm"],
             "decel_kt_s": r["speed"]["decel_level_kt_s"], "decel_desc_kt_s": r["speed"]["decel_descending_kt_s"],
             "accel_kt_s": r["speed"]["accel_kt_s"]}
+
+
+@functools.lru_cache(maxsize=None)
+def final_slowing_quantiles(airport_icao: str) -> dict[int, dict[str, float]]:
+    """How fast pilots slow to their approach speed on final, by approach speed (approach.data.response)."""
+    r = json.loads((REAL_DIR / airport_icao.lower() / "response.json").read_text())
+    table = r["speed"].get("final_slowing_5_to_3_nm_kt_s", {})
+    return {int(k): v for k, v in table.items() if k.isdigit()}
 
 
 def draw(quantiles: dict[str, float], u: float, bounds: tuple[float, float]) -> float:
@@ -177,6 +189,7 @@ class Pilot:
     decel_kt_s: float = 0.0
     decel_desc_kt_s: float = 0.0
     accel_kt_s: float = 0.0
+    final_slowing_kt_s: float = 0.0  # from 160 kt to its approach speed, on final
     spd_goal: float | None = None  # the speed it is changing to, at its own rate
     spd_set: float | None = None  # the speed currently set in the autopilot on the way there
 
@@ -237,6 +250,10 @@ class World:
             q = response_quantiles(self.airport.icao)
             for name in _BOUNDS:
                 setattr(p, name, draw(q[name], self.pilot_rng.random(), _BOUNDS[name]))
+            table = final_slowing_quantiles(self.airport.icao)
+            if table:
+                nearest = min(table, key=lambda k: abs(k - p.approach_speed))
+                p.final_slowing_kt_s = draw(table[nearest], self.pilot_rng.random(), FINAL_SLOWING_BOUNDS)
             i = self._idx(cs)
             if i >= 0:
                 self.bs.traf.ap.bankdef[i] = math.radians(p.bank_deg)
@@ -389,6 +406,8 @@ class World:
         now = p.spd_set if p.spd_set is not None else v.cas_kt
         if goal > now:
             rate = p.accel_kt_s
+        elif p.gs and goal <= p.approach_speed and p.final_slowing_kt_s > 0:
+            rate = p.final_slowing_kt_s  # gear and flaps: its own rate down to its approach speed
         else:
             rate = p.decel_desc_kt_s if v.vs_fpm < -300 else p.decel_kt_s
         step = max(-rate, min(rate, goal - now))
@@ -472,7 +491,7 @@ class World:
             if v.along < 7.0 and p.target_spd > 160:
                 p.target_spd = 160
                 self._speed(p, 160)
-            if v.along < 4.0 and p.target_spd > p.approach_speed:
+            if v.along < APPROACH_SPEED_FROM_NM[self.pilot_model] and p.target_spd > p.approach_speed:
                 p.target_spd = p.approach_speed
                 self._speed(p, p.approach_speed)
             # Stability check at 1,000 ft above the aerodrome

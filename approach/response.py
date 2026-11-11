@@ -36,7 +36,7 @@ HORIZON_S = 120
 OUT_STEP_S = 5
 DT_S = 2.5
 PILOT_DELAY_S = (3.0, 6.0)  # the simulated pilots' (real response delays are not in the ADS-B data)
-FINAL_SPEED_KT, FINAL_SPEED_NM, APPROACH_SPEED_NM = 160.0, 7.0, 4.0
+FINAL_SPEED_KT, FINAL_SPEED_NM, APPROACH_SPEED_NM = 160.0, 7.0, 5.0  # as the measured pilots fly it
 
 
 @dataclass
