@@ -357,7 +357,7 @@ Stage 1a showed why this comes next: with paths fixed, the AI matched a good spe
 
 ## Stage 2: vectoring onto final
 
-Stage 2 hands the AI the controller's real job: the headings, levels and speeds that take each aircraft from the hold or the handover onto final. It is where the room to improve is largest. On the busy hour of 30 May 2026 the real controllers had no separation losses and 17.5 minutes per arrival; the best rules controller had 5 and 18.8. Stage 1 found little room above a good rule for speed or the base turn alone. The real controllers show there is room for vectoring.
+Stage 2 hands the AI the controller's real job: the headings, levels and speeds that take each aircraft from the hold or the handover onto final. It is where the room to improve is largest. On the busy hour of 30 May 2026 the real controllers had no separation losses and 17.5 minutes per arrival; the rules controllers timed with the wind had 3 to 5, and 18.4 to 18.8 minutes. Stage 1 found little room above a good rule for speed or the base turn alone. The real controllers show there is room for vectoring.
 
 ### What the AI does
 
