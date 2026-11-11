@@ -162,7 +162,16 @@ class LookAhead:
         if t - self.last_look < LOOK_EVERY_S:
             return action
         self.last_look = t
+        if not (obs[:len(env.slots)][:, CAN] > 0.5).any():  # nothing it could change: no need to look
+            self.stats["nothing_to_adjust"] += 1
+            return action
         t0 = time.time()
+        try:
+            return self._look(env, obs, action, t)
+        finally:
+            self.stats["look_seconds"] += time.time() - t0
+
+    def _look(self, env: VectorEnv, obs: np.ndarray, action: np.ndarray, t: float) -> np.ndarray:
         seeds = [self.rng.randrange(1 << 30) for _ in range(self.draws)]
         base = fly_copies(env, [(s, action) for s in seeds], self.workers)
         base = [b for b in base if "error" not in b]
@@ -200,7 +209,6 @@ class LookAhead:
             need = 0.0 if cand[2] == PLANNED else self.min_gain
             if gain >= need and (best_gain is None or gain > best_gain):
                 best, best_gain = cand, gain
-        self.stats["look_seconds"] += time.time() - t0
         if best is None:
             return action
         cs, b, choice = best
