@@ -353,6 +353,48 @@ Stage 1a showed why this comes next: with paths fixed, the AI matched a good spe
 
 **Training time, measured.** With BlueSky stepping every 0.5 s (which gives the same results as its default 0.05 s on the tests and the Storm Darragh hour), the training world makes about 25 decisions a second on one core and 57 on four, while downloads shared the processor. A million decisions is about 5 hours of simulation on a 4-core computer, a little more with the learning. Data: a million decisions at one every 10 seconds is about 2,800 hours of traffic, nearly three times the 1,050 hours on the 46 training days. Each hour is varied every time it is used (winds, pilots, start time), and more days can be downloaded from adsb.lol if the agent starts to learn the traffic rather than the job.
 
+**How stage 1 ended.** Level with the rules on both speed and base turns, the gates not passed ([1a](../diary/2026-11-10-stage1-06-speed-alone/README.md), [the checks](../diary/2026-11-10-stage1-07-base-turn-checks/README.md), [1b](../diary/2026-11-11-stage1-08-base-turn-ai/README.md)). What carries forward is listed under Before stage 2.
+
+## Stage 2: vectoring onto final
+
+Stage 2 hands the AI the controller's real job: the headings, levels and speeds that take each aircraft from the hold or the handover onto final. It is where the room to improve is largest. On the busy hour of 30 May 2026 the real controllers had no separation losses and 17.5 minutes per arrival; the best rules controller had 5 and 18.8. Stage 1 found little room above a good rule for speed or the base turn alone. The real controllers show there is room for vectoring.
+
+### What the AI does
+
+- **The planner proposes, the AI adjusts.** The rules controller (timed with the wind, its holding stacks working like real ones) still plans the sequence, releases aircraft from the hold and proposes a heading, level and speed for every aircraft. Every 10 seconds, for each aircraft in the sequence, the AI chooses:
+  - heading: as planned, or 5° or 10° left or right of the planned heading
+  - level: as planned, or 1,000 ft above or below it
+  - speed: as planned, or 10 or 20 kt slower or faster, inside the published limits
+
+  "As planned" is always choice 0, so copying the planner is exact, and every alternative can be taken at every step. In stage 1b, "not yet" could only be taken in the 10 seconds before a planned turn and was almost never tried.
+- **One instruction, not many.** A choice is said to the pilot only when the clearance it gives differs from the one the aircraft already has, and choices that agree over several steps make one instruction, the way Project Bluebird adds up small turns into one clearance (in their tests this halved the commands, with no loss in safety). Each instruction has a small cost, and the AI sees how long it is since each aircraft's last one.
+- **The safety check stays.** Every instruction still goes through it. Its look-ahead is compared with Project Bluebird's geometric safety filter (MIT licence), which tests a heading or level against each other aircraft, and every case where the two disagree is recorded.
+
+### What it sees
+
+Stage 1b's picture of each aircraft, plus what vectoring needs: its heading and track against the planned path, how far off that path it is, the distance and angle to the intercept, its height against the descent profile, and the time since its last instruction. Its neighbours stay in the transformer, which already looks across every aircraft at once, with the gap, bearing and closing speed to each.
+
+### First: a model of how aircraft respond
+
+Before the AI vectors, a learned model predicts where each aircraft will be over the next 2 minutes after a heading, level or speed instruction, trained on the simulator and checked against real Gatwick tracks. Like Project Bluebird's aircraft model, it gives a spread of whole futures for a flight, not one guess, and it is scored against a constant-velocity guess on held-back days. It serves the safety check's look-ahead and the AI's inputs first, and model-based planning later (How the AI learns).
+
+### Competitor, checks and gate
+
+- **Competitor:** the rules controller doing all the vectoring, timed with the wind, with the best release and base-turn rule from stage 1.
+- **Checks before training:** that "as planned" flies exactly like the competitor; and the real controllers on the same 120 test sessions as a target, scored with the same code.
+- **Gate:** the roadmap's (95% of approaches stable at 1,000 ft, every intercept at 45° or less), plus, beyond chance on the 120 test sessions, fewer separation losses away from the holding stacks than the competitor, with as many landings and no more go-arounds.
+- **Time box:** two training runs. Pilots who sometimes make mistakes, and STCA on the scope, come once the first runs work.
+
+### Steps
+
+1. The model of how aircraft respond, and the comparison with Bluebird's safety filter.
+2. The vectoring choices, inputs and instruction counting in the training world.
+3. The checks: "as planned" against the competitor; the real controllers as the target.
+4. Head start (copying "as planned", with a little of each choice's weight left on the others so practice tries them) and two training runs, tested on 120 sessions.
+5. Replays of the AI vectoring the busy hours with the real tracks underneath, the diary, and the stage 2 post.
+
+The live demo can be built alongside, with the rules controller first: adsb.lol's live feed, aircraft handed to the simulator as they cross 40 NM, the radar in a browser, the real tracks continuing in grey. The AI takes over once stage 2 works.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
