@@ -32,6 +32,20 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
             c = RulesController(airport, scenario.runway, **VERSIONS[name[len("rules_"):]])
             c.name = name
             return c
+    if name == "rules_vector":  # stage 2's planner flying its own proposals, as "as planned" everywhere does
+        from approach.ai.vector import VectorController
+
+        return VectorController(airport, scenario.runway, name=name)
+    if name.startswith("ai_vector"):  # stage 2's AI: ai_vector (the final model) or ai_vector_<checkpoint>
+        import os
+        from pathlib import Path
+
+        from approach.ai.env import load_policy
+        from approach.ai.vector import VectorController
+
+        tag = name[len("ai_vector_"):] or "final"
+        path = os.environ.get("APPROACH_AI_MODEL") or str(Path(os.environ["APPROACH_AI_RUN"]) / f"model_{tag}.zip")
+        return VectorController(airport, scenario.runway, policy=load_policy(path), name=name)
     if name.startswith("ai_base"):  # stage 1b's AI: ai_base (the final model) or ai_base_<checkpoint>
         import os
         from pathlib import Path
@@ -59,6 +73,8 @@ def world_options(controller_name: str) -> tuple[str, str, str]:
     ("rules_stretch__measured_model"). Returns the controller's own name, the pilots and the look-ahead."""
     base, _, opts = controller_name.partition("__")
     words = opts.split("_") if opts else []
+    if base == "rules_vector" or base.startswith("ai_vector"):  # stage 2's world unless told otherwise
+        words = words or ["measured", "model"]
     return base, "measured" if "measured" in words else "bluesky", "model" if "model" in words else "old"
 
 

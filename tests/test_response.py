@@ -120,3 +120,27 @@ def test_safety_check_with_the_model_blocks_a_turn_into_traffic(airport):
     check = SafetyCheck(airport, "26L", lookahead="model")
     assert not check.review(Instruction("A", "heading", 30), world.views())[0]
     assert check.review(Instruction("A", "heading", 150), world.views())[0]
+
+
+def test_stage2_world_as_planned_adds_no_instructions_and_choices_take_effect():
+    import torch as th
+
+    from approach.ai.ppo import controlled
+    from approach.ai.vector import N_MAX, VectorEnv, as_planned
+
+    env = VectorEnv(seed=1, cached_winds_only=True)
+    env.reset(seed=3)
+    for _ in range(60):
+        obs, _, done, _, _ = env.step(as_planned())
+        if done:
+            break
+    assert env.counts["instructions"] == 0  # "as planned" is the planner's own clearances
+    mask = controlled(th.tensor(obs[None]), 3 * N_MAX)[0]
+    assert mask.shape[0] == 3 * N_MAX
+    action = as_planned()
+    action[:N_MAX] = 4  # 10 degrees right of the planned heading wherever the AI can turn
+    before = env.counts["instructions"]
+    for _ in range(6):
+        env.step(action)
+    if mask[:N_MAX].sum() > 0:
+        assert env.counts["instructions"] > before

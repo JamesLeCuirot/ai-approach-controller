@@ -236,6 +236,14 @@ def controller_title(kind: str) -> str:
 
     if kind.startswith("rules_") and kind[len("rules_"):] in TITLES:
         return TITLES[kind[len("rules_"):]]
+    if kind == "rules_vector":
+        return "Stage 2 planner, its own proposals"
+    if kind == "ai_vector":
+        return "Vectoring AI (final)"
+    if kind.startswith("ai_vector_"):
+        tag = kind[len("ai_vector_"):]
+        return {"untrained": "Vectoring AI, untrained", "headstart": "Vectoring AI after its head start"}.get(
+            tag, f"Vectoring AI after {tag} decisions")
     if kind == "ai_base":
         return "Base-turn AI (final)"
     if kind.startswith("ai_base_"):

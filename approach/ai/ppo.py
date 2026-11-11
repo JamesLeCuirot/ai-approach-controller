@@ -29,15 +29,21 @@ from torch.distributions import kl_divergence
 from torch.nn import functional as F
 
 from approach.ai.env import FEATURES, FEATURES_1B
+from approach.ai.vector import FEATURES_2
 
 CONTROLLABLE = FEATURES.index("controllable")
 CAN_TURN = FEATURES_1B.index("can_turn")
+CAN_ADJUST = tuple(FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed"))
 
 
 def controlled(obs: th.Tensor, n_choices: int | None = None) -> th.Tensor:
     """1.0 for each choice that can have an effect, else 0.0: shape (batch, choices). The first choices are the
     speeds, one per aircraft place (those whose speed is the controller's to give); in stage 1b they are followed
-    by a base turn per place (those the AI can turn now)."""
+    by a base turn per place (those the AI can turn now). In stage 2 there are three per place, in blocks: heading,
+    level and speed adjustments (those the AI can make now)."""
+    places = obs.shape[-2]
+    if n_choices == 3 * places:
+        return th.cat([(obs[..., k] > 0.5).float() for k in CAN_ADJUST], dim=-1)
     speeds = (obs[..., CONTROLLABLE] > 0.5).float()
     if n_choices is None or n_choices == speeds.shape[-1]:
         return speeds

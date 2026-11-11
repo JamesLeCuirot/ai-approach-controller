@@ -131,7 +131,7 @@ class RulesController(Controller):
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
-                 descent: str = "base"):
+                 descent: str = "base", proposals: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -153,6 +153,10 @@ class RulesController(Controller):
         if descent not in ("base", "plan"):
             raise ValueError(f"descent must be base or plan, not {descent!r}")
         self.descent = descent
+        # Stage 2: with ``proposals`` the controller works out every heading, level and speed as usual but doesn't
+        # send them; each plan's hdg_cmd, alt_cmd and spd_cmd is then its proposal, for the AI to keep or adjust
+        # (approach.ai.vector). Directs, holds and ILS clearances are still sent.
+        self.proposals = proposals
         self.base_turns = base_turns
         self.fixed_paths = fixed_paths
         self.wind_aware = wind_aware
@@ -476,7 +480,8 @@ class RulesController(Controller):
 
     # ---- instructions ----------------------------------------------------------
     def _say(self, p: Plan, kind: str, value) -> None:
-        self.out.append(Instruction(p.cs, kind, value))
+        if not (self.proposals and kind in ("heading", "altitude", "speed")):
+            self.out.append(Instruction(p.cs, kind, value))
         if kind == "heading":
             p.hdg_cmd = value
         elif kind == "altitude":
