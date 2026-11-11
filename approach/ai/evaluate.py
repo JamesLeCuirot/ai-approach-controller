@@ -85,7 +85,7 @@ def code_hash() -> str:
 
 
 def _run(args: tuple) -> list[dict]:
-    model_path, sessions, with_competitor, base_turns, vector = (*args, False, False)[:5]
+    model_path, sessions, with_competitor, base_turns, vector, lookahead = (*args, False, False, "model")[:6]
     from approach.ai.env import SpeedEnv, load_policy
     from approach.ai.train import episode_row
 
@@ -93,7 +93,7 @@ def _run(args: tuple) -> list[dict]:
     if vector:
         from approach.ai.vector import VectorEnv
 
-        env, competitor = VectorEnv(hours=[s["hour"] for s in sessions]), "rules_vector"
+        env, competitor = VectorEnv(hours=[s["hour"] for s in sessions], lookahead=lookahead), "rules_vector"
     else:
         env, competitor = SpeedEnv(hours=[s["hour"] for s in sessions], base_turns=base_turns), "rules_speed"
     rows = []
@@ -213,6 +213,8 @@ def main() -> None:
     ap.add_argument("--vector", action="store_true",
                     help="stage 2: the AI adjusts the planner's headings, levels and speeds; the competitor is the "
                          "planner's own proposals, and the real controllers are added as the target")
+    ap.add_argument("--lookahead", default="model", choices=("model", "old"),
+                    help="stage 2: the safety check's look-ahead (the model of how aircraft respond, or the old one)")
     args = ap.parse_args()
     rng = random.Random(args.seed)
     hours = test_hours()
@@ -226,12 +228,13 @@ def main() -> None:
         for err in pool.imap_unordered(_prefetch_one, needed):
             if err:
                 print("winds:", err, flush=True)
-    prefix = "2_" if args.vector else ("1b_" if args.base_turns else "")
+    prefix = (f"2_{'' if args.lookahead == 'model' else args.lookahead + '_'}" if args.vector
+              else ("1b_" if args.base_turns else ""))
     cache = COMPETITOR_DIR / f"{prefix}seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
     saved = list(csv.DictReader(cache.open())) if cache.is_file() else []
     if saved:
         print(f"Reusing the speed-only controller's results from {cache.name}", flush=True)
-    chunks = [(args.model, sessions[k::args.workers], not saved, args.base_turns, args.vector)
+    chunks = [(args.model, sessions[k::args.workers], not saved, args.base_turns, args.vector, args.lookahead)
               for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
@@ -248,7 +251,9 @@ def main() -> None:
             w.writeheader()
             w.writerows(competitor)
     rows.sort(key=lambda r: (int(r["session"]), r["controller"]))
-    base = Path(args.out or (args.model or ("runs/rules_vector" if args.vector else "runs/rules_speed"))).with_suffix("")
+    default = ("runs/rules_vector" + ("" if args.lookahead == "model" else f"_{args.lookahead}_lookahead")
+               if args.vector else "runs/rules_speed")
+    base = Path(args.out or args.model or default).with_suffix("")
     with Path(f"{base}.eval.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=_fields(rows))
         w.writeheader()
