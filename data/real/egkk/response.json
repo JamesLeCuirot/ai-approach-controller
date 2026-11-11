@@ -5,7 +5,7 @@
  "turns": {
   "count": 67344,
   "held_count": 12717,
-  "note": "Turns of 10 degrees or more outside holds; bank is the angle that gives the sustained rate of turn at the true airspeed. by_true_airspeed uses turns of 20 degrees or more.",
+  "note": "Turns of 10 degrees or more outside holds; bank is the angle that gives the sustained rate of turn at the true airspeed. Small turns are flown with less bank (by_turn_size_deg), as autopilots bank in proportion to the heading still to turn up to a limit: bank_deg, from turns of 45 degrees or more, is that limit. by_true_airspeed uses turns of 20 degrees or more.",
   "rate_deg_s": {
    "p10": 1.03,
    "p25": 1.358,
@@ -14,11 +14,53 @@
    "p90": 2.333
   },
   "bank_deg": {
-   "p10": 14.702,
-   "p25": 18.697,
-   "p50": 21.518,
-   "p75": 23.17,
-   "p90": 24.22
+   "p10": 20.501,
+   "p25": 21.593,
+   "p50": 22.778,
+   "p75": 23.787,
+   "p90": 24.733
+  },
+  "by_turn_size_deg": {
+   "10-15": {
+    "turns": 2069,
+    "p10": 7.246,
+    "p25": 8.448,
+    "p50": 9.979,
+    "p75": 11.855,
+    "p90": 13.607
+   },
+   "15-25": {
+    "turns": 12621,
+    "p10": 9.888,
+    "p25": 11.529,
+    "p50": 13.569,
+    "p75": 15.816,
+    "p90": 18.098
+   },
+   "25-45": {
+    "turns": 18809,
+    "p10": 14.406,
+    "p25": 16.713,
+    "p50": 19.259,
+    "p75": 21.166,
+    "p90": 22.597
+   },
+   "45-90": {
+    "turns": 25003,
+    "p10": 20.28,
+    "p25": 21.311,
+    "p50": 22.39,
+    "p75": 23.396,
+    "p90": 24.428
+   },
+   "90-360": {
+    "turns": 8833,
+    "p10": 21.852,
+    "p25": 22.997,
+    "p50": 23.702,
+    "p75": 24.343,
+    "p90": 25.23
+   }
   },
   "by_true_airspeed_kt": {
    "160-180": {
@@ -314,29 +356,37 @@
   }
  },
  "speed": {
-  "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more above 2,000 ft",
-  "decelerations": 56162,
-  "accelerations": 7451,
+  "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more: above 2,000 ft, and separately on final (established within 15 NM), where flaps and gear slow aircraft faster",
+  "decelerations": 68154,
+  "accelerations": 8032,
   "decel_level_kt_s": {
-   "p10": 0.374,
-   "p25": 0.481,
-   "p50": 0.597,
-   "p75": 0.742,
-   "p90": 0.849
+   "p10": 0.365,
+   "p25": 0.493,
+   "p50": 0.639,
+   "p75": 0.777,
+   "p90": 0.881
   },
   "decel_descending_kt_s": {
-   "p10": 0.315,
-   "p25": 0.38,
-   "p50": 0.46,
-   "p75": 0.538,
-   "p90": 0.624
+   "p10": 0.324,
+   "p25": 0.394,
+   "p50": 0.47,
+   "p75": 0.547,
+   "p90": 0.632
   },
+  "decel_final_kt_s": {
+   "p10": 0.317,
+   "p25": 0.378,
+   "p50": 0.46,
+   "p75": 0.553,
+   "p90": 0.651
+  },
+  "final_decelerations": 26817,
   "accel_kt_s": {
-   "p10": 0.282,
-   "p25": 0.327,
-   "p50": 0.396,
-   "p75": 0.488,
-   "p90": 0.605
+   "p10": 0.283,
+   "p25": 0.329,
+   "p50": 0.399,
+   "p75": 0.492,
+   "p90": 0.608
   }
  }
 }

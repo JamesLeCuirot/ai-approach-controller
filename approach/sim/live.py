@@ -54,13 +54,14 @@ def _real_entry(a, wind) -> tuple[float, float]:
 
 class LiveSession:
     def __init__(self, airport: Airport, scenario: Scenario, controller, log: SessionLog, seed: int = 1,
-                 wind=None, use_safety: bool = True, frames: bool = True, pilots: str = "bluesky"):
+                 wind=None, use_safety: bool = True, frames: bool = True, pilots: str = "bluesky",
+                 lookahead: str = "old"):
         self.airport = airport
         self.scenario = scenario
         self.controller = controller
         self.log = log
         self.world = World(airport, scenario.runway, seed=seed, wind=wind, pilots=pilots)
-        self.safety = SafetyCheck(airport, scenario.runway) if use_safety else None
+        self.safety = SafetyCheck(airport, scenario.runway, lookahead) if use_safety else None
         self.pending = sorted(scenario.arrivals, key=lambda a: a.release_s)
         self.released = 0
         self.t = 0

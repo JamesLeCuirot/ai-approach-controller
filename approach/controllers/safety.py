@@ -16,6 +16,13 @@ It never learns. Before an instruction is passed on, it checks:
 * airspace: a heading must not take the aircraft more than 40 NM from the airport.
 
 Every block is logged with its reason, and counted in the scores.
+
+The separation look-ahead is either the original one (``lookahead="old"``, every result before stage 2): turns
+at 2 degrees a second, climbs and descents at 1,500 ft/min, constant speed, no response delay. Or the model of how
+aircraft respond (``lookahead="model"``, approach.response), flown by a typical pilot: its response delay, a bank
+in proportion to the turn still to make, the measured descent rate and rates of speed change, and the ILS. In
+the simulator it predicts where aircraft will be in 2 minutes about five times more closely
+(scripts/response_check.py, scripts/lookahead_check.py).
 """
 
 from __future__ import annotations
@@ -57,10 +64,18 @@ class Track:
 
 
 class SafetyCheck:
-    def __init__(self, airport: Airport, runway: str):
+    def __init__(self, airport: Airport, runway: str, lookahead: str = "old"):
+        if lookahead not in ("old", "model"):
+            raise ValueError("lookahead must be 'old' or 'model'")
         self.airport = airport
         self.runway = airport.runways[runway]
         self.blocks = 0
+        self.lookahead = lookahead
+        if lookahead == "model":
+            from approach.response import ResponseModel, median_pilot
+
+            self._model = ResponseModel(airport, runway)
+            self._pilot = median_pilot(airport.icao)
 
     def _tracks(self, views) -> dict[str, Track]:
         return {
@@ -192,6 +207,8 @@ class SafetyCheck:
         return path
 
     def _separation(self, instr: Instruction, views) -> tuple[bool, str]:
+        if self.lookahead == "model":
+            return self._separation_model(instr, views)
         tracks = self._tracks(views)
         base = self._first_conflict(self._predict(tracks), instr.callsign)
         t = tracks[instr.callsign]
@@ -200,6 +217,35 @@ class SafetyCheck:
         else:
             t.target_alt = float(instr.value)
         new = self._first_conflict(self._predict(tracks), instr.callsign)
+        if new is None or (base is not None and base[0] <= new[0]):
+            return True, ""
+        k, other, h, v = new
+        return False, f"would bring it within {h:.1f} NM and {v:,.0f} ft of {other} in about {(k + 1) * STEP_S} s"
+
+    def _separation_model(self, instr: Instruction, views) -> tuple[bool, str]:
+        """The same test with the model of how aircraft respond: blocked only if the instruction brings a loss of
+        separation sooner than without it."""
+        from approach.response import state_from_views
+
+        views = list(views)
+        state = state_from_views(views)
+        i = next(k for k, v in enumerate(views) if v.cs == instr.callsign)
+        names = [v.cs for v in views]
+
+        def first(pred) -> tuple[int, str, float, float] | None:
+            me = pred[i]
+            for k in range(pred.shape[1]):
+                for j, other in enumerate(names):
+                    if j == i:
+                        continue
+                    h = math.hypot(pred[j, k, 0] - me[k, 0], pred[j, k, 1] - me[k, 1])
+                    v = abs(pred[j, k, 2] - me[k, 2])
+                    if h < H_SEP_NM and v < V_SEP_FT:
+                        return k, other, h, v
+            return None
+
+        base = first(self._model.predict(state, self._pilot)[0])
+        new = first(self._model.predict(state, self._pilot, (i, instr.kind, float(instr.value)))[0])
         if new is None or (base is not None and base[0] <= new[0]):
             return True, ""
         k, other, h, v = new

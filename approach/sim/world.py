@@ -26,8 +26,10 @@ depend on ``pilots``:
 * ``"measured"``: each pilot gets its own bank angle, descent rate and rates of
   slowing down and speeding up, drawn from what real Gatwick arrivals do
   (approach.data.response, data/real/<airport>/response.json). Real arrivals
-  bank about 21 degrees, descend at about 900 ft/min and slow down at about
-  0.6 kt a second in level flight.
+  bank about 23 degrees in large turns and less in small ones (about 10 degrees
+  for a 10-15 degree turn: autopilots bank in proportion to the heading still to
+  turn, up to a limit), descend at about 900 ft/min and slow down at about
+  0.6 kt a second in level flight and 0.45 descending.
 """
 
 from __future__ import annotations
@@ -68,8 +70,13 @@ PILOT_MODELS = ("bluesky", "measured")
 FPM_TO_MS = 0.00508
 REAL_DIR = Path(__file__).resolve().parents[2] / "data" / "real"
 # Physical bounds on each measured quantity, for the tails beyond the 10th and 90th percentiles.
-_BOUNDS = {"bank_deg": (8.0, 25.0), "descent_fpm": (400.0, 1800.0), "decel_kt_s": (0.2, 1.2),
+_BOUNDS = {"bank_deg": (15.0, 26.0), "descent_fpm": (400.0, 1800.0), "decel_kt_s": (0.2, 1.2),
            "decel_desc_kt_s": (0.15, 1.0), "accel_kt_s": (0.15, 1.0)}
+# Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
+# turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
+# 15-25, 25-45, 45-90 and over 90 degrees bank 13.6, 19.3, 22.4 and 23.7.
+BANK_PER_DEG = 1.2
+MIN_BANK_DEG = 3.0
 
 
 @functools.lru_cache(maxsize=None)
@@ -339,6 +346,8 @@ class World:
                 self._apply(p, instr)
             if p.spd_goal is not None:
                 self._speed_tick(p, v)
+            if self.pilot_model == "measured":
+                self._bank_tick(p, v)
             if p.hold_fix:
                 self._hold_tick(p, v)
             elif p.direct_fix and p.direct_fix in self.airport.fixes:
@@ -355,6 +364,16 @@ class World:
             if follow.along - lead.along < MIN_FINAL_GAP_NM:
                 events += self._start_go_around(self.pilots[follow.cs], follow, "too close to the aircraft ahead")
         return events
+
+    def _bank_tick(self, p: Pilot, v: AircraftView) -> None:
+        """A measured pilot's autopilot banks in proportion to the heading still to turn, up to the pilot's limit."""
+        target = self._last_hdg.get(p.cs)
+        if target is None:
+            return
+        bank = max(MIN_BANK_DEG, min(p.bank_deg, BANK_PER_DEG * abs(heading_difference(target, v.hdg))))
+        i = self._idx(p.cs)
+        if i >= 0:
+            self.bs.traf.ap.bankdef[i] = math.radians(bank)
 
     def _speed(self, p: Pilot, kt: float) -> None:
         """Set a new speed: at once for BlueSky's pilots, at the pilot's own rate for measured ones."""

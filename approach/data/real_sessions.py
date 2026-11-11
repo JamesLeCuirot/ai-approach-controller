@@ -222,6 +222,13 @@ def parse_hour(text: str) -> float:
 
 def controller_title(kind: str) -> str:
     """A readable name for a controller, for replay titles and the diary."""
+    if "__" in kind:
+        from approach.sim.session_runner import world_options
+
+        base, pilots, lookahead = world_options(kind)
+        extra = [w for w, on in (("pilots who fly like real arrivals", pilots == "measured"),
+                                 ("the new look-ahead", lookahead == "model")) if on]
+        return controller_title(base) + (f", with {' and '.join(extra)}" if extra else "")
     names = {"rules": "Rules controller", "rules_speed": "Speed-only rules controller", "ai_speed": "Speed AI (final)"}
     if kind in names:
         return names[kind]

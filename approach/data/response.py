@@ -170,7 +170,17 @@ def descents(s: dict[str, np.ndarray]) -> tuple[list[float], list[float]]:
     return rates, captures
 
 
-def speed_changes(s: dict[str, np.ndarray]) -> list[dict]:
+def on_final(s: dict[str, np.ndarray], airport, runway: str) -> np.ndarray:
+    """True where the aircraft is established on final: within 15 NM, near the centreline, heading in."""
+    if runway not in airport.runways:
+        return np.zeros(len(s["t"]), dtype=bool)
+    frame = np.array([airport.runway_frame(runway, x, y) for x, y in zip(s["x"], s["y"])])
+    course = airport.runways[runway].course_true
+    heading_in = np.abs((s["trk"] - course + 180.0) % 360.0 - 180.0) < 20.0
+    return (frame[:, 0] > 0.5) & (frame[:, 0] < 15.0) & (np.abs(frame[:, 1]) < 0.4) & heading_in
+
+
+def speed_changes(s: dict[str, np.ndarray], final: np.ndarray | None = None) -> list[dict]:
     cas = np.convolve(s["cas"], np.ones(3) / 3, mode="same")
     rate = np.gradient(cas, STEP_S)
     vr = np.nan_to_num(s["vr"])
@@ -181,10 +191,12 @@ def speed_changes(s: dict[str, np.ndarray]) -> list[dict]:
             if b - a < 3:
                 continue
             change = float(cas[min(b, len(cas) - 2)] - cas[max(a - 1, 1)])
-            if abs(change) < SPEED_MIN_CHANGE or s["alt"][a] < 2000:
+            is_final = bool(final is not None and final[a:b].mean() > 0.5)
+            if abs(change) < SPEED_MIN_CHANGE or (s["alt"][a] < 2000 and not is_final):
                 continue
             out.append({"rate": float(np.median(rate[a:b])), "change": change, "from": float(cas[max(a - 1, 1)]),
-                        "level": bool(np.median(np.abs(vr[a:b])) < 300), "alt": float(np.mean(s["alt"][a:b]))})
+                        "level": bool(np.median(np.abs(vr[a:b])) < 300), "alt": float(np.mean(s["alt"][a:b])),
+                        "final": is_final})
     return out
 
 
@@ -209,12 +221,16 @@ def measure(days: list[str], airport) -> dict:
                 r, c = descents(s)
                 mine += r
                 captures += c
-                all_speed += speed_changes(s)
+                all_speed += speed_changes(s, on_final(s, airport, arr["runway"]))
             if mine:
                 flight_descent.append(float(np.median(mine)))
                 descent_by_type[arr["type"]].append(float(np.median(mine)))
 
     vectored = [t for t in all_turns if not t["hold"]]
+    by_size = {}
+    for lo, hi in [(10, 15), (15, 25), (25, 45), (45, 90), (90, 360)]:
+        sel = [t["bank"] for t in vectored if lo <= t["turn_deg"] < hi]
+        by_size[f"{lo}-{hi}"] = {"turns": len(sel), **_pct(sel)}
     by_tas = {}
     for lo in range(140, 300, 20):
         sel = [t for t in vectored if lo <= t["tas"] < lo + 20 and t["turn_deg"] >= 20]
@@ -229,9 +245,12 @@ def measure(days: list[str], airport) -> dict:
         "turns": {
             "count": len(vectored), "held_count": len(all_turns) - len(vectored),
             "note": "Turns of 10 degrees or more outside holds; bank is the angle that gives the sustained rate of turn "
-                    "at the true airspeed. by_true_airspeed uses turns of 20 degrees or more.",
+                    "at the true airspeed. Small turns are flown with less bank (by_turn_size_deg), as autopilots bank "
+                    "in proportion to the heading still to turn up to a limit: bank_deg, from turns of 45 degrees or "
+                    "more, is that limit. by_true_airspeed uses turns of 20 degrees or more.",
             "rate_deg_s": _pct([t["rate"] for t in vectored]),
-            "bank_deg": _pct([t["bank"] for t in vectored if t["turn_deg"] >= 20]),
+            "bank_deg": _pct([t["bank"] for t in vectored if t["turn_deg"] >= 45]),
+            "by_turn_size_deg": by_size,
             "by_true_airspeed_kt": by_tas,
             "in_holds_rate_deg_s": _pct([t["rate"] for t in all_turns if t["hold"]]),
         },
@@ -245,10 +264,13 @@ def measure(days: list[str], airport) -> dict:
             "level_off_start_ft": _pct(captures),
         },
         "speed": {
-            "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more above 2,000 ft",
+            "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more: above 2,000 ft, "
+                    "and separately on final (established within 15 NM), where flaps and gear slow aircraft faster",
             "decelerations": len(decel), "accelerations": len(accel),
-            "decel_level_kt_s": _pct([-s["rate"] for s in decel if s["level"]]),
-            "decel_descending_kt_s": _pct([-s["rate"] for s in decel if not s["level"]]),
+            "decel_level_kt_s": _pct([-s["rate"] for s in decel if s["level"] and not s["final"]]),
+            "decel_descending_kt_s": _pct([-s["rate"] for s in decel if not s["level"] and not s["final"]]),
+            "decel_final_kt_s": _pct([-s["rate"] for s in decel if s["final"]]),
+            "final_decelerations": sum(1 for s in decel if s["final"]),
             "accel_kt_s": _pct([s["rate"] for s in accel]),
         },
     }
