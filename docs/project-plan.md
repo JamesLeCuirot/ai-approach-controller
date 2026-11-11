@@ -390,7 +390,7 @@ Before the AI vectors, a learned model predicts where each aircraft will be over
 
 ### Competitor, checks and gate
 
-- **Competitor:** the rules controller doing all the vectoring, timed with the wind, with the best release and base-turn rule from stage 1.
+- **Competitor:** the rules controller doing all the vectoring, timed with the wind, planning its descents for real descent rates, with the base turn planned to the landing slot, flown through the same path as the AI with "as planned" everywhere (`rules_vector`). "As planned" is then the competitor exactly. Sent the usual way the rules controller repeats clearances the aircraft already has, which the safety check blocks.
 - **Checks before training:** that "as planned" flies exactly like the competitor; and the real controllers on the same 120 test sessions as a target, scored with the same code.
 - **Gate:** the roadmap's (95% of approaches stable at 1,000 ft, every intercept at 45° or less), plus, beyond chance on the 120 test sessions, fewer separation losses away from the holding stacks than the competitor, with as many landings and no more go-arounds.
 - **Time box:** two training runs. Pilots who sometimes make mistakes, and STCA on the scope, come once the first runs work.
@@ -398,8 +398,8 @@ Before the AI vectors, a learned model predicts where each aircraft will be over
 ### Steps
 
 1. The model of how aircraft respond, and the comparison with Bluebird's safety filter. **Done**, with pilots who fly like real arrivals.
-2. The competitor for realistic pilots: descents planned from each aircraft's distance to go at a real rate (about 3 NM per 1,000 ft, with a margin), slowing down earlier, and holding stacks that allow for real descent rates; then the rules controllers re-run on the 120 test sessions with measured pilots.
-3. The vectoring choices, inputs and instruction counting in the training world, with measured pilots and the new look-ahead.
+2. The competitor for realistic pilots. **Done, except the stacks.** The rules controller now plans height as well as time (`descent="plan"`): an aircraft leaves the hold only if a path inside the RMA is long enough to reach its join point a little below the glide path, its downwind runs long enough for the height still to lose, and its descent comes as soon as the distance left needs it. Measured pilots now also slow to their approach speed from 5 NM at the rates real ones do (most of the remaining go-arounds were small aircraft still too fast at 1,000 ft). The holding stacks are left as they are: at real descent rates they hold aircraft longer and lose more separations, but the gate counts losses away from the stacks, which the AI doesn't control, and three attempts to rework them made things worse. Running stacks well at real descent rates moves to stage 4, which is about holds.
+3. The vectoring choices, inputs and instruction counting in the training world, with measured pilots and the new look-ahead. **Built** (`approach.ai.vector`): see What the AI does and What it sees.
 4. The checks: "as planned" against the competitor; the real controllers as the target.
 5. Head start (copying "as planned", with a little of each choice's weight left on the others so practice tries them) and two training runs, tested on 120 sessions.
 6. Replays of the AI vectoring the busy hours with the real tracks underneath, the diary, and the stage 2 post.
