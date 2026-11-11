@@ -1,0 +1,105 @@
+{
+  "sessions": 40,
+  "branches": 418,
+  "control_reproduced_pct": 100.0,
+  "events": {
+    "loss_away": 68,
+    "go_around": 42,
+    "loss_at_stack": 78
+  },
+  "events_with_an_aircraft_the_ai_can_adjust": {
+    "loss_away": 68,
+    "go_around": 42,
+    "loss_at_stack": 11
+  },
+  "events_one_change_fixes": {
+    "loss_away": 64,
+    "go_around": 13,
+    "loss_at_stack": 1
+  },
+  "fixed_by_a_change_this_long_before": {
+    "go_around@240s": 13,
+    "loss_at_stack@240s": 1,
+    "loss_away@60s": 3,
+    "loss_away@120s": 7,
+    "loss_away@180s": 3,
+    "loss_away@240s": 51
+  },
+  "tries": 5628,
+  "tries_blocked_pct": 17.3,
+  "tries_that_help_pct": 14.8,
+  "tries_that_harm_pct": 10.3,
+  "mean_change_in_losses": -0.254,
+  "by_change": {
+    "heading +10": {
+      "tries": 503,
+      "help_pct": 21.3,
+      "harm_pct": 10.7,
+      "avoided_pct": 25.0,
+      "mean_d_losses": -0.344
+    },
+    "heading +5": {
+      "tries": 503,
+      "help_pct": 13.7,
+      "harm_pct": 10.3,
+      "avoided_pct": 15.9,
+      "mean_d_losses": -0.268
+    },
+    "heading -10": {
+      "tries": 503,
+      "help_pct": 18.7,
+      "harm_pct": 8.5,
+      "avoided_pct": 25.8,
+      "mean_d_losses": -0.364
+    },
+    "heading -5": {
+      "tries": 503,
+      "help_pct": 12.1,
+      "harm_pct": 7.6,
+      "avoided_pct": 15.3,
+      "mean_d_losses": -0.272
+    },
+    "level +1000": {
+      "tries": 586,
+      "help_pct": 16.7,
+      "harm_pct": 18.3,
+      "avoided_pct": 33.4,
+      "mean_d_losses": -0.188
+    },
+    "level -1000": {
+      "tries": 586,
+      "help_pct": 13.0,
+      "harm_pct": 13.3,
+      "avoided_pct": 34.1,
+      "mean_d_losses": -0.125
+    },
+    "speed +10": {
+      "tries": 611,
+      "help_pct": 10.8,
+      "harm_pct": 6.7,
+      "avoided_pct": 15.1,
+      "mean_d_losses": -0.227
+    },
+    "speed +20": {
+      "tries": 611,
+      "help_pct": 14.4,
+      "harm_pct": 11.1,
+      "avoided_pct": 21.4,
+      "mean_d_losses": -0.26
+    },
+    "speed -10": {
+      "tries": 611,
+      "help_pct": 12.3,
+      "harm_pct": 7.0,
+      "avoided_pct": 17.2,
+      "mean_d_losses": -0.244
+    },
+    "speed -20": {
+      "tries": 611,
+      "help_pct": 16.2,
+      "harm_pct": 9.0,
+      "avoided_pct": 23.2,
+      "mean_d_losses": -0.28
+    }
+  }
+}
