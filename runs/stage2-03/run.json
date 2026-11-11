@@ -1,0 +1,80 @@
+{
+  "run": "stage2-03",
+  "started": "2026-11-11 19:59 UTC",
+  "code_version": "acd64a7",
+  "decisions": 1000000,
+  "envs": 4,
+  "seed": 1,
+  "headstart_episodes": 32,
+  "cached_winds_only": true,
+  "turn_smoothing": null,
+  "reward_weights": {
+    "landing": 1.0,
+    "gap_too_close_per_nm": 2.0,
+    "gap_too_far_per_nm": 0.2,
+    "on_target": 0.005,
+    "on_profile": 0.002,
+    "instruction": 0.01,
+    "per_aircraft_minute": 0.01,
+    "blocked": 0.5,
+    "go_around": 3.0,
+    "separation_loss": 5.0,
+    "separation_loss_out_of_reach": 0.0,
+    "wake_infringement": 3.0
+  },
+  "ppo": {
+    "n_steps": 512,
+    "batch_size": 256,
+    "n_epochs": 5,
+    "learning_rate": 0.0002,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.15,
+    "ent_coef": 0.001,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5
+  },
+  "algorithm": "AnchoredPPO (approach/ai/ppo.py)",
+  "anchor": {
+    "anchor_start": 0.1,
+    "anchor_end": 0.01
+  },
+  "policy": {
+    "class": "SpeedPolicy",
+    "extractor": "AircraftAttention",
+    "dim": 32,
+    "heads": 4,
+    "layers": 1,
+    "net_arch": {
+      "pi": [
+        128
+      ],
+      "vf": [
+        128
+      ]
+    }
+  },
+  "observation": {
+    "aircraft": 16,
+    "features": 43
+  },
+  "stage": "2",
+  "planner": {
+    "fixed_paths": true,
+    "speeds": "slot",
+    "wind_aware": true,
+    "stretch": true,
+    "release": "eager",
+    "descent": "plan"
+  },
+  "pilots": "measured",
+  "lookahead": "model",
+  "choices": "hold",
+  "habit": {
+    "try": 0.02,
+    "back": 0.05,
+    "switch": 0.01
+  },
+  "training_hours": 963,
+  "notes": "Stage 2's third run: as stage2-02 (losses of separation out of the AI's reach left out of its reward; pull back towards the head start 0.1 fading to 0.01), but choices stay in force until the AI changes them (choice 0 keeps, 1 is as planned), and the head start copies a habit: with nothing in force keep 98% and try 2%; with a change in force go back 5% and switch 1%, so a try lasts about 2-3 minutes"
+}
