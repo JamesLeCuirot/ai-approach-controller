@@ -71,5 +71,28 @@
   "lookahead": "model",
   "vector_smoothing": 0.15,
   "training_hours": 963,
-  "notes": "Stage 2's second run: as stage2-01, but losses of separation out of the AI's reach (neither aircraft on downwind, base or cleared) are left out of its reward, the head start makes as planned 85% likely (not 97%), and the pull back towards it is a fifth as strong (0.1 fading to 0.01)"
+  "notes": "Stage 2's second run: as stage2-01, but losses of separation out of the AI's reach (neither aircraft on downwind, base or cleared) are left out of its reward, the head start makes as planned 85% likely (not 97%), and the pull back towards it is a fifth as strong (0.1 fading to 0.01)",
+  "parameters": 169809,
+  "headstart": {
+    "episodes": 32,
+    "decisions": 14139,
+    "agreement": {
+      "heading": {
+        "as_planned_best": 1.0,
+        "p_as_planned": 0.85,
+        "chances": 15663
+      },
+      "level": {
+        "as_planned_best": 1.0,
+        "p_as_planned": 0.85,
+        "chances": 19665
+      },
+      "speed": {
+        "as_planned_best": 1.0,
+        "p_as_planned": 0.85,
+        "chances": 20957
+      }
+    },
+    "minutes": 2.7
+  }
 }
