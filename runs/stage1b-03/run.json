@@ -67,5 +67,18 @@
     "base_turns": "ai"
   },
   "training_hours": 963,
-  "notes": "Stage 1b, third run: the planner's base turn is the default; for each aircraft on the downwind the AI chooses as planned, turn now or not yet (taking the turn over). Head start copies 'as planned' with 2% of the target on the other two. Otherwise as stage1b-02."
+  "notes": "Stage 1b, third run: the planner's base turn is the default; for each aircraft on the downwind the AI chooses as planned, turn now or not yet (taking the turn over). Head start copies 'as planned' with 2% of the target on the other two. Otherwise as stage1b-02.",
+  "parameters": 169585,
+  "headstart": {
+    "episodes": 48,
+    "decisions": 20436,
+    "agreement": {
+      "controlled": 0.944,
+      "changes": 0.876,
+      "share_of_changes": 0.083,
+      "as_planned": 1.0,
+      "p_as_planned": 0.981
+    },
+    "minutes": 5.1
+  }
 }
