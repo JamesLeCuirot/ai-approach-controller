@@ -176,7 +176,7 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
 
 
 def headstart_vector(model, obs: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
-                     smoothing: float = 0.03, hold: bool = False) -> dict:
+                     smoothing: float = 0.03, hold: bool = False, in_force_weight: float = 1.0) -> dict:
     """Stage 2's head start: every adjustment the AI can make is "as planned", with `smoothing` of each target
     spread over the alternatives. Returns how often its best choice is "as planned", and the probability it gives
     "as planned", for each kind of adjustment."""
@@ -196,6 +196,9 @@ def headstart_vector(model, obs: np.ndarray, epochs: int = 10, batch: int = 256,
 
         habit = [torch.as_tensor(p) for p in habit_probs(obs)]
         off_plan = torch.as_tensor(offsets_in_force(obs) != 0)  # (n, places, 3)
+        # Changes in force are a small share of the chances, and the habit there differs from the rest only in
+        # small probabilities, so they count in_force_weight times or the copy ignores them.
+        mask = mask * (1.0 + (in_force_weight - 1.0) * off_plan.permute(0, 2, 1).reshape(len(obs_t), -1).float())
 
     def loss_of(o, m, idx):
         dist = policy.get_distribution(o)
@@ -274,6 +277,9 @@ def main() -> None:
                     help="stage 2: the AI adjusts the planner's headings, levels and speeds")
     ap.add_argument("--hold", action="store_true",
                     help="stage 2: choices stay in force until the AI changes them (choice 0 keeps, 1 is as planned)")
+    ap.add_argument("--headstart-epochs", type=int, default=None,
+                    help="passes over the head start's decisions (default 10; 100 with --hold, which it needs to "
+                         "learn to treat aircraft with a change in force differently)")
     ap.add_argument("--vector-smoothing", type=float, default=0.03,
                     help="stage 2's head start: the share of each 'as planned' target spread over the alternatives")
     ap.add_argument("--anchor-start", type=float, default=ANCHOR["anchor_start"],
@@ -283,6 +289,8 @@ def main() -> None:
                     help="change one reward weight for this run, e.g. separation_loss_out_of_reach=0 (repeatable)")
     args = ap.parse_args()
     anchor = {"anchor_start": args.anchor_start, "anchor_end": args.anchor_end}
+    if args.headstart_epochs is None:
+        args.headstart_epochs = 100 if args.hold else 10
     reward_changes = {k: float(v) for k, v in (item.split("=", 1) for item in args.reward)}
 
     import torch
@@ -315,7 +323,8 @@ def main() -> None:
         "stage": "2" if args.vector else ("1b" if args.base_turns else "1a"),
         "planner": PLANNER_2 if args.vector else (PLANNER_1B if args.base_turns else None),
         **({"pilots": "measured", "lookahead": "model",
-            **({"choices": "hold", "habit": HABIT} if args.hold else {"vector_smoothing": args.vector_smoothing})}
+            **({"choices": "hold", "habit": HABIT, "headstart_epochs": args.headstart_epochs} if args.hold
+               else {"vector_smoothing": args.vector_smoothing})}
            if args.vector else {}),
         "training_hours": len(training_hours()),
         "notes": args.notes,
@@ -357,7 +366,8 @@ def main() -> None:
         acts = np.concatenate([np.array(a) for _, a, _ in parts])
         teacher_rows = [r for _, _, rows in parts for r in rows]
         if args.vector:
-            agree = headstart_vector(model, obs, smoothing=args.vector_smoothing, hold=args.hold)
+            agree = headstart_vector(model, obs, epochs=args.headstart_epochs, smoothing=args.vector_smoothing,
+                                     hold=args.hold)
         else:
             agree = headstart(model, obs, acts, turn_smoothing=args.turn_smoothing)
         model.save(out / "model_headstart.zip")
