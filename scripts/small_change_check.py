@@ -234,7 +234,7 @@ def summarise(rows: list[dict]) -> dict:
         good = [(r["lead_s"], t) for r in rs for t in r["tries"] if helps(t)]
         if good:
             fixable[k] += 1
-            fixable_lead[(k, min(lead for lead, _ in good))] += 1
+            fixable_lead[(k, max(lead for lead, _ in good))] += 1  # the earliest moment a change still works
     out = {
         "sessions": len({r["session"] for r in rows}),
         "branches": len(ok),
@@ -242,7 +242,7 @@ def summarise(rows: list[dict]) -> dict:
         "events": dict(events),
         "events_with_an_aircraft_the_ai_can_adjust": dict(reachable),
         "events_one_change_fixes": dict(fixable),
-        "earliest_fix_lead_s": {f"{k}@{lead}s": n for (k, lead), n in sorted(fixable_lead.items())},
+        "fixed_by_a_change_this_long_before": {f"{k}@{lead}s": n for (k, lead), n in sorted(fixable_lead.items())},
         "tries": len(tries),
         "tries_blocked_pct": round(100 * np.mean([t["blocked"] > 0 for t in tries]), 1) if tries else None,
         "tries_that_help_pct": round(100 * np.mean([helps(t) for t in tries]), 1) if tries else None,
