@@ -7,6 +7,7 @@ Videos and screenshots from before 6 November 2026 show an older commit ID: see 
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-11 | `stage1-08-base-turn-ai` | [Stage 1b: the AI turns aircraft onto base, and stage 1 ends level with the rules](2026-11-11-stage1-08-base-turn-ai/README.md) |
 | 2026-11-10 | `stage1-07-base-turn-checks` | [Stage 1b checks: the wind, the base turn and the rules controller to beat](2026-11-10-stage1-07-base-turn-checks/README.md) |
 | 2026-11-10 | `stage1-06-speed-alone` | [Stage 1a, second training run: stable, level with the speed rule, and what speed alone can do](2026-11-10-stage1-06-speed-alone/README.md) |
 | 2026-11-09 | `stage1-05-first-training` | [Stage 1a, first training run: a million decisions of practice, and no better than its head start](2026-11-09-stage1-05-first-training/README.md) |

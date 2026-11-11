@@ -42,3 +42,6 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-10,stage1-07-base-turn-checks,rules_stage0_still_air_2026-05-30T12,rules_stage0_still_air,5a3dec4,28,28,8,0,3.5,6.0,81.7,20.6,85,5,100,febddc1809883ede29576ce6fd58ec2de261cc2d37414e5a66aca8f8657a948e
 2026-11-10,stage1-07-base-turn-checks,rules_fixed_turn_2025-06-16T09_35,rules_fixed_turn,5a3dec4,24,24,1,0,3.7,6.2,63.5,18.4,0,1,100,e2a135705fdc0827a25ed8ae671af3fb6024fc8b7dc84894e8f99a20f3dfec2c
 2026-11-10,stage1-07-base-turn-checks,rules_speed_then_stretch_eager_2025-06-16T09_35,rules_speed_then_stretch_eager,5a3dec4,24,24,4,0,3.0,6.2,71.0,20.0,2,2,100,9bcf8ab79a1f0bb5a8c6fd93afff36b0307f86bec56df2bbbb654fe301e2ed29
+2026-11-11,stage1-08-base-turn-ai,rules_speed_then_stretch_eager_2026-05-30T12,rules_speed_then_stretch_eager,dcbbcda,28,28,5,0,3.1,5.1,67.2,20.3,57,3,97,2c7f3c5f5e047696d872919a8afb4df85b2c635b13a32ecb4d06b520c058ea15
+2026-11-11,stage1-08-base-turn-ai,ai_base_headstart_2026-05-30T12,ai_base_headstart,8db6751,28,28,5,1,3.1,5.1,70.0,21.1,41,3,97,148a009819b647045c0fa277686975545d742f4f7d2366b2ed93a91b36349ac0
+2026-11-11,stage1-08-base-turn-ai,ai_base_2026-05-30T12,ai_base,8db6751,28,28,6,1,3.1,5.3,68.2,22.7,51,3,97,97beb781dcdcc4c55631728248d077b2320d9c9bf18703e1dd69cc2b67a5e617
