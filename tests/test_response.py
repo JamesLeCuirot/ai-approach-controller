@@ -144,3 +144,25 @@ def test_stage2_world_as_planned_adds_no_instructions_and_choices_take_effect():
         env.step(action)
     if mask[:N_MAX].sum() > 0:
         assert env.counts["instructions"] > before
+
+
+def test_losses_out_of_the_ais_reach_can_be_left_out_of_its_reward():
+    from types import SimpleNamespace
+
+    from approach.ai.vector import VectorEnv
+
+    def reward(stage, weights):
+        env = VectorEnv(seed=1, cached_winds_only=True, reward=weights)
+        env.reset(seed=3)
+        a = SimpleNamespace(cs="A", x=0.0, y=0.0, alt_ft=5000, loc=False, along=20.0, actype="A320")
+        b = SimpleNamespace(cs="B", x=1.0, y=0.0, alt_ft=5200, loc=False, along=21.0, actype="A320")
+        env.session.views, env.in_conflict, env.wake_flagged = [a, b], set(), set()
+        env.controller.stage_of = lambda cs: stage
+        before = dict(env.counts)
+        r = env._conflicts()
+        return r, env.counts["losses_out_of_reach"] - before["losses_out_of_reach"]
+
+    off = {"separation_loss_out_of_reach": 0.0}
+    assert reward("inbound", None) == (-5.0, 1)  # unchanged unless a run says otherwise
+    assert reward("inbound", off) == (0.0, 1)  # both in or on their way to a stack: out of the AI's reach
+    assert reward("downwind", off) == (-5.0, 0)  # the AI could have adjusted these

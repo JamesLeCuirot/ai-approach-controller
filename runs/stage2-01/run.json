@@ -93,5 +93,11 @@
       }
     },
     "minutes": 2.6
+  },
+  "stopped": {
+    "at_decisions": 450000,
+    "when": "2026-11-11 15:47 UTC",
+    "saved_as": "model_450k.zip",
+    "why": "as planned still about 97% likely for every choice at 100k, 300k and 450k (scripts/choice_probabilities.py); tests at 100k and 300k identical to the competitor"
   }
 }

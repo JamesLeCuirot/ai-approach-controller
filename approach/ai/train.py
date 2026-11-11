@@ -58,6 +58,7 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
     return {
         "scenario": info.get("scenario", ""), "wind": info.get("wind", ""),
         "landed": c["landed"], "separation_losses": c["separation_losses"], "losses_at_stack": c.get("losses_at_stack", ""),
+        "losses_out_of_reach": c.get("losses_out_of_reach", ""),
         "wake_infringements": c["wake_infringements"], "go_arounds": c["go_arounds"],
         "speed_instructions": c["instructions"], "blocked": c["blocked"], "decisions": c["decisions"],
         "base_turns": c.get("base_turns", ""),
@@ -252,7 +253,14 @@ def main() -> None:
                     help="stage 2: the AI adjusts the planner's headings, levels and speeds")
     ap.add_argument("--vector-smoothing", type=float, default=0.03,
                     help="stage 2's head start: the share of each 'as planned' target spread over the alternatives")
+    ap.add_argument("--anchor-start", type=float, default=ANCHOR["anchor_start"],
+                    help="the pull back towards the head start at the beginning of practice (fading to --anchor-end)")
+    ap.add_argument("--anchor-end", type=float, default=ANCHOR["anchor_end"])
+    ap.add_argument("--reward", action="append", default=[], metavar="NAME=VALUE",
+                    help="change one reward weight for this run, e.g. separation_loss_out_of_reach=0 (repeatable)")
     args = ap.parse_args()
+    anchor = {"anchor_start": args.anchor_start, "anchor_end": args.anchor_end}
+    reward_changes = {k: float(v) for k, v in (item.split("=", 1) for item in args.reward)}
 
     import torch
     from stable_baselines3.common.callbacks import BaseCallback
@@ -263,6 +271,9 @@ def main() -> None:
     from approach.ai.ppo import AnchoredPPO, SpeedPolicy
     from approach.ai.vector import FEATURES_2, PLANNER_2, VectorEnv
 
+    unknown = set(reward_changes) - set(REWARD)
+    if unknown:
+        ap.error(f"unknown reward weight(s): {', '.join(sorted(unknown))}")
     torch.set_num_threads(1)  # a small network: extra threads only compete with the simulations for the cores
     out = RUNS / args.run
     out.mkdir(parents=True, exist_ok=True)
@@ -272,8 +283,8 @@ def main() -> None:
         "decisions": args.decisions, "envs": args.envs, "seed": args.seed,
         "headstart_episodes": args.headstart_episodes, "cached_winds_only": args.cached_winds_only,
         "turn_smoothing": args.turn_smoothing if args.base_turns else None,
-        "reward_weights": REWARD, "ppo": PPO_SETTINGS, "algorithm": "AnchoredPPO (approach/ai/ppo.py)",
-        "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
+        "reward_weights": {**REWARD, **reward_changes}, "ppo": PPO_SETTINGS,
+        "algorithm": "AnchoredPPO (approach/ai/ppo.py)", "anchor": anchor, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
                                                                   "net_arch": POLICY_KWARGS["net_arch"]},
         "observation": {"aircraft": N_MAX, "features": len(FEATURES_2) if args.vector else
@@ -294,9 +305,10 @@ def main() -> None:
 
     def make(rank: int):
         if args.vector:
-            return lambda: VectorEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only)
+            return lambda: VectorEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only,
+                                     reward=reward_changes)
         return lambda: SpeedEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only,
-                                base_turns=args.base_turns)
+                                base_turns=args.base_turns, reward=reward_changes)
 
     venv = VecNormalize(VecMonitor(SubprocVecEnv([make(k) for k in range(args.envs)])), norm_obs=False,
                         norm_reward=True, gamma=PPO_SETTINGS["gamma"])
@@ -306,7 +318,7 @@ def main() -> None:
         print(f"Resuming from {args.resume} at {model.num_timesteps:,} decisions", flush=True)
     else:
         model = AnchoredPPO(SpeedPolicy, venv, policy_kwargs=POLICY_KWARGS, seed=args.seed, device="cpu", verbose=0,
-                            **ANCHOR, **PPO_SETTINGS)
+                            **anchor, **PPO_SETTINGS)
         n_params = sum(p.numel() for p in model.policy.parameters())
         record["parameters"] = n_params
         model.save(out / "model_untrained.zip")

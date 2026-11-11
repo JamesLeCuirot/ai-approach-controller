@@ -93,8 +93,13 @@ REWARD = {
     "blocked": 0.5,  # an instruction the safety check blocked
     "go_around": 3.0,
     "separation_loss": 5.0,  # a pair coming inside the radar minimum
+    # ... when neither aircraft is on downwind, base or cleared to land (in or on its way to a stack): out of stage
+    # 2's reach, whose AI only adjusts those. Stage 2's second run leaves these out of its reward (the test still counts
+    # them). The same as separation_loss unless a run says otherwise.
+    "separation_loss_out_of_reach": 5.0,
     "wake_infringement": 3.0,  # a pair on final coming inside the wake minimum
 }
+IN_REACH = ("downwind", "base", "cleared")  # the plan stages whose aircraft stage 2's AI can adjust
 
 
 def training_hours(split: str = "train", min_arrivals: int = 3) -> list[tuple[str, int]]:
@@ -388,7 +393,7 @@ class SpeedEnv(gym.Env if gym else object):
         self.wake_flagged: set[tuple[str, str]] = set()
         self.gaps: list[tuple[float, float]] = []  # (gap, target) at each landing with a follower on final
         self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "losses_at_stack": 0,
-                       "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0, "base_turns": 0,
+                       "losses_out_of_reach": 0, "wake_infringements": 0, "instructions": 0, "blocked": 0, "decisions": 0, "base_turns": 0,
                        "turns_held": 0}
         with wake.scheme(self.scheme):
             obs = self._observe()
@@ -517,7 +522,10 @@ class SpeedEnv(gym.Env if gym else object):
             # Losses involving an aircraft in a holding stack or on its way to one: the planner's levels, not speeds.
             self.counts["losses_at_stack"] += sum(1 for pair in new
                                                   if any(self.controller.stage_of(cs) == "inbound" for cs in pair))
-            r -= self.reward_w["separation_loss"] * len(new)
+            out = sum(1 for pair in new if not any(self.controller.stage_of(cs) in IN_REACH for cs in pair))
+            self.counts["losses_out_of_reach"] += out
+            r -= (self.reward_w["separation_loss"] * (len(new) - out)
+                  + self.reward_w["separation_loss_out_of_reach"] * out)
         finals = sorted((v for v in views if v.loc), key=lambda v: v.along)
         for lead, f in zip(finals, finals[1:]):
             need = wake.separation_nm(lead.actype, f.actype)
