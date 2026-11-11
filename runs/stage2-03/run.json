@@ -77,5 +77,37 @@
   },
   "headstart_epochs": 100,
   "training_hours": 963,
-  "notes": "Stage 2's third run: as stage2-02 (losses of separation out of the AI's reach left out of its reward; pull back towards the head start 0.1 fading to 0.01), but choices stay in force until the AI changes them (choice 0 keeps, 1 is as planned), and the head start copies a habit (100 passes): with nothing in force keep 98% and try 2%; with a change in force go back 5% and switch 1%, so a try lasts about 2-3 minutes. Restarted after a first head start that did not learn to go back"
+  "notes": "Stage 2's third run: as stage2-02 (losses of separation out of the AI's reach left out of its reward; pull back towards the head start 0.1 fading to 0.01), but choices stay in force until the AI changes them (choice 0 keeps, 1 is as planned), and the head start copies a habit (100 passes): with nothing in force keep 98% and try 2%; with a change in force go back 5% and switch 1%, so a try lasts about 2-3 minutes. Restarted after a first head start that did not learn to go back",
+  "parameters": 176001,
+  "headstart": {
+    "episodes": 32,
+    "decisions": 14259,
+    "agreement": {
+      "heading": {
+        "keep_best": 1.0,
+        "p_keep_nothing_in_force": 0.98,
+        "p_keep_change_in_force": 0.938,
+        "p_back_change_in_force": 0.052,
+        "chances": 16241,
+        "chances_change_in_force": 3211
+      },
+      "level": {
+        "keep_best": 1.0,
+        "p_keep_nothing_in_force": 0.98,
+        "p_keep_change_in_force": 0.938,
+        "p_back_change_in_force": 0.051,
+        "chances": 20208,
+        "chances_change_in_force": 3422
+      },
+      "speed": {
+        "keep_best": 1.0,
+        "p_keep_nothing_in_force": 0.98,
+        "p_keep_change_in_force": 0.938,
+        "p_back_change_in_force": 0.051,
+        "chances": 21559,
+        "chances_change_in_force": 4975
+      }
+    },
+    "minutes": 4.8
+  }
 }
