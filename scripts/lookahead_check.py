@@ -204,6 +204,7 @@ def main() -> None:
     ap_.add_argument("--encounters", type=int, default=500)
     ap_.add_argument("--seed", type=int, default=2026)
     args = ap_.parse_args()
+    from approach.ai.env import winds_cached
     from approach.ai.evaluate import test_hours
 
     try:
@@ -215,7 +216,7 @@ def main() -> None:
         print("geometric_safety is not installed: Bluebird's filter is left out", flush=True)
     ap = egkk.load()
     rng = random.Random(args.seed)
-    hours = test_hours()
+    hours = [h for h in test_hours() if winds_cached(*h)]  # winds already downloaded: no waiting on NOAA
     rows = []
     while len(rows) < args.encounters:
         r = encounter(ap, rng, hours, have_bluebird)

@@ -170,7 +170,7 @@ Copying alone can only match the controllers it watched, and never learns what h
 
 The agent will exploit any flaw in the simulator, such as pilots who respond instantly or descend better than real aircraft. So the simulated pilots are built to be as imperfect as real ones:
 
-- **Delays and drift,** already in: pilots respond after a few seconds and hold an assigned speed only within ±10 kt, and descent rates come from real Gatwick arrivals.
+- **How they fly, from real arrivals** (from stage 2): pilots respond after 3 to 6 seconds, and each has its own bank angle, descent rate and rates of slowing down and speeding up, drawn from what real Gatwick arrivals do, with less bank in small turns as real autopilots fly them ([diary entry of 11 November](../diary/2026-11-11-stage2-01-how-aircraft-respond/README.md)). Until then this line said speed drift and real descent rates were already in. They weren't: every stage 1 result used BlueSky's own values, the same for every aircraft (25° of bank, 1,500 ft/min, and speed changes of 2 to 3 kt a second, four to five times faster than real aircraft). Holding an assigned speed only within ±10 kt isn't in yet: it can't be measured from ADS-B, which doesn't show the speed a pilot was given.
 - **Occasional mistakes, at realistic rates:** turning the wrong way, a level bust (cleared to 3,000 ft but descending to 2,000 ft), and readback errors, more often on unusual values. The rates come from published studies, not guesses.
 - **Readbacks.** Pilots read each instruction back, sometimes wrongly, and the controller hears the readback. Our simulator doesn't have readbacks yet, so this is new work. The agent needs to hear them as an input too.
 
@@ -298,6 +298,8 @@ Stage 0's world had no variation, so timing was easy. Stage 1 adds the following
 
 The wind needs no made-up range: it is whatever Gatwick actually had. Strong wind is rare (since mid-2023 Gatwick's reported surface wind reached 15 kt only 4% of the time), so training includes extra windy hours. Descent rates come from real arrivals too; start with the real spread, then widen it once the agent copes.
 
+**What stage 1 actually ran with.** Only the wind and the real arrival streams. The pilot speed and descent rate rows were planned but never built (found at the start of stage 2): every aircraft descended at 1,500 ft/min and changed speed at 2 to 3 kt a second. Speed control therefore took effect much faster in stage 1 than it would in reality, for the AI and the rules alike. Stage 2 builds real descent rates, speed changes and bank angles in (see Simulated pilots).
+
 ### First: the rules controller in the new world
 
 Before any learning, the stage 0 rules controller flies stage 0's scenarios in the new conditions, about 200 sessions each, and the results go in the diary. Stage 0's own results stand: every variation is a switch, off by default, so they still reproduce.
@@ -378,6 +380,14 @@ Stage 1b's picture of each aircraft, plus what vectoring needs: its heading and 
 
 Before the AI vectors, a learned model predicts where each aircraft will be over the next 2 minutes after a heading, level or speed instruction, trained on the simulator and checked against real Gatwick tracks. Like Project Bluebird's aircraft model, it gives a spread of whole futures for a flight, not one guess, and it is scored against a constant-velocity guess on held-back days. It serves the safety check's look-ahead and the AI's inputs first, and model-based planning later (How the AI learns).
 
+**Built (11 November, [diary entry](../diary/2026-11-11-stage2-01-how-aircraft-respond/README.md)).** First the measurements it needed: how the 16,000 arrivals on the training days turn, descend and change speed. They showed the simulator's pilots were far too good (see Simulated pilots), so the simulator now has pilots who fly like real arrivals (`World(pilots="measured")`). The model (`approach.response`) flies each draw with its own pilot from the same measurements. Two minutes after an instruction:
+
+- **In the simulator** (320 random instructions), its best guess is typically 0.06 NM out after a turn and 0.05 NM after a speed change, against 0.28 and 0.52 NM for the safety check's old look-ahead and 2.6 and 0.5 NM for constant velocity. The truth is inside the middle 80% of its draws 79% of the time.
+- **On real tracks from the test days** (2,306 turns, descents and speed changes, taken from where each change starts, with the heading, level and speed the aircraft ended with), it is 0.69 NM out against 1.01 for the old look-ahead and 5.6 for constant velocity, and heights are 330 ft out against 1,176. Heights are well calibrated; sideways the draws are too narrow for real aircraft (the truth is inside their middle 80% only 45% of the time even with a forecast-wind error), which matters for the live feed, not the simulator.
+- **As the safety check's look-ahead,** on 500 close encounters with real winds and measured pilots, 101 of which lost separation: the old look-ahead missed 11 and raised 4 false alarms; the model missed 3 and raised 3. Bluebird's filter certified 364 pairs safe, and none of them lost separation, so it can clear most pairs cheaply before the model looks at the rest. The safety check can use the model (`lookahead="model"`); it makes a session about a third slower.
+
+**What realistic pilots do to the rules controllers.** On the busy hour of 30 May 2026 the eager rule still lands all 28, but with 7 separation losses instead of 5, 6 go-arounds instead of 3 and 22.3 minutes per arrival instead of 18.8 (the real controllers took 17.5). On a first run over the 120 test sessions (before the bank angle was refined), the fixed-turn rule's go-arounds went from 51 to 316 and its losses from 113 to 285. Its descents were planned for 1,500 ft/min, so aircraft reach the localiser too high to capture the glide path, and the holding stacks empty slowly because aircraft take longer to vacate each level. The competitor needs the fixes any competent programmer would now make before stage 2's checks mean anything.
+
 ### Competitor, checks and gate
 
 - **Competitor:** the rules controller doing all the vectoring, timed with the wind, with the best release and base-turn rule from stage 1.
@@ -387,11 +397,12 @@ Before the AI vectors, a learned model predicts where each aircraft will be over
 
 ### Steps
 
-1. The model of how aircraft respond, and the comparison with Bluebird's safety filter.
-2. The vectoring choices, inputs and instruction counting in the training world.
-3. The checks: "as planned" against the competitor; the real controllers as the target.
-4. Head start (copying "as planned", with a little of each choice's weight left on the others so practice tries them) and two training runs, tested on 120 sessions.
-5. Replays of the AI vectoring the busy hours with the real tracks underneath, the diary, and the stage 2 post.
+1. The model of how aircraft respond, and the comparison with Bluebird's safety filter. **Done**, with pilots who fly like real arrivals.
+2. The competitor for realistic pilots: descents planned from each aircraft's distance to go at a real rate (about 3 NM per 1,000 ft, with a margin), slowing down earlier, and holding stacks that allow for real descent rates; then the rules controllers re-run on the 120 test sessions with measured pilots.
+3. The vectoring choices, inputs and instruction counting in the training world, with measured pilots and the new look-ahead.
+4. The checks: "as planned" against the competitor; the real controllers as the target.
+5. Head start (copying "as planned", with a little of each choice's weight left on the others so practice tries them) and two training runs, tested on 120 sessions.
+6. Replays of the AI vectoring the busy hours with the real tracks underneath, the diary, and the stage 2 post.
 
 The live demo can be built alongside, with the rules controller first: adsb.lol's live feed, aircraft handed to the simulator as they cross 40 NM, the radar in a browser, the real tracks continuing in grey. The AI takes over once stage 2 works.
 
