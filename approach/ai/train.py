@@ -14,6 +14,11 @@ Everything about the run goes in runs/<run>/ (not committed: models and logs are
 
 and one row per run in diary/training-runs.csv (committed), so every run is on the record.
 
+Stage 2 (--vector): the AI adjusts the planner's headings, levels and speeds (approach.ai.vector), with pilots who
+fly like real arrivals and the model look-ahead. Its head start copies "as planned" on every adjustment it can
+make, with a small share of each choice's weight left on the alternatives (--vector-smoothing) so practice tries
+them.
+
 A cloud machine can be reclaimed mid-run, so the run's record, episode log and saved AIs are
 committed to the repo, and a run can carry on from its last saved AI on a fresh machine:
 
@@ -66,14 +71,20 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
     }
 
 
-def _teacher_episodes(args: tuple[int, int, bool, bool]) -> tuple[list, list, list]:
+def _teacher_episodes(args: tuple) -> tuple[list, list, list]:
     """Episodes flown by the rules controller the AI copies: its observations and choices, and its results.
 
-    In stage 1b its base-turn choice is always "as planned": the planner's turns are the rule's."""
-    seed, episodes, cached, base_turns = args
-    from approach.ai.env import N_MAX, SpeedEnv
+    In stage 1b its base-turn choice is always "as planned": the planner's turns are the rule's. In stage 2 every
+    choice is "as planned": the planner's own clearances."""
+    seed, episodes, cached, base_turns, vector = (*args, False)[:5]
+    from approach.ai.env import SpeedEnv
 
-    env = SpeedEnv(seed=seed, cached_winds_only=cached, base_turns=base_turns)
+    if vector:
+        from approach.ai.vector import VectorEnv
+
+        env = VectorEnv(seed=seed, cached_winds_only=cached)
+    else:
+        env = SpeedEnv(seed=seed, cached_winds_only=cached, base_turns=base_turns)
     obs_all, act_all, rows = [], [], []
     for _ in range(episodes):
         obs, _ = env.reset(options={"teacher": True})
@@ -162,6 +173,59 @@ def headstart(model, obs: np.ndarray, actions: np.ndarray, epochs: int = 10, bat
         return out
 
 
+def headstart_vector(model, obs: np.ndarray, epochs: int = 10, batch: int = 256, lr: float = 1e-3,
+                     smoothing: float = 0.03) -> dict:
+    """Stage 2's head start: every adjustment the AI can make is "as planned", with `smoothing` of each target
+    spread over the alternatives. Returns how often its best choice is "as planned", and the probability it gives
+    "as planned", for each kind of adjustment."""
+    import torch
+
+    from approach.ai.ppo import controlled
+
+    policy = model.policy
+    opt = torch.optim.Adam(policy.parameters(), lr=lr)
+    obs_t = torch.as_tensor(obs, dtype=torch.float32)
+    n_choices = len(policy.action_space.nvec)
+    mask = controlled(obs_t, n_choices)
+
+    def loss_of(o, m):
+        dist = policy.get_distribution(o)
+        parts = []
+        for d in dist.distribution:
+            k = d.logits.shape[-1]
+            target = torch.full_like(d.logits, smoothing / (k - 1))
+            target[:, 0] = 1.0 - smoothing
+            parts.append((target * d.logits).sum(dim=1))
+        return -(torch.stack(parts, dim=1) * m).sum() / m.sum().clamp(min=1.0)
+
+    n = len(obs_t)
+    for _ in range(epochs):
+        perm = torch.randperm(n)
+        for k in range(0, n, batch):
+            idx = perm[k:k + batch]
+            if mask[idx].sum() == 0:
+                continue
+            loss_t = loss_of(obs_t[idx], mask[idx])
+            opt.zero_grad()
+            loss_t.backward()
+            opt.step()
+    with torch.no_grad():
+        sample = slice(0, min(n, 8192))
+        dist = policy.get_distribution(obs_t[sample])
+        best = torch.stack([d.probs.argmax(dim=1) for d in dist.distribution], dim=1)
+        p0 = torch.stack([d.probs[:, 0] for d in dist.distribution], dim=1)
+        m = mask[sample] > 0.5
+        places = n_choices // 3
+        out = {}
+        for j, name in enumerate(("heading", "level", "speed")):
+            sl = slice(j * places, (j + 1) * places)
+            mm = m[:, sl]
+            out[name] = {"as_planned_best": round(float((best[:, sl][mm] == 0).float().mean()), 3) if mm.any() else None,
+                         "p_as_planned": round(float(p0[:, sl][mm].mean()), 3) if mm.any() else None,
+                         "chances": int(mm.sum())}
+        return out
+
+
 def write_run_row(row: dict) -> None:
     rows = list(csv.DictReader(RUNS_CSV.open())) if RUNS_CSV.exists() else []
     rows = [r for r in rows if r["run"] != row["run"]] + [row]
@@ -184,6 +248,10 @@ def main() -> None:
     ap.add_argument("--base-turns", action="store_true", help="stage 1b: the AI also turns aircraft onto base")
     ap.add_argument("--turn-smoothing", type=float, default=0.02,
                     help="in the head start, the share of each base-turn target given to 'turn now' and 'not yet'")
+    ap.add_argument("--vector", action="store_true",
+                    help="stage 2: the AI adjusts the planner's headings, levels and speeds")
+    ap.add_argument("--vector-smoothing", type=float, default=0.03,
+                    help="stage 2's head start: the share of each 'as planned' target spread over the alternatives")
     args = ap.parse_args()
 
     import torch
@@ -193,6 +261,7 @@ def main() -> None:
     from approach.ai.env import FEATURES_1B, N_FEATURES, N_MAX, PLANNER_1B, REWARD, SpeedEnv, training_hours
     from approach.ai.policy import POLICY_KWARGS
     from approach.ai.ppo import AnchoredPPO, SpeedPolicy
+    from approach.ai.vector import FEATURES_2, PLANNER_2, VectorEnv
 
     torch.set_num_threads(1)  # a small network: extra threads only compete with the simulations for the cores
     out = RUNS / args.run
@@ -207,8 +276,12 @@ def main() -> None:
         "anchor": ANCHOR, "policy": {"class": "SpeedPolicy", "extractor": "AircraftAttention",
                                                                   **POLICY_KWARGS["features_extractor_kwargs"],
                                                                   "net_arch": POLICY_KWARGS["net_arch"]},
-        "observation": {"aircraft": N_MAX, "features": len(FEATURES_1B) if args.base_turns else N_FEATURES},
-        "stage": "1b" if args.base_turns else "1a", "planner": PLANNER_1B if args.base_turns else None,
+        "observation": {"aircraft": N_MAX, "features": len(FEATURES_2) if args.vector else
+                        (len(FEATURES_1B) if args.base_turns else N_FEATURES)},
+        "stage": "2" if args.vector else ("1b" if args.base_turns else "1a"),
+        "planner": PLANNER_2 if args.vector else (PLANNER_1B if args.base_turns else None),
+        **({"pilots": "measured", "lookahead": "model", "vector_smoothing": args.vector_smoothing}
+           if args.vector else {}),
         "training_hours": len(training_hours()),
         "notes": args.notes,
     }
@@ -220,6 +293,8 @@ def main() -> None:
     print(f"Run {args.run}: {out}", flush=True)
 
     def make(rank: int):
+        if args.vector:
+            return lambda: VectorEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only)
         return lambda: SpeedEnv(seed=args.seed * 1000 + rank, cached_winds_only=args.cached_winds_only,
                                 base_turns=args.base_turns)
 
@@ -240,12 +315,15 @@ def main() -> None:
         t0 = time.time()
         per = max(1, args.headstart_episodes // args.envs)
         with Pool(args.envs) as pool:
-            parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only, args.base_turns)
-                                                 for k in range(args.envs)])
+            parts = pool.map(_teacher_episodes, [(args.seed * 7000 + k, per, args.cached_winds_only, args.base_turns,
+                                                  args.vector) for k in range(args.envs)])
         obs = np.concatenate([np.array(o) for o, _, _ in parts])
         acts = np.concatenate([np.array(a) for _, a, _ in parts])
         teacher_rows = [r for _, _, rows in parts for r in rows]
-        agree = headstart(model, obs, acts, turn_smoothing=args.turn_smoothing)
+        if args.vector:
+            agree = headstart_vector(model, obs, smoothing=args.vector_smoothing)
+        else:
+            agree = headstart(model, obs, acts, turn_smoothing=args.turn_smoothing)
         model.save(out / "model_headstart.zip")
         model.set_anchor(model.policy)  # practice is pulled back towards this copy
         record["headstart"] = {"episodes": len(teacher_rows), "decisions": int(len(obs)), "agreement": agree,
@@ -255,9 +333,15 @@ def main() -> None:
             w.writeheader()
             w.writerows(teacher_rows)
         (out / "run.json").write_text(json.dumps(record, indent=2))
-        print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
-              f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
-              f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
+        if args.vector:
+            print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; "
+                  + "; ".join(f"{k}: as planned is its best choice at {v['as_planned_best']:.0%} of "
+                              f"{v['chances']:,} chances, probability {v['p_as_planned']:.2f}"
+                              for k, v in agree.items() if v["chances"]), flush=True)
+        else:
+            print(f"Head start: copied {len(obs):,} decisions from {len(teacher_rows)} episodes; agrees with the "
+                  f"speed-only controller on {agree['controlled']:.0%} of its speeds and {agree['changes']:.0%} of its "
+                  f"changes (changes are {agree['share_of_changes']:.0%} of its decisions)", flush=True)
         if args.base_turns and agree.get("as_planned") is not None:
             print(f"Base turns: 'as planned' chosen at {agree['as_planned']:.0%} of the chances, with probability "
                   f"{agree['p_as_planned']:.2f} on average", flush=True)
