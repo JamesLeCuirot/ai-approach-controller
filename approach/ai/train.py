@@ -61,6 +61,7 @@ def episode_row(info: dict, total_reward: float | None = None) -> dict:
         "gaps_inside_minimum": sum(1 for g, t in gaps if g < t - 0.5),
         "scored_separation_losses": s.get("separation_losses"), "scored_wake": s.get("wake_violations"),
         "mean_spacing_nm": s.get("mean_spacing_nm"), "minutes_per_arrival": s.get("minutes_per_arrival"),
+        "stable_at_1000ft_pct": s.get("stable_at_1000ft_pct", ""), "track_miles": s.get("track_miles_per_arrival", ""),
         "reward": round(total_reward, 3) if total_reward is not None else "",
     }
 

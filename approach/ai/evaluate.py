@@ -15,6 +15,11 @@ inside the range could be chance. 120 sessions is the default (40 left too much 
 Writes <model>.eval.csv (one row per session and controller) and <model>.eval.json (totals and
 the gate), next to the model.
 
+Stage 2 (--vector): the AI adjusts the planner's headings, levels and speeds (approach.ai.vector), with pilots who
+fly like real arrivals and the model look-ahead; the competitor is the planner's own proposals ("rules_vector",
+"as planned" everywhere). The real controllers' results on the same hours are added as "real", scored with the
+same code, as the target.
+
 The speed-only controller's results on a set of sessions don't change until its code does, so
 they are saved in runs/competitor/ and reused: each later test only flies the AI, which halves
 the time. The saved results are keyed on the sessions and on the code that flies them.
@@ -55,7 +60,15 @@ def test_hours(splits: tuple[str, ...] = ("test", "recent"), min_arrivals: int =
 
 COMPETITOR_DIR = REAL_DIR.parents[1] / "runs" / "competitor"
 CODE_FILES = ("approach/controllers", "approach/sim", "approach/ai/env.py", "approach/wake.py", "approach/scoring.py",
-              "approach/data/real_sessions.py", "approach/airports")
+              "approach/data/real_sessions.py", "approach/airports", "approach/ai/vector.py", "approach/response.py")
+
+
+def _fields(rows: list[dict]) -> list[str]:
+    """Every column in any row, in the order first seen (the real controllers' rows have fewer)."""
+    out: dict[str, None] = {}
+    for r in rows:
+        out.update(dict.fromkeys(r))
+    return list(out)
 
 
 def code_hash() -> str:
@@ -72,25 +85,30 @@ def code_hash() -> str:
 
 
 def _run(args: tuple) -> list[dict]:
-    model_path, sessions, with_competitor, base_turns = (*args, False)[:4]
+    model_path, sessions, with_competitor, base_turns, vector = (*args, False, False)[:5]
     from approach.ai.env import SpeedEnv, load_policy
     from approach.ai.train import episode_row
 
     policy = load_policy(model_path) if model_path else None
-    env = SpeedEnv(hours=[s["hour"] for s in sessions], base_turns=base_turns)
+    if vector:
+        from approach.ai.vector import VectorEnv
+
+        env, competitor = VectorEnv(hours=[s["hour"] for s in sessions]), "rules_vector"
+    else:
+        env, competitor = SpeedEnv(hours=[s["hour"] for s in sessions], base_turns=base_turns), "rules_speed"
     rows = []
     for s in sessions:
         try:
             pair = []
-            for who in ("rules_speed", "ai"):
-                if (who == "ai" and policy is None) or (who == "rules_speed" and not with_competitor):
+            for who in (competitor, "ai"):
+                if (who == "ai" and policy is None) or (who == competitor and not with_competitor):
                     continue
                 options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"],
-                           "teacher": who == "rules_speed"}
+                           "teacher": who == competitor}
                 obs, _ = env.reset(options=options)
                 done, total = False, 0.0
                 while not done:
-                    act = env.teacher_action() if who == "rules_speed" else policy(obs)
+                    act = env.teacher_action() if who == competitor else policy(obs)
                     obs, r, done, _, info = env.step(act)
                     total += r
                 pair.append({"session": s["id"], "controller": who, "hour": f"{s['hour'][0]}T{s['hour'][1]:02d}",
@@ -118,6 +136,33 @@ def paired_differences(rows: list[dict], a: str = "ai", b: str = "rules_speed") 
     return out
 
 
+def real_rows(sessions: list[dict]) -> list[dict]:
+    """The real controllers on the same hours (from each session's start minute), scored with the same code."""
+    from datetime import datetime, timezone
+
+    from approach.airports import egkk
+    from approach.data.arrivals import load_day
+    from approach.data.real_sessions import real_session
+
+    airport, days, rows = egkk.load(), {}, []
+    for s in sessions:
+        d, h = s["hour"]
+        if d not in days:
+            days[d] = load_day(date.fromisoformat(d), "EGKK")
+        start = datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp() + h * 3600 + s["offset_s"]
+        log = real_session(days[d], airport, start, start + 3600)
+        sc = log.scores
+        rows.append({"session": s["id"], "controller": "real", "hour": f"{d}T{h:02d}",
+                     "offset_min": round(s["offset_s"] / 60), "landed": sc.get("landed", 0),
+                     "separation_losses": sc.get("separation_losses", 0), "losses_at_stack": "",
+                     "wake_infringements": sc.get("wake_violations", 0),
+                     "go_arounds": sum(1 for e in log.events if e.get("kind") == "go_around"),
+                     "speed_instructions": 0, "blocked": 0, "decisions": 0, "gaps": 0, "mean_gap_error_nm": "",
+                     "gaps_inside_minimum": 0, "scored_separation_losses": sc.get("separation_losses"),
+                     "minutes_per_arrival": sc.get("minutes_per_arrival", ""), "reward": 0.0})
+    return rows
+
+
 def summarise(rows: list[dict]) -> dict:
     out = {}
     for who in sorted({r["controller"] for r in rows}):
@@ -136,6 +181,13 @@ def summarise(rows: list[dict]) -> dict:
             "speed_instructions_per_arrival": round(sum(int(r["speed_instructions"]) for r in g) / max(landed, 1), 2),
             "mean_reward": round(float(np.mean([float(r["reward"]) for r in g])), 2),
         }
+        minutes = [(float(r["minutes_per_arrival"]), int(r["landed"])) for r in g if r.get("minutes_per_arrival")]
+        if minutes:
+            out[who]["minutes_per_arrival"] = round(sum(m * n for m, n in minutes) / max(sum(n for _, n in minutes), 1), 1)
+    if "ai" in out and "rules_vector" in out:
+        out["ai_minus_rules_vector"] = paired_differences(rows, "ai", "rules_vector")
+    if "rules_vector" in out and "real" in out:
+        out["rules_vector_minus_real"] = paired_differences(rows, "rules_vector", "real")
     if "ai" in out and "rules_speed" in out:
         out["ai_minus_rules_speed"] = paired_differences(rows)
         a, b = out["ai"], out["rules_speed"]
@@ -158,6 +210,9 @@ def main() -> None:
     ap.add_argument("--out", default="")
     ap.add_argument("--base-turns", action="store_true",
                     help="stage 1b: the AI also turns aircraft onto base; the competitor is the eager base-turn rule")
+    ap.add_argument("--vector", action="store_true",
+                    help="stage 2: the AI adjusts the planner's headings, levels and speeds; the competitor is the "
+                         "planner's own proposals, and the real controllers are added as the target")
     args = ap.parse_args()
     rng = random.Random(args.seed)
     hours = test_hours()
@@ -171,27 +226,31 @@ def main() -> None:
         for err in pool.imap_unordered(_prefetch_one, needed):
             if err:
                 print("winds:", err, flush=True)
-    cache = COMPETITOR_DIR / f"{'1b_' if args.base_turns else ''}seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
+    prefix = "2_" if args.vector else ("1b_" if args.base_turns else "")
+    cache = COMPETITOR_DIR / f"{prefix}seed{args.seed}_n{args.sessions}_{code_hash()}.csv"
     saved = list(csv.DictReader(cache.open())) if cache.is_file() else []
     if saved:
         print(f"Reusing the speed-only controller's results from {cache.name}", flush=True)
-    chunks = [(args.model, sessions[k::args.workers], not saved, args.base_turns) for k in range(args.workers)]
+    chunks = [(args.model, sessions[k::args.workers], not saved, args.base_turns, args.vector)
+              for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
+    if args.vector and not saved:
+        rows += real_rows(sessions)  # saved with the competitor's results, so computed once
     if saved:
         flown = {int(r["session"]) for r in rows}
         rows += [r for r in saved if int(r["session"]) in flown]  # like for like: only sessions the AI flew
     else:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        competitor = [r for r in rows if r["controller"] == "rules_speed"]
+        competitor = [r for r in rows if r["controller"] in ("rules_speed", "rules_vector", "real")]
         with cache.open("w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(competitor[0]))
+            w = csv.DictWriter(f, fieldnames=_fields(competitor))
             w.writeheader()
             w.writerows(competitor)
     rows.sort(key=lambda r: (int(r["session"]), r["controller"]))
-    base = Path(args.out or (args.model or "runs/rules_speed") ).with_suffix("")
+    base = Path(args.out or (args.model or ("runs/rules_vector" if args.vector else "runs/rules_speed"))).with_suffix("")
     with Path(f"{base}.eval.csv").open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w = csv.DictWriter(f, fieldnames=_fields(rows))
         w.writeheader()
         w.writerows(rows)
     summary = {"model": args.model, "sessions": args.sessions, "test_hours": len(hours), "seed": args.seed,
