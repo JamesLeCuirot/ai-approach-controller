@@ -82,5 +82,8 @@
     "minutes": 5.1
   },
   "resumed_from": "runs/stage1b-03/model_latest.zip",
-  "resumed_code_version": "4a2de80"
+  "resumed_code_version": "4a2de80",
+  "finished": "2026-11-11 07:14 UTC",
+  "training_hours_wall": 0.56,
+  "status": "finished"
 }
