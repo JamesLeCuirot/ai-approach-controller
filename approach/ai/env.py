@@ -293,7 +293,9 @@ def load_policy(path: str):
     from stable_baselines3 import PPO
 
     model = PPO.load(path, device="cpu")
-    return lambda obs: model.predict(obs, deterministic=True)[0]
+    policy = lambda obs: model.predict(obs, deterministic=True)[0]  # noqa: E731
+    policy.action_space = model.action_space  # how it chooses (approach.ai.vector.holds)
+    return policy
 
 
 # ---- the training world ----------------------------------------------------------------------

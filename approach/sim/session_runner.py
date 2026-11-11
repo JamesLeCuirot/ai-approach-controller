@@ -41,11 +41,12 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
         from pathlib import Path
 
         from approach.ai.env import load_policy
-        from approach.ai.vector import VectorController
+        from approach.ai.vector import VectorController, holds
 
         tag = name[len("ai_vector_"):] or "final"
         path = os.environ.get("APPROACH_AI_MODEL") or str(Path(os.environ["APPROACH_AI_RUN"]) / f"model_{tag}.zip")
-        return VectorController(airport, scenario.runway, policy=load_policy(path), name=name)
+        policy = load_policy(path)
+        return VectorController(airport, scenario.runway, policy=policy, name=name, hold=holds(policy))
     if name.startswith("ai_base"):  # stage 1b's AI: ai_base (the final model) or ai_base_<checkpoint>
         import os
         from pathlib import Path

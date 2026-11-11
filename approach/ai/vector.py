@@ -27,6 +27,15 @@ force.
 
 VectorController flies the same thing in an ordinary session (replays and the benchmark), with a trained policy
 or with "as planned" everywhere (the comparison: it flies exactly as the planner would).
+
+From run stage2-03 on (hold=True), choice 0 is "keep what's in force" and "as planned" is choice 1, so a change
+stays in force until the AI changes it, as a controller leaves a heading until they want another. Before, the AI
+chose afresh every 10 seconds, so a try lasted one decision, while the small-change check found that changes must
+be held for 1 to 4 minutes to help (runs/stage2-checks/). An adjustment the AI cannot make now (a heading once on
+the localiser, a level once on the glide path, a speed outside the band, any adjustment before downwind) goes back
+to as planned, and so does one the safety check blocks, so it is not asked again every 10 seconds. The head start
+copies HABIT: with nothing in force keep it, trying an alternative now and then; with a change in force, go back to
+the plan after a few minutes on average. Saved AIs say which way they choose by their action space (holds()).
 """
 
 from __future__ import annotations
@@ -56,12 +65,63 @@ PLANNER_2 = {"fixed_paths": True, "speeds": "slot", "wind_aware": True, "stretch
 HEADING_OFFSETS = (0, -10, -5, 5, 10)  # degrees; as planned first
 LEVEL_OFFSETS = (0, -1000, 1000)  # ft
 SPEED_OFFSETS = (0, -20, -10, 10, 20)  # kt
+OFFSETS = (HEADING_OFFSETS, LEVEL_OFFSETS, SPEED_OFFSETS)
 CHOICES = (len(HEADING_OFFSETS), len(LEVEL_OFFSETS), len(SPEED_OFFSETS))
+KEEP, PLANNED = 0, 1  # with hold=True: choice 0 keeps the adjustment in force, 1 is as planned, 2... the alternatives
+HOLD_CHOICES = tuple(k + 1 for k in CHOICES)
+# The head start's habit with hold=True, per aircraft, per kind of adjustment, per 10-second decision. With nothing
+# in force: keep 98%, try one of the alternatives 2%. With a change in force: back to as planned 5%, another
+# alternative 1%, keep 94%, so a try lasts about 3 minutes on average (a quarter last over 4). The AI can usually
+# adjust about 6 things at a time (about 2 headings, 2 levels and 2 speeds), so about 2 tries are in force at once.
+HABIT = {"try": 0.02, "back": 0.05, "switch": 0.01}
+INSTRUCTION_DIM = {"heading": 0, "altitude": 1, "speed": 2}
 FEATURES_2 = FEATURES + (
     "can_heading", "can_level", "can_speed", "off_path_nm", "heading_vs_plan", "to_join_nm", "join_angle",
     "height_margin_nm", "above_join_alt_ft", "since_instruction", "heading_offset", "level_offset", "speed_offset",
 )
 SAME_HEADING_DEG, SAME_LEVEL_FT, SAME_SPEED_KT = 2.5, 100.0, 5.0  # closer than this to the clearance: nothing to say
+
+
+def holds(policy) -> bool:
+    """Whether a saved AI (approach.ai.env.load_policy) chooses with "keep what's in force" (hold=True)."""
+    space = getattr(policy, "action_space", None)
+    return space is not None and int(space.nvec[0]) == HOLD_CHOICES[0]
+
+
+def offsets_in_force(obs: np.ndarray) -> np.ndarray:
+    """From the AI's picture(s), each aircraft place's adjustment in force as an index into OFFSETS (0 = as
+    planned): shape (..., N_MAX, 3)."""
+    out = []
+    for b, (name, scale) in enumerate((("heading_offset", 10.0), ("level_offset", 1000.0), ("speed_offset", 20.0))):
+        values = obs[..., FEATURES_2.index(name)] * scale
+        table = np.array(OFFSETS[b], dtype=np.float32)
+        out.append(np.abs(values[..., None] - table).argmin(axis=-1))
+    return np.stack(out, axis=-1)
+
+
+def habit_probs(obs: np.ndarray, habit: dict | None = None) -> list[np.ndarray]:
+    """The head start's targets with hold=True (HABIT): for heading, level and speed, the probability of each
+    choice for each aircraft place, shape (..., N_MAX, HOLD_CHOICES[b])."""
+    h = {**HABIT, **(habit or {})}
+    now = offsets_in_force(obs)
+    out = []
+    for b, k in enumerate(HOLD_CHOICES):
+        c = now[..., b]
+        p = np.zeros(c.shape + (k,), dtype=np.float32)
+        on = c == 0
+        n_alt = k - 2  # the alternatives to as planned
+        p[on, KEEP] = 1.0 - h["try"]
+        p[on, PLANNED + 1:] = h["try"] / n_alt
+        off = ~on
+        if off.any():
+            others = h["switch"] / (n_alt - 1)
+            p[off, KEEP] = 1.0 - h["back"] - h["switch"]
+            p[off, PLANNED] = h["back"]
+            p[off, PLANNED + 1:] = others
+            idx = np.nonzero(off)
+            p[idx + (PLANNED + c[off],)] = 0.0  # choosing the change in force again is keeping it
+        out.append(p)
+    return out
 
 
 def can_adjust(p, v) -> tuple[bool, bool, bool]:
@@ -76,12 +136,14 @@ class VectorController(Controller):
 
     name = "ai_vector"
 
-    def __init__(self, airport, runway: str, policy=None, name: str = "ai_vector", planner: dict | None = None):
+    def __init__(self, airport, runway: str, policy=None, name: str = "ai_vector", planner: dict | None = None,
+                 hold: bool = False):
         self.rules = RulesController(airport, runway, **{**PLANNER_2, **(planner or {})}, proposals=True)
+        self.hold = hold
         self.airport = airport
         self.policy = policy
         self.name = name
-        self.offsets: dict[str, tuple[int, int, int]] = {}  # aircraft -> (heading, level, speed) choice
+        self.offsets: dict[str, tuple[int, int, int]] = {}  # aircraft -> (heading, level, speed) index into OFFSETS
         self.last_t = -1e9
         self.last_said: dict[str, float] = {}  # aircraft -> when it was last given a heading, level or speed
         self.ai_said: set[tuple[str, str, float]] = set()  # instructions that differ from the plan (the AI's own)
@@ -95,10 +157,23 @@ class VectorController(Controller):
     def stage_of(self, cs: str):
         return self.rules.stage_of(cs)
 
-    def set_action(self, action, slots: list[str]) -> None:
-        """The AI's choices for the aircraft in the sequence: [heading per place] + [level ...] + [speed ...]."""
+    def set_action(self, action, slots: list[str], views: list | None = None) -> None:
+        """The AI's choices for the aircraft in the sequence: [heading per place] + [level ...] + [speed ...].
+        With hold=True, choice 0 keeps what is in force, 1 is as planned and 2... the alternatives; an adjustment
+        the AI cannot make now goes back to as planned (views are needed to tell)."""
         a = np.asarray(action, dtype=np.int64)
-        self.offsets = {cs: (int(a[i]), int(a[N_MAX + i]), int(a[2 * N_MAX + i])) for i, cs in enumerate(slots)}
+        if not self.hold:
+            self.offsets = {cs: (int(a[i]), int(a[N_MAX + i]), int(a[2 * N_MAX + i])) for i, cs in enumerate(slots)}
+            return
+        by_cs = {v.cs: v for v in views or []}
+        new = {}
+        for i, cs in enumerate(slots):
+            v, p = by_cs.get(cs), self.rules.plans.get(cs)
+            can = can_adjust(p, v) if v is not None else (False, False, False)
+            old = self.offsets.get(cs, (0, 0, 0))
+            new[cs] = tuple(0 if not can[b] else (old[b] if a[b * N_MAX + i] == KEEP else int(a[b * N_MAX + i]) - 1)
+                            for b in range(3))
+        self.offsets = new
 
     def clearances(self, t: float, views: list) -> list[tuple[Instruction, bool]]:
         """The instructions that bring each aircraft to its planned clearance plus the AI's adjustment, as
@@ -140,7 +215,7 @@ class VectorController(Controller):
         if self.policy is not None and t - self.last_t >= speed.DECISION_S:
             self.last_t = t
             obs, slots = observe_vector(views, self, t)
-            self.set_action(self.policy(obs), slots)
+            self.set_action(self.policy(obs), slots, views)
         out = []
         for instr, own in self.clearances(t, views):
             self.note_said(t, instr, own)
@@ -152,6 +227,11 @@ class VectorController(Controller):
             instr = event["instruction"]
             if (instr.callsign, instr.kind, float(instr.value)) in self.ai_said:
                 self.ai_blocked += 1
+                b = INSTRUCTION_DIM.get(instr.kind)
+                if self.hold and b is not None and instr.callsign in self.offsets:  # blocked: back to as planned
+                    o = list(self.offsets[instr.callsign])
+                    o[b] = 0
+                    self.offsets[instr.callsign] = tuple(o)
         self.rules.on_event(event)
 
 
@@ -206,27 +286,42 @@ def as_planned() -> np.ndarray:
 class VectorEnv(SpeedEnv):
     """Stage 2: one episode = one real hour of arrivals, one step = 10 seconds of the AI adjusting the planner."""
 
-    def __init__(self, *args, planner: dict | None = None, **kwargs):
+    def __init__(self, *args, planner: dict | None = None, hold: bool = False, **kwargs):
         kwargs.setdefault("pilots", "measured")
         kwargs.setdefault("lookahead", "model")
+        self.hold = hold
         super().__init__(*args, planner={**PLANNER_2, **(planner or {})}, **kwargs)
         self.observation_space = spaces.Box(-5.0, 5.0, shape=(N_MAX, len(FEATURES_2)), dtype=np.float32)
-        self.action_space = spaces.MultiDiscrete([CHOICES[0]] * N_MAX + [CHOICES[1]] * N_MAX + [CHOICES[2]] * N_MAX)
+        k = HOLD_CHOICES if hold else CHOICES
+        self.action_space = spaces.MultiDiscrete([k[0]] * N_MAX + [k[1]] * N_MAX + [k[2]] * N_MAX)
+        self.habit_rng = np.random.default_rng(kwargs.get("seed"))
+        self._last_obs = None
 
     def _make_controller(self, runway: str):
-        self.vector = VectorController(self.airport, runway, planner=self.planner)
+        self.vector = VectorController(self.airport, runway, planner=self.planner, hold=self.hold)
         self.vector.name = "rules_vector" if self.teacher else "ai_vector"
         return self.vector.rules, self.vector
 
     def teacher_action(self) -> np.ndarray:
         return as_planned()
 
+    def habit_action(self) -> np.ndarray:
+        """With hold=True, a choice drawn from the head start's habit (HABIT) for each aircraft: the planner, with
+        a held try now and then. It gives the head start pictures with changes in force, so it learns to go back."""
+        probs = habit_probs(self._last_obs)
+        a = np.zeros(3 * N_MAX, dtype=np.int64)
+        for b, p in enumerate(probs):
+            cum = p.cumsum(axis=-1)
+            u = self.habit_rng.random((N_MAX, 1))
+            a[b * N_MAX:(b + 1) * N_MAX] = np.minimum((u > cum).sum(axis=-1), p.shape[-1] - 1)
+        return a
+
     def _act(self, action) -> float:
         s, r, ctl = self.session, 0.0, self.vector
         s.views = s.world.views()
         self._downwind = set()
         before_blocked = ctl.ai_blocked
-        ctl.set_action(action, self.slots)
+        ctl.set_action(action, self.slots, s.views)
         for instr, own in ctl.clearances(s.t, s.views):
             ok, _ = s.instruct(instr)
             ctl.note_said(s.t, instr, own)
@@ -241,4 +336,5 @@ class VectorEnv(SpeedEnv):
 
     def _observe(self) -> np.ndarray:
         obs, self.slots = observe_vector(self.session.world.views(), self.vector, self.session.t)
+        self._last_obs = obs
         return obs

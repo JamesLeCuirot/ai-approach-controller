@@ -166,3 +166,78 @@ def test_losses_out_of_the_ais_reach_can_be_left_out_of_its_reward():
     assert reward("inbound", None) == (-5.0, 1)  # unchanged unless a run says otherwise
     assert reward("inbound", off) == (0.0, 1)  # both in or on their way to a stack: out of the AI's reach
     assert reward("downwind", off) == (-5.0, 0)  # the AI could have adjusted these
+
+
+def test_held_choices_stay_in_force_until_the_ai_changes_them(airport):
+    from types import SimpleNamespace
+
+    from approach.ai.vector import HEADING_OFFSETS, N_MAX, PLANNED, VectorController, as_planned
+
+    ctl = VectorController(airport, "26L", hold=True)
+    ctl.rules.plans["A"] = SimpleNamespace(stage="downwind", hdg_cmd=None, spd_cmd=None, alt_cmd=None)
+    v = SimpleNamespace(cs="A", loc=False, gs=False, along=20.0)
+    right10 = HEADING_OFFSETS.index(10)
+
+    def choose(heading=None, level=None, views=(v,)):
+        a = as_planned()  # all "keep"
+        if heading is not None:
+            a[0] = heading
+        if level is not None:
+            a[N_MAX] = level
+        ctl.set_action(a, ["A"], list(views))
+        return ctl.offsets["A"]
+
+    assert choose() == (0, 0, 0)  # keeping with nothing in force is as planned
+    assert choose(heading=PLANNED + right10)[0] == right10
+    for _ in range(5):
+        assert choose()[0] == right10  # kept until the AI changes it
+    assert choose(heading=PLANNED)[0] == 0  # back to as planned
+    choose(heading=PLANNED + right10, level=PLANNED + 2)
+    assert choose() == (right10, 2, 0)
+    v.loc = True  # on the localiser: the heading can no longer be adjusted, the level still can
+    assert choose() == (0, 2, 0)
+    v.loc = False
+    choose(heading=PLANNED + right10)
+    ctl.ai_said.add(("A", "heading", 100.0))
+    ctl.on_event({"kind": "blocked", "instruction": Instruction("A", "heading", 100.0), "t": 0})
+    assert ctl.offsets["A"] == (0, 2, 0)  # blocked: back to as planned rather than asking again every 10 s
+    assert ctl.ai_blocked == 1
+
+
+def test_the_head_start_habit_tries_now_and_then_and_goes_back():
+    from approach.ai.vector import FEATURES_2, HABIT, HOLD_CHOICES, KEEP, N_MAX, PLANNED, habit_probs
+
+    obs = np.zeros((2, N_MAX, len(FEATURES_2)), dtype=np.float32)
+    obs[1, 0, FEATURES_2.index("heading_offset")] = 1.0  # 10 degrees right in force
+    obs[1, 0, FEATURES_2.index("level_offset")] = -1.0  # 1,000 ft below in force
+    heading, level, speed = habit_probs(obs)
+    assert [p.shape[-1] for p in (heading, level, speed)] == list(HOLD_CHOICES)
+    for p in (heading, level, speed):
+        assert np.allclose(p.sum(axis=-1), 1.0)
+    assert heading[0, 0, KEEP] == pytest.approx(1 - HABIT["try"])
+    assert heading[0, 0, PLANNED] == 0.0  # "as planned" with nothing in force is keeping
+    assert heading[1, 0, KEEP] == pytest.approx(1 - HABIT["back"] - HABIT["switch"])
+    assert heading[1, 0, PLANNED] == pytest.approx(HABIT["back"])
+    assert heading[1, 0, -1] == 0.0  # choosing the change in force again is keeping it
+    assert level[1, 0, PLANNED + 2] == pytest.approx(HABIT["switch"])  # the only other level
+    assert heading[1, 1, KEEP] == pytest.approx(1 - HABIT["try"])  # the next aircraft has nothing in force
+
+
+def test_held_choices_fly_as_planned_when_the_ai_keeps_everything():
+    from types import SimpleNamespace
+
+    from approach.ai.vector import VectorEnv, as_planned, holds
+
+    counts = []
+    for hold in (False, True):
+        env = VectorEnv(seed=1, cached_winds_only=True, hold=hold)
+        env.reset(seed=3)
+        for _ in range(60):
+            _, _, done, _, _ = env.step(as_planned())
+            if done:
+                break
+        counts.append(dict(env.counts))
+    assert counts[0] == counts[1]
+    assert counts[1]["instructions"] == 0
+    assert holds(SimpleNamespace(action_space=VectorEnv(seed=1, cached_winds_only=True, hold=True).action_space))
+    assert not holds(SimpleNamespace(action_space=VectorEnv(seed=1, cached_winds_only=True).action_space))

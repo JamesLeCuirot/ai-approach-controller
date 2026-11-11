@@ -91,9 +91,10 @@ def _run(args: tuple) -> list[dict]:
 
     policy = load_policy(model_path) if model_path else None
     if vector:
-        from approach.ai.vector import VectorEnv
+        from approach.ai.vector import VectorEnv, holds
 
-        env, competitor = VectorEnv(hours=[s["hour"] for s in sessions], lookahead=lookahead), "rules_vector"
+        env = VectorEnv(hours=[s["hour"] for s in sessions], lookahead=lookahead, hold=holds(policy))
+        competitor = "rules_vector"  # "as planned" everywhere flies the same either way
     else:
         env, competitor = SpeedEnv(hours=[s["hour"] for s in sessions], base_turns=base_turns), "rules_speed"
     rows = []

@@ -94,5 +94,11 @@
       }
     },
     "minutes": 2.7
+  },
+  "stopped": {
+    "at_decisions": 250000,
+    "when": "2026-11-11 19:51 UTC",
+    "saved_as": "model_250k.zip",
+    "why": "test at 100k identical to the competitor; as planned still about 85-88% likely everywhere and never less likely than an alternative (scripts/choice_probabilities.py); losses of separation within its reach not falling in practice. A try lasts one 10-second decision, but the small-change check found changes must be held 1-4 minutes to help, so stage2-03 makes choices hold until the AI changes them"
   }
 }
