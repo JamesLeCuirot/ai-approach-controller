@@ -298,8 +298,10 @@ def test_the_look_ahead_can_stop_a_stack_descent_and_extend_a_downwind(airport):
     assert any(i.kind == "altitude" and i.value == 7000 for i, _ in ctl.clearances(0.0, [a]))  # the planner's descent
     assert ctl.hold_level("A", [a])
     assert not any(i.kind == "altitude" for i, _ in ctl.clearances(0.0, [a]))  # kept where it is
-    a.target_alt, a.alt_ft = 7000.0, 8670.0  # already on its way down: stopped at the level above
     ctl.release("A")
+    assert ctl.rules.plans["A"].alt_cmd is None  # the planner gives its level again
+    ctl.rules.plans["A"].alt_cmd = 7000
+    a.target_alt, a.alt_ft = 7000.0, 8670.0  # already on its way down: stopped at the level above
     assert ctl.hold_level("A", [a])
     assert [(i.value, own) for i, own in ctl.clearances(0.0, [a]) if i.kind == "altitude"] == [(9000.0, True)]
     assert ctl.hold_level("A", [a], step=1) and ctl.held_level["A"] == 10000.0  # or a level above

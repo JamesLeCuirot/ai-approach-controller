@@ -96,7 +96,12 @@ class LookAheadController(VectorController):
         return True
 
     def release(self, cs: str) -> None:
-        self.held_level.pop(cs, None)
+        """Back to the planner's levels. The planner still thinks its last level was given (it was held back), so
+        it is made to give its level again."""
+        if self.held_level.pop(cs, None) is not None:
+            p = self.rules.plans.get(cs)
+            if p is not None:
+                p.alt_cmd = None
 
     def extend_downwind(self, cs: str, nm: float) -> bool:
         """A longer downwind (a later base turn) for an aircraft not yet turned onto base."""
