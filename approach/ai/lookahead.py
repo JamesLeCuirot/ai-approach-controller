@@ -68,6 +68,17 @@ DIMS = ("heading", "level", "speed")
 REVERTS = ("release", "set_planned")
 
 
+def stack_hold_level(v, step: int = 0) -> float | None:
+    """The level LookAheadController.hold_level keeps an aircraft at, or None where it can't (below the stack)."""
+    from approach.controllers.rules import STACK_BASE_FT
+
+    level = v.target_alt
+    if v.target_alt < v.alt_ft - 100:
+        level = max(v.target_alt, math.ceil((v.alt_ft - 300) / 1000.0) * 1000.0)
+    level += 1000.0 * step
+    return level if level >= STACK_BASE_FT else None
+
+
 class LookAheadController(VectorController):
     """Stage 2's controller (hold=True), which can also stop an aircraft in or on its way to a stack at a level,
     and extend an aircraft's downwind."""
@@ -106,17 +117,12 @@ class LookAheadController(VectorController):
         """Keep an aircraft in or on its way to a stack where it is (step 0): at its cleared level, or, if
         descending, at the level above it; or 1,000 ft above (step 1) or below (step -1) that, never below the
         lowest stack level."""
-        from approach.controllers.rules import STACK_BASE_FT
-
         v = next((w for w in views if w.cs == cs), None)
         p = self.rules.plans.get(cs)
         if v is None or p is None or p.stage != "inbound":
             return False
-        level = v.target_alt
-        if v.target_alt < v.alt_ft - 100:
-            level = max(v.target_alt, math.ceil((v.alt_ft - 300) / 1000.0) * 1000.0)
-        level += 1000.0 * step
-        if level < STACK_BASE_FT:
+        level = stack_hold_level(v, step)
+        if level is None:
             return False
         self.held_level[cs] = level
         self.touched.add(cs)
@@ -436,8 +442,13 @@ MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend")
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves = args
+    sessions, draws, min_gain, with_competitor, moves, copy = args
     env = LookAheadEnv(hours=[s["hour"] for s in sessions])
+    policy = None
+    if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
+        from approach.ai.imitate import CopyDriver, load_copy
+
+        policy = load_copy(copy)
     rows = []
     for s in sessions:
         options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"]}
@@ -446,7 +457,10 @@ def _run(args: tuple) -> list[dict]:
             if with_competitor:
                 row, secs = fly_session(env, {**options, "teacher": True}, None)
                 rows.append({**meta, "controller": "rules_vector", **row})
-            la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves)
+            if policy is not None:
+                la = CopyDriver(policy)
+            else:
+                la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -478,8 +492,12 @@ def main() -> None:
     ap.add_argument("--moves", default="small", choices=("small", "wide"))
     ap.add_argument("--train", action="store_true",
                     help="training hours instead of the test's (for trying settings without looking at the test)")
+    ap.add_argument("--copy", default="",
+                    help="fly the network that copies the look-ahead (a saved approach.ai.imitate model) instead")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    if args.copy:
+        args.moves = "wide"
     rng = random.Random(args.seed)
     if args.train:
         from approach.ai.env import training_hours
@@ -492,7 +510,8 @@ def main() -> None:
     cache = COMPETITOR_DIR / f"2_seed{args.seed}_n120_{code_hash()}.csv"
     saved = list(csv.DictReader(cache.open())) if cache.is_file() and not args.train else []
     print(f"{'Reusing' if saved else 'Flying'} the competitor's results{' from ' + cache.name if saved else ''}", flush=True)
-    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves) for k in range(args.workers)]
+    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves, args.copy)
+              for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -510,7 +529,8 @@ def main() -> None:
     ai = [r for r in rows if r["controller"] == "ai"]
     looks = max(sum(int(r["looks"]) for r in ai), 1)
     la = LookAhead(moves=args.moves)
-    summary = {"controller": "lookahead", "moves": args.moves, "hours": "train" if args.train else "test",
+    summary = {"controller": "copy" if args.copy else "lookahead", **({"copy": args.copy} if args.copy else {}),
+               "moves": args.moves, "hours": "train" if args.train else "test",
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
                "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
