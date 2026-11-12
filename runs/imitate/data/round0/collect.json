@@ -1,0 +1,12 @@
+{
+  "cmd": "collect",
+  "sessions": 64,
+  "first": 0,
+  "workers": 4,
+  "seed": 31,
+  "window": 3600,
+  "driver": "",
+  "beta": 0.0,
+  "out": "runs/imitate/data/round0",
+  "hours": "train"
+}
