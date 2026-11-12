@@ -278,15 +278,13 @@ class LookAhead:
                     out += [("set", cs, b, PLANNED + k) for k in range(1, len(OFFSETS[b])) if k != now[b]]
             if self.moves != "wide":
                 continue
-            if cs in getattr(ctl, "held_level", {}):
-                out.append(("release", cs))
-            p, v = rules.plans.get(cs), views.get(cs)
-            if cs not in involved or p is None or v is None:
-                continue
-            if p.stage == "inbound" and cs not in ctl.held_level:
-                out.append(("hold_level", cs))
-            if p.stage == "downwind":
+            p = rules.plans.get(cs)
+            if cs in involved and p is not None and p.stage == "downwind":
                 out += [("extend", cs, nm) for nm in EXTEND_NM if p.d_join + nm <= rules.max_join(p.side) + 1e-6]
+        if self.moves == "wide":  # the stacks: aircraft not yet in the landing sequence (env.slots)
+            out += [("release", cs) for cs in sorted(ctl.held_level)]
+            out += [("hold_level", cs) for cs in sorted(involved) if cs in views and cs not in ctl.held_level
+                    and rules.stage_of(cs) == "inbound"]
         return out
 
     def choose(self, env: VectorEnv, obs: np.ndarray) -> np.ndarray:
@@ -297,7 +295,8 @@ class LookAhead:
         self.last_look = t
         anything = (obs[:len(env.slots)][:, CAN] > 0.5).any()
         if self.moves == "wide":  # an aircraft in or on its way to a stack can be stopped where it is
-            anything = anything or any(env.vector.rules.stage_of(cs) == "inbound" for cs in env.slots)
+            rules = env.vector.rules
+            anything = anything or any(rules.stage_of(v.cs) == "inbound" for v in env.session.world.views())
         if not anything:  # nothing it could change: no need to look
             self.stats["nothing_to_adjust"] += 1
             return apply_move(env, None)
