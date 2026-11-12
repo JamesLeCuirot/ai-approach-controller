@@ -440,22 +440,34 @@ def agreement(pred: np.ndarray, label: np.ndarray) -> dict:
             "nothing_when_look_ahead_did_nothing": round(float((~acted[~moved]).mean()), 3) if (~moved).any() else None}
 
 
-def fit(dirs: list[str], out: str, epochs: int = 60, lr: float = 1e-3, batch: int = 256, move_weight: float = 2.0,
-        val_every: int = 7, seed: int = 0) -> dict:
+def move_score(a: dict) -> float:
+    """How well the copy's moves match the look-ahead's: the share of the look-ahead's moves it makes exactly, and
+    the share of its moves that are exactly the look-ahead's, combined (their harmonic mean)."""
+    r, p = a["same_move_when_look_ahead_moved"] or 0.0, a["same_move_when_copy_moved"] or 0.0
+    return 2 * r * p / (r + p) if r + p > 0 else 0.0
+
+
+def fit(dirs: list[str], out: str, epochs: int = 100, lr: float = 1e-3, batch: int = 128, move_weight: float = 4.0,
+        weight_decay: float = 0.01, val_every: int = 7, seed: int = 0, threads: int = 4) -> dict:
     """Train the copy on the recorded looks (sessions whose number is a multiple of val_every are held out to
-    measure it), keeping the network that does best on the held-out looks."""
+    measure it), keeping the network whose moves best match the look-ahead's on the held-out looks (move_score).
+
+    With 14 sessions, a network trained long enough made every recorded move exactly on its training looks but only
+    13-23% of them on held-out sessions, so it is held back from memorising them (weight decay), and the held-out
+    loss is not the measure to keep it by: it was lowest after 14 passes, when the copy still made a fifth of the
+    look-ahead's moves even on its training looks."""
     import copy as copy_module
 
     from torch.nn import functional as F
 
     torch.manual_seed(seed)
-    torch.set_num_threads(4)
+    torch.set_num_threads(threads)
     x, m, y, prob, sess = load_data(dirs)
     val = (sess % 10000) % val_every == 0
     xt, mt, yt = (torch.as_tensor(a[~val]) for a in (x, m, y))
     xv, mv, yv = (torch.as_tensor(a[val]) for a in (x, m, y))
     policy = make_policy()
-    opt = torch.optim.Adam(policy.parameters(), lr=lr)
+    opt = torch.optim.AdamW(policy.parameters(), lr=lr, weight_decay=weight_decay)
     weight_t = torch.where(yt == 0, 1.0, move_weight)
 
     def evaluate(xe, me, ye):
@@ -466,7 +478,7 @@ def fit(dirs: list[str], out: str, epochs: int = 60, lr: float = 1e-3, batch: in
             loss = float((F.nll_loss(lp, ye, reduction="none") * w).sum() / w.sum())
         return loss, lp.argmax(dim=1).numpy()
 
-    best, best_loss, history, t0 = None, float("inf"), [], time.time()
+    best, best_score, history, t0 = copy_module.deepcopy(policy.state_dict()), -1.0, [], time.time()
     for epoch in range(epochs):
         policy.set_training_mode(True)
         perm = torch.randperm(len(xt))
@@ -480,12 +492,13 @@ def fit(dirs: list[str], out: str, epochs: int = 60, lr: float = 1e-3, batch: in
             torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
             opt.step()
         vloss, vpred = evaluate(xv, mv, yv)
-        history.append({"epoch": epoch + 1, "held_out_loss": round(vloss, 4), **agreement(vpred, y[val])})
-        print(f"epoch {epoch + 1}: held-out loss {vloss:.4f}; "
-              f"same move {history[-1]['same_move_when_look_ahead_moved']}, "
-              f"look-ahead moved when copy moved {history[-1]['look_ahead_moved_when_copy_moved']}", flush=True)
-        if vloss < best_loss:
-            best, best_loss = copy_module.deepcopy(policy.state_dict()), vloss
+        a = agreement(vpred, y[val])
+        history.append({"epoch": epoch + 1, "held_out_loss": round(vloss, 4), "move_score": round(move_score(a), 3), **a})
+        print(f"epoch {epoch + 1}: held-out loss {vloss:.4f}, move score {move_score(a):.3f}; same move "
+              f"{a['same_move_when_look_ahead_moved']}, look-ahead moved when copy moved "
+              f"{a['look_ahead_moved_when_copy_moved']}", flush=True)
+        if move_score(a) > best_score:
+            best, best_score = copy_module.deepcopy(policy.state_dict()), move_score(a)
     policy.load_state_dict(best)
     _, tpred = evaluate(xt, mt, yt)
     vloss, vpred = evaluate(xv, mv, yv)
@@ -506,10 +519,12 @@ def fit(dirs: list[str], out: str, epochs: int = 60, lr: float = 1e-3, batch: in
     record = {"data": dirs, "looks": int(len(y)), "held_out_looks": int(val.sum()),
               "sessions": int(len(set(sess.tolist()))), "held_out_sessions": int(len(set(sess[val].tolist()))),
               "look_ahead_moves": int((y != 0).sum()), "looks_with_a_problem": int(prob.sum()),
-              "epochs": epochs, "lr": lr, "batch": batch, "move_weight": move_weight, "seed": seed,
+              "epochs": epochs, "lr": lr, "batch": batch, "move_weight": move_weight, "weight_decay": weight_decay,
+              "seed": seed, "kept_by": "held-out move_score",
               "policy": {"rows": N_ROWS, "features": len(COPY_FEATURES), "actions": N_ACTIONS, **COPY_POLICY_KWARGS},
               "parameters": int(sum(p.numel() for p in policy.parameters())),
-              "best_epoch": int(np.argmin([h["held_out_loss"] for h in history]) + 1), "held_out_loss": round(vloss, 4),
+              "best_epoch": int(np.argmax([h["move_score"] for h in history]) + 1), "held_out_loss": round(vloss, 4),
+              "held_out_move_score": round(best_score, 3),
               "held_out": agreement(vpred, y[val]), "training": agreement(tpred, y[~val]), "by_kind": kinds,
               "minutes": round((time.time() - t0) / 60, 1), "history": history}
     (path / "fit.json").write_text(json.dumps(record, indent=2))
@@ -531,15 +546,17 @@ def main() -> None:
     f = sub.add_parser("fit", help="train the copy on recorded decisions")
     f.add_argument("--data", action="append", required=True)
     f.add_argument("--out", required=True)
-    f.add_argument("--epochs", type=int, default=60)
+    f.add_argument("--epochs", type=int, default=100)
     f.add_argument("--lr", type=float, default=1e-3)
-    f.add_argument("--move-weight", type=float, default=2.0)
+    f.add_argument("--move-weight", type=float, default=4.0)
+    f.add_argument("--weight-decay", type=float, default=0.01)
     f.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
     if args.cmd == "collect":
         collect_main(args)
     else:
-        record = fit(args.data, args.out, epochs=args.epochs, lr=args.lr, move_weight=args.move_weight, seed=args.seed)
+        record = fit(args.data, args.out, epochs=args.epochs, lr=args.lr, move_weight=args.move_weight,
+                     weight_decay=args.weight_decay, seed=args.seed)
         print(json.dumps({k: v for k, v in record.items() if k != "history"}, indent=2))
 
 
