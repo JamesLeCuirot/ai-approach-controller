@@ -75,6 +75,32 @@ class LookAheadController(VectorController):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **{**kwargs, "hold": True})
         self.held_level: dict[str, float] = {}
+        self.touched: set[str] = set()  # aircraft given a stack level, until they leave the stack
+
+    def decide(self, t: float, views: list) -> list[Instruction]:
+        self._stack_order(views)
+        return super().decide(t, views)
+
+    def _stack_order(self, views: list) -> None:
+        """In a stack where an aircraft was given a level, the aircraft holding leave lowest first.
+
+        The planner's queue follows the order the aircraft joined the stack, and its lowest aircraft leaves first,
+        so the two agree only while the stack fills from the bottom in that order. An aircraft kept high can join
+        above aircraft that joined after it, and then neither can leave: the higher one waits for the one below,
+        which waits behind it in the queue. In such a stack the queue goes by height instead.
+        """
+        plans = self.rules.plans
+        self.touched = {cs for cs in self.touched if cs in plans and plans[cs].stage == "inbound"}
+        by_cs = {v.cs: v for v in views}
+        for fix in {plans[cs].hold_fix for cs in self.touched}:
+            members = [p for p in plans.values() if p.stage == "inbound" and p.holding and not p.below_stack
+                       and p.hold_fix == fix and p.cs in by_cs]
+            keys = sorted(p.key for p in members)
+            by_height = sorted(members, key=lambda p: by_cs[p.cs].alt_ft)
+            if [p.key for p in by_height] != keys:
+                for p, key in zip(by_height, keys):
+                    p.key = key
+                self.rules.last_plan_t = -1e9  # replan now
 
     def hold_level(self, cs: str, views: list, step: int = 0) -> bool:
         """Keep an aircraft in or on its way to a stack where it is (step 0): at its cleared level, or, if
@@ -93,11 +119,12 @@ class LookAheadController(VectorController):
         if level < STACK_BASE_FT:
             return False
         self.held_level[cs] = level
+        self.touched.add(cs)
         return True
 
     def release(self, cs: str) -> None:
-        """Back to the planner's levels. The planner still thinks its last level was given (it was held back), so
-        it is made to give its level again."""
+        """Back to the planner's levels. Its last level may be long out of date (it was held back), so it chooses
+        a free level again rather than have the old one given now."""
         if self.held_level.pop(cs, None) is not None:
             p = self.rules.plans.get(cs)
             if p is not None:

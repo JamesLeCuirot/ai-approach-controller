@@ -316,3 +316,13 @@ def test_the_look_ahead_can_stop_a_stack_descent_and_extend_a_downwind(airport):
     longest = ctl.rules.max_join(-1.0)
     assert ctl.extend_downwind("B", 1.0) == (11.0 + 1.0 <= longest + 1e-6)
     assert not ctl.extend_downwind("B", longest)  # never beyond the RMA
+
+    # An aircraft kept high joins its stack above one that joined after it: the queue goes by height there.
+    stack = dict(stage="inbound", holding=True, below_stack=False, hold_fix="WILLO")
+    ctl.rules.plans = {"H": SimpleNamespace(cs="H", key=1.0, **stack), "L": SimpleNamespace(cs="L", key=2.0, **stack)}
+    views = [SimpleNamespace(cs="H", alt_ft=12000.0), SimpleNamespace(cs="L", alt_ft=8000.0)]
+    ctl._stack_order(views)
+    assert ctl.rules.plans["H"].key == 1.0  # untouched by the look-ahead: the planner's order
+    ctl.touched.add("H")
+    ctl._stack_order(views)
+    assert (ctl.rules.plans["L"].key, ctl.rules.plans["H"].key) == (1.0, 2.0)  # the lower one leaves first
