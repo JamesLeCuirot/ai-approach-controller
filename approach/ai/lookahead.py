@@ -1,26 +1,40 @@
 """Stage 2's look-ahead controller: it tries changes in copies of the simulator before giving them.
 
-Every LOOK_EVERY_S it flies the next HORIZON_S forward from the current moment in copies of the simulator (forked
+Every LOOK_EVERY_S it flies the next minutes forward from the current moment in copies of the simulator (forked
 processes), keeping every adjustment in force (with nothing in force that is the planner's own clearances), DRAWS
 times. In each copy every pilot is drawn again from the measured spread (approach.sim.world, pilots="measured"),
 and so are the pilots' response delays: a controller does not know how a particular crew will fly. If any copy
-shows a loss of separation or a go-around, it flies the same copies again with each single change it could make to
-the aircraft involved (and, for a go-around, the aircraft ahead of it): a heading 5 or 10 degrees either way, a level
-1,000 ft up or down, a speed 10 or 20 kt either way, or back to as planned for a change already in force. Each
-change is held through the copy. It gives the change whose copies score best, if they score at least MIN_GAIN
-better than doing nothing; the score is the training world's reward over the copies' minutes (5 for each loss of
-separation, 3 for each go-around or wake infringement, 1 for each landing, and the small terms for gaps, profile,
-instructions and time in the sector). A change in force is also tried back to as planned at every look, and taken
-back when that scores no worse. One change at a time: at most one per look.
+shows a problem, it flies the same copies again with each single move it could make to the aircraft involved, and
+gives the move whose copies score best, if they score at least MIN_GAIN better than doing nothing. A move in force
+is also tried taken back at every look, and taken back when that scores no worse. One move at a time: at most one
+per look.
+
+The score is the training world's reward over the copies' minutes (5 for each loss of separation, 3 for each
+go-around or wake infringement, 1 for each landing, and the small terms for gaps, profile, instructions and time
+in the sector), less gap_weight for each gap inside the minimum at a landing.
+
+Two sets of moves (``moves``):
+
+* "small" (the first version, runs/lookahead/v1_120): looks HORIZON_S (5 minutes) ahead; the problems are losses
+  of separation and go-arounds; the moves are stage 2's AI's (approach.ai.vector, hold=True) for the aircraft
+  involved (and the aircraft ahead of one that goes around): a heading 5 or 10 degrees either way, a level 1,000 ft
+  up or down, a speed 10 or 20 kt either way, held until taken back.
+* "wide": looks HORIZON_WIDE_S (7 minutes) ahead, so a decision on the downwind can see the landing; a gap inside
+  the minimum is a problem too (its follower and leader are involved), counting GAP_WEIGHT; and two more moves:
+  stop an aircraft in or on its way to a stack where it is (a holding aircraft cleared down through, or into, a
+  level another holding aircraft will be at was the commonest loss of separation left), until taken back; and
+  extend an aircraft's downwind by 1 or 2 NM before its base turn (a gap inside the minimum on final can't be
+  opened once the follower is on the localiser).
 
 What the copies know is what a controller would: the traffic in the sector and the arrivals due in the next few
 minutes (the scenario's real arrivals spawn in the copies at their real times, as their flight strips would show),
 the wind, the planner's plan, and the safety check. They do not know how each crew will fly.
 
-The changes are the same as stage 2's AI makes (approach.ai.vector, hold=True), so the look-ahead controller flies
-in VectorEnv and its sessions compare like for like with the competitor's ("as planned" everywhere).
+The look-ahead flies in LookAheadEnv: stage 2's training world (VectorEnv, hold=True) with a controller that also
+takes the wide moves. With no move made it flies exactly as VectorEnv does, so its sessions compare like for like
+with the competitor's ("as planned" everywhere).
 
-    PYTHONPATH=. python -m approach.ai.lookahead --sessions 12 --workers 4 --out runs/lookahead/first12
+    PYTHONPATH=. python -m approach.ai.lookahead --moves wide --sessions 120 --workers 4 --out runs/lookahead/v2_120
 """
 
 from __future__ import annotations
@@ -35,14 +49,103 @@ from collections import Counter
 
 import numpy as np
 
-from approach.ai.vector import FEATURES_2, HOLD_CHOICES, KEEP, N_MAX, OFFSETS, PLANNED, VectorEnv
+from approach.ai.vector import FEATURES_2, N_MAX, OFFSETS, PLANNED, VectorController, VectorEnv
+from approach.instructions import Instruction
 
 LOOK_EVERY_S = 30
 HORIZON_S = 300
+HORIZON_WIDE_S = 420
 DRAWS = 3
-MIN_GAIN = 1.0  # a change must score this much better than doing nothing (a fifth of a loss of separation)
+MIN_GAIN = 1.0  # a move must score this much better than doing nothing (a fifth of a loss of separation)
+GAP_WEIGHT = 3.0  # "wide": each gap inside the minimum at a landing, in the score
+EXTEND_NM = (1.0, 2.0)
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
+REVERTS = ("release", "set_planned")
+
+
+class LookAheadController(VectorController):
+    """Stage 2's controller (hold=True), which can also stop an aircraft in or on its way to a stack at a level,
+    and extend an aircraft's downwind."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **{**kwargs, "hold": True})
+        self.held_level: dict[str, float] = {}
+
+    def hold_level(self, cs: str, views: list) -> bool:
+        """Keep an aircraft in or on its way to a stack where it is: at its cleared level, or, if descending, at the
+        level above it."""
+        v = next((w for w in views if w.cs == cs), None)
+        p = self.rules.plans.get(cs)
+        if v is None or p is None or p.stage != "inbound":
+            return False
+        level = v.target_alt
+        if v.target_alt < v.alt_ft - 100:
+            level = max(v.target_alt, math.ceil((v.alt_ft - 300) / 1000.0) * 1000.0)
+        self.held_level[cs] = level
+        return True
+
+    def release(self, cs: str) -> None:
+        self.held_level.pop(cs, None)
+
+    def extend_downwind(self, cs: str, nm: float) -> bool:
+        """A longer downwind (a later base turn) for an aircraft not yet turned onto base."""
+        p = self.rules.plans.get(cs)
+        if p is None or p.stage != "downwind" or p.d_join + nm > self.rules.max_join(p.side) + 1e-6:
+            return False
+        p.d_join += nm  # the planner never shortens a downwind, so this holds
+        self.rules.last_plan_t = -1e9
+        return True
+
+    def clearances(self, t: float, views: list) -> list[tuple[Instruction, bool]]:
+        out = super().clearances(t, views)
+        if not self.held_level:
+            return out
+        by_cs = {v.cs: v for v in views}
+        for cs in list(self.held_level):
+            p = self.rules.plans.get(cs)
+            if p is None or p.stage != "inbound" or cs not in by_cs:
+                del self.held_level[cs]  # off the stack (or gone): the planner's again
+        out = [(i, own) for i, own in out if not (i.kind == "altitude" and i.callsign in self.held_level)]
+        for cs, level in self.held_level.items():
+            if abs(by_cs[cs].target_alt - level) >= 100:
+                out.append((Instruction(cs, "altitude", level), True))
+        return out
+
+    def on_event(self, event: dict) -> None:
+        if event.get("kind") == "blocked":
+            instr = event["instruction"]
+            if instr.kind == "altitude" and instr.callsign in self.held_level:
+                self.held_level.pop(instr.callsign, None)
+        super().on_event(event)
+
+
+class LookAheadEnv(VectorEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **{**kwargs, "hold": True})
+
+    def _make_controller(self, runway: str):
+        self.vector = LookAheadController(self.airport, runway, planner=self.planner)
+        self.vector.name = "rules_vector" if self.teacher else "ai_vector"
+        return self.vector.rules, self.vector
+
+
+def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
+    """Make a move: the choices for the step, with any other move made on the controller."""
+    action = np.zeros(3 * N_MAX, dtype=np.int64)  # keep everywhere
+    if move is None:
+        return action
+    kind, cs = move[0], move[1]
+    ctl = env.vector
+    if kind in ("set", "set_planned") and cs in env.slots:
+        action[move[2] * N_MAX + env.slots.index(cs)] = move[3]
+    elif kind == "hold_level":
+        ctl.hold_level(cs, env.session.world.views())
+    elif kind == "release":
+        ctl.release(cs)
+    elif kind == "extend":
+        ctl.extend_downwind(cs, move[2])
+    return action
 
 
 def redraw_pilots(world, seed: int) -> None:
@@ -69,8 +172,9 @@ def redraw_pilots(world, seed: int) -> None:
 
 
 def _instrument(env: VectorEnv, log: dict) -> None:
-    """Record each new loss of separation (the pair) and each go-around, in this copy."""
+    """Record each new loss of separation (the pair), go-around and gap inside the minimum, in this copy."""
     conflicts, advance = type(env)._conflicts.__get__(env), type(env)._advance.__get__(env)
+    gap_at_landing = type(env)._gap_at_landing.__get__(env)
 
     def _conflicts():
         old = set(env.in_conflict)
@@ -83,16 +187,25 @@ def _instrument(env: VectorEnv, log: dict) -> None:
         log["go_arounds"] += [e["cs"] for e in events if e["kind"] == "go_around"]
         return r, events
 
-    env._conflicts, env._advance = _conflicts, _advance
+    def _gap(cs, views):
+        n = len(env.gaps)
+        r = gap_at_landing(cs, views)
+        if len(env.gaps) > n and env.gaps[-1][0] < env.gaps[-1][1] - 0.5:
+            follower = min((v for v in views.values() if v.cs != cs and v.loc and v.along > 0), key=lambda v: v.along)
+            log["gaps"].append([cs, follower.cs])
+        return r
+
+    env._conflicts, env._advance, env._gap_at_landing = _conflicts, _advance, _gap
 
 
-def _copy(env: VectorEnv, seed: int, action: np.ndarray) -> dict:
-    """In a forked child: fly HORIZON_S on with fresh pilots, the given choices now and keep after."""
+def _copy(env: VectorEnv, seed: int, move: tuple | None, horizon_s: float) -> dict:
+    """In a forked child: make the move, then fly on with fresh pilots, keeping everything, for horizon_s."""
     redraw_pilots(env.session.world, seed)
-    log = {"losses": [], "go_arounds": []}
+    log = {"losses": [], "go_arounds": [], "gaps": []}
     _instrument(env, log)
-    t_end, total, done, first = env.session.t + HORIZON_S, 0.0, False, True
+    action = apply_move(env, move)
     keep = np.zeros_like(action)
+    t_end, total, done, first = env.session.t + horizon_s, 0.0, False, True
     while not done and env.session.t < t_end:
         _, r, done, _, _ = env.step(action if first else keep)
         first = False
@@ -100,18 +213,19 @@ def _copy(env: VectorEnv, seed: int, action: np.ndarray) -> dict:
     return {"reward": total, **log}
 
 
-def fly_copies(env: VectorEnv, jobs: list[tuple[int, np.ndarray]], workers: int = 1) -> list[dict]:
-    """Fly each (pilot seed, choices) from the current moment in its own forked copy of the simulator."""
+def fly_copies(env: VectorEnv, jobs: list[tuple[int, tuple | None]], workers: int = 1,
+               horizon_s: float = HORIZON_S) -> list[dict]:
+    """Fly each (pilot seed, move) from the current moment in its own forked copy of the simulator."""
     out, running, queue = [None] * len(jobs), {}, list(enumerate(jobs))
     while queue or running:
         while queue and len(running) < workers:
-            i, (seed, action) = queue.pop(0)
+            i, (seed, move) = queue.pop(0)
             r, w = os.pipe()
             pid = os.fork()
             if pid == 0:  # the copy
                 os.close(r)
                 try:
-                    res = _copy(env, seed, action)
+                    res = _copy(env, seed, move, horizon_s)
                 except Exception as e:  # noqa: BLE001
                     res = {"error": repr(e)}
                 with os.fdopen(w, "w") as f:
@@ -128,10 +242,15 @@ def fly_copies(env: VectorEnv, jobs: list[tuple[int, np.ndarray]], workers: int 
 
 
 class LookAhead:
-    """Chooses stage 2's adjustments (hold=True) by trying them in copies of the simulator."""
+    """Chooses stage 2's adjustments (and, with moves="wide", the wider moves) by trying them in copies."""
 
-    def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0):
-        self.workers, self.draws, self.min_gain = workers, draws, min_gain
+    def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
+                 moves: str = "small"):
+        if moves not in ("small", "wide"):
+            raise ValueError("moves must be small or wide")
+        self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
+        self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
+        self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
         self.last_look = -1e9
         self.stats = Counter()
@@ -140,45 +259,63 @@ class LookAhead:
     def reset(self) -> None:
         self.last_look = -1e9
 
-    def candidates(self, env: VectorEnv, obs: np.ndarray, involved: set[str]) -> list[tuple[str, int, int]]:
-        """(aircraft, kind of adjustment, choice): back to as planned for each change in force, and every other
-        choice for each aircraft involved, where the AI can adjust it now."""
-        out = []
+    def score(self, copy: dict) -> float:
+        return copy["reward"] - self.gap_weight * len(copy.get("gaps", []))
+
+    def candidates(self, env: VectorEnv, obs: np.ndarray, involved: set[str]) -> list[tuple]:
+        """Taking back each move in force, and every move for each aircraft involved, where it can be made now."""
+        ctl, out = env.vector, []
+        rules = ctl.rules
+        views = {v.cs: v for v in env.session.world.views()}
         for i, cs in enumerate(env.slots):
-            now = env.vector.offsets.get(cs, (0, 0, 0))
+            now = ctl.offsets.get(cs, (0, 0, 0))
             for b in range(3):
                 if obs[i, CAN[b]] < 0.5:
                     continue
                 if now[b] != 0:
-                    out.append((cs, b, PLANNED))
+                    out.append(("set_planned", cs, b, PLANNED))
                 if cs in involved:
-                    out += [(cs, b, PLANNED + k) for k in range(1, len(OFFSETS[b])) if k != now[b]]
+                    out += [("set", cs, b, PLANNED + k) for k in range(1, len(OFFSETS[b])) if k != now[b]]
+            if self.moves != "wide":
+                continue
+            if cs in getattr(ctl, "held_level", {}):
+                out.append(("release", cs))
+            p, v = rules.plans.get(cs), views.get(cs)
+            if cs not in involved or p is None or v is None:
+                continue
+            if p.stage == "inbound" and cs not in ctl.held_level:
+                out.append(("hold_level", cs))
+            if p.stage == "downwind":
+                out += [("extend", cs, nm) for nm in EXTEND_NM if p.d_join + nm <= rules.max_join(p.side) + 1e-6]
         return out
 
     def choose(self, env: VectorEnv, obs: np.ndarray) -> np.ndarray:
-        """The choices for this step: keep everything, except at a look, when one change may be made."""
-        action = np.zeros(3 * N_MAX, dtype=np.int64)  # KEEP everywhere
+        """The choices for this step: keep everything, except at a look, when one move may be made."""
         t = env.session.t
         if t - self.last_look < LOOK_EVERY_S:
-            return action
+            return apply_move(env, None)
         self.last_look = t
-        if not (obs[:len(env.slots)][:, CAN] > 0.5).any():  # nothing it could change: no need to look
+        anything = (obs[:len(env.slots)][:, CAN] > 0.5).any()
+        if self.moves == "wide":  # an aircraft in or on its way to a stack can be stopped where it is
+            anything = anything or any(env.vector.rules.stage_of(cs) == "inbound" for cs in env.slots)
+        if not anything:  # nothing it could change: no need to look
             self.stats["nothing_to_adjust"] += 1
-            return action
+            return apply_move(env, None)
         t0 = time.time()
         try:
-            return self._look(env, obs, action, t)
+            move = self._look(env, obs, t)
         finally:
             self.stats["look_seconds"] += time.time() - t0
+        return apply_move(env, move)
 
-    def _look(self, env: VectorEnv, obs: np.ndarray, action: np.ndarray, t: float) -> np.ndarray:
+    def _look(self, env: VectorEnv, obs: np.ndarray, t: float) -> tuple | None:
         seeds = [self.rng.randrange(1 << 30) for _ in range(self.draws)]
-        base = fly_copies(env, [(s, action) for s in seeds], self.workers)
+        base = fly_copies(env, [(s, None) for s in seeds], self.workers, self.horizon_s)
         base = [b for b in base if "error" not in b]
         self.stats["looks"] += 1
         self.stats["copies"] += len(seeds)
         if not base:
-            return action
+            return None
         involved = set()
         for b in base:
             for pair in b["losses"]:
@@ -187,37 +324,39 @@ class LookAhead:
                 involved.add(cs)
                 if cs in env.slots and env.slots.index(cs) > 0:
                     involved.add(env.slots[env.slots.index(cs) - 1])  # the aircraft ahead of it
+            if self.moves == "wide":
+                for pair in b["gaps"]:
+                    involved.update(pair)
         if involved:
             self.stats["looks_with_a_problem"] += 1
         cands = self.candidates(env, obs, involved)
         if not cands:
-            return action
-        jobs = []
-        for cs, b, choice in cands:
-            a = action.copy()
-            a[b * N_MAX + env.slots.index(cs)] = choice
-            jobs += [(s, a) for s in seeds]
-        res = fly_copies(env, jobs, self.workers)
+            return None
+        jobs = [(s, cand) for cand in cands for s in seeds]
+        res = fly_copies(env, jobs, self.workers, self.horizon_s)
         self.stats["copies"] += len(jobs)
-        base_score = float(np.mean([b["reward"] for b in base]))
+        base_score = float(np.mean([self.score(b) for b in base]))
         best, best_gain = None, None
         for k, cand in enumerate(cands):
             rs = [r for r in res[k * len(seeds):(k + 1) * len(seeds)] if "error" not in r]
             if len(rs) < len(seeds):
                 continue
-            gain = float(np.mean([r["reward"] for r in rs])) - base_score
-            need = 0.0 if cand[2] == PLANNED else self.min_gain
+            gain = float(np.mean([self.score(r) for r in rs])) - base_score
+            need = 0.0 if cand[0] in REVERTS else self.min_gain
             if gain >= need and (best_gain is None or gain > best_gain):
                 best, best_gain = cand, gain
         if best is None:
-            return action
-        cs, b, choice = best
-        action[b * N_MAX + env.slots.index(cs)] = choice
-        offset = 0 if choice == PLANNED else OFFSETS[b][choice - 1]
-        self.stats["back_to_plan" if choice == PLANNED else "changes"] += 1
-        self.changes.append({"t": round(t), "aircraft": cs, "kind": DIMS[b], "offset": offset,
-                             "gain": round(best_gain, 2), "problem": bool(involved)})
-        return action
+            return None
+        self.stats[best[0]] += 1
+        self.stats["back_to_plan" if best[0] in REVERTS else "changes"] += 1
+        entry = {"t": round(t), "move": best[0], "aircraft": best[1], "gain": round(best_gain, 2),
+                 "problem": bool(involved)}
+        if best[0] in ("set", "set_planned"):
+            entry.update({"kind": DIMS[best[2]], "offset": 0 if best[3] == PLANNED else OFFSETS[best[2]][best[3] - 1]})
+        elif best[0] == "extend":
+            entry["nm"] = best[2]
+        self.changes.append(entry)
+        return best
 
 
 def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[dict, float]:
@@ -235,9 +374,12 @@ def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[di
     return episode_row(info, total), time.time() - t0
 
 
+MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend")
+
+
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor = args
-    env = VectorEnv(hours=[s["hour"] for s in sessions], hold=True)
+    sessions, draws, min_gain, with_competitor, moves = args
+    env = LookAheadEnv(hours=[s["hour"] for s in sessions])
     rows = []
     for s in sessions:
         options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"]}
@@ -246,15 +388,17 @@ def _run(args: tuple) -> list[dict]:
             if with_competitor:
                 row, secs = fly_session(env, {**options, "teacher": True}, None)
                 rows.append({**meta, "controller": "rules_vector", **row})
-            la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"])
+            la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
                          "copies": la.stats["copies"], "changes": la.stats["changes"],
                          "back_to_plan": la.stats["back_to_plan"],
+                         **{f"moves_{k}": la.stats[k] for k in MOVE_KINDS},
                          "look_s": round(la.stats["look_seconds"], 1), "change_log": json.dumps(la.changes)})
             print(f"session {s['id']}: {row['separation_losses']} losses of separation, {row['go_arounds']} go-arounds, "
-                  f"{la.stats['changes']} changes, {la.stats['copies']} copies, {secs / 60:.1f} min", flush=True)
+                  f"{row['gaps_inside_minimum']} gaps inside the minimum, {la.stats['changes']} changes, "
+                  f"{la.stats['copies']} copies, {secs / 60:.1f} min", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"session {s['id']} {s['hour']} skipped: {e!r}", flush=True)
     return rows
@@ -265,7 +409,7 @@ def main() -> None:
     from multiprocessing import Pool
     from pathlib import Path
 
-    from approach.ai.evaluate import (COMPETITOR_DIR, _fields, code_hash, real_rows, summarise, test_hours)
+    from approach.ai.evaluate import COMPETITOR_DIR, _fields, code_hash, real_rows, summarise, test_hours
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sessions", type=int, default=120, help="the first N of the test's 120 sessions")
@@ -273,23 +417,31 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--draws", type=int, default=DRAWS)
     ap.add_argument("--min-gain", type=float, default=MIN_GAIN)
+    ap.add_argument("--moves", default="small", choices=("small", "wide"))
+    ap.add_argument("--train", action="store_true",
+                    help="training hours instead of the test's (for trying settings without looking at the test)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     rng = random.Random(args.seed)
-    hours = test_hours()
+    if args.train:
+        from approach.ai.env import training_hours
+
+        hours = training_hours()
+    else:
+        hours = test_hours()
     sessions = [{"id": k, "hour": rng.choice(hours), "offset_s": rng.uniform(0, 3600), "pilot_seed": rng.randrange(1 << 30)}
                 for k in range(120)][:args.sessions]  # the test's own sessions, in its order
     cache = COMPETITOR_DIR / f"2_seed{args.seed}_n120_{code_hash()}.csv"
-    saved = list(csv.DictReader(cache.open())) if cache.is_file() else []
+    saved = list(csv.DictReader(cache.open())) if cache.is_file() and not args.train else []
     print(f"{'Reusing' if saved else 'Flying'} the competitor's results{' from ' + cache.name if saved else ''}", flush=True)
-    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved) for k in range(args.workers)]
+    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves) for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
     if saved:
         rows += [r for r in saved if int(r["session"]) in flown]
-    else:
-        rows += [r for r in real_rows([s for s in sessions if s["id"] in flown])]
+    elif not args.train:
+        rows += real_rows([s for s in sessions if s["id"] in flown])
     rows.sort(key=lambda r: (int(r["session"]), r["controller"]))
     base = Path(args.out)
     base.parent.mkdir(parents=True, exist_ok=True)
@@ -298,12 +450,16 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
     ai = [r for r in rows if r["controller"] == "ai"]
-    summary = {"controller": "lookahead", "sessions": len(flown), "seed": args.seed, "draws": args.draws,
-               "min_gain": args.min_gain, "look_every_s": LOOK_EVERY_S, "horizon_s": HORIZON_S,
+    looks = max(sum(int(r["looks"]) for r in ai), 1)
+    la = LookAhead(moves=args.moves)
+    summary = {"controller": "lookahead", "moves": args.moves, "hours": "train" if args.train else "test",
+               "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
+               "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
-               "copies": sum(int(r["copies"]) for r in ai), "looks": sum(int(r["looks"]) for r in ai),
+               **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
+               "copies": sum(int(r["copies"]) for r in ai), "looks": looks,
                "looks_with_a_problem": sum(int(r["looks_with_a_problem"]) for r in ai),
-               "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / max(sum(int(r["looks"]) for r in ai), 1), 1),
+               "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),
                "minutes_per_session": round(sum(int(r["wall_s"]) for r in ai) / 60 / max(len(ai), 1), 1),
                **summarise(rows)}
     Path(f"{base}.json").write_text(json.dumps(summary, indent=2))

@@ -255,7 +255,7 @@ def test_look_ahead_copies_leave_the_session_as_it_was():
         out = []
         for k in range(60):
             if with_copies and k % 6 == 0:
-                out.append(fly_copies(env, [(7, keep), (7, keep), (8, keep)], workers=2))
+                out.append(fly_copies(env, [(7, None), (7, None), (8, None)], workers=2))
             _, _, done, _, _ = env.step(keep)
             if done:
                 break
@@ -266,3 +266,47 @@ def test_look_ahead_copies_leave_the_session_as_it_was():
     assert (counts, t) == (counts2, t2)  # the copies are separate processes: the session flies on unchanged
     assert all(c[0] == c[1] for c in copies)  # the same pilots give the same copy
     assert all("error" not in x for c in copies for x in c)
+
+
+def test_the_look_ahead_world_flies_as_stage_2_until_it_makes_a_move():
+    from approach.ai.lookahead import LookAheadEnv
+    from approach.ai.vector import N_MAX, VectorEnv
+
+    keep = np.zeros(3 * N_MAX, dtype=np.int64)
+    counts = []
+    for make in (lambda: VectorEnv(seed=1, cached_winds_only=True, hold=True),
+                 lambda: LookAheadEnv(seed=1, cached_winds_only=True)):
+        env = make()
+        env.reset(seed=3)
+        for _ in range(60):
+            _, _, done, _, _ = env.step(keep)
+            if done:
+                break
+        counts.append((dict(env.counts), env.session.t, list(env.gaps)))
+    assert counts[0] == counts[1]
+
+
+def test_the_look_ahead_can_stop_a_stack_descent_and_extend_a_downwind(airport):
+    from types import SimpleNamespace
+
+    from approach.ai.lookahead import LookAheadController
+
+    ctl = LookAheadController(airport, "26L")
+    ctl.rules.plans["A"] = SimpleNamespace(stage="inbound", hdg_cmd=None, spd_cmd=None, alt_cmd=7000)
+    a = SimpleNamespace(cs="A", loc=False, gs=False, along=30.0, alt_ft=9000.0, target_alt=9000.0, target_hdg=90.0,
+                        target_spd=220.0)
+    assert any(i.kind == "altitude" and i.value == 7000 for i, _ in ctl.clearances(0.0, [a]))  # the planner's descent
+    assert ctl.hold_level("A", [a])
+    assert not any(i.kind == "altitude" for i, _ in ctl.clearances(0.0, [a]))  # kept where it is
+    a.target_alt, a.alt_ft = 7000.0, 8670.0  # already on its way down: stopped at the level above
+    ctl.release("A")
+    assert ctl.hold_level("A", [a])
+    assert [(i.value, own) for i, own in ctl.clearances(0.0, [a]) if i.kind == "altitude"] == [(9000.0, True)]
+    ctl.rules.plans["A"].stage = "downwind"  # off the stack: the planner's again
+    ctl.clearances(0.0, [a])
+    assert "A" not in ctl.held_level
+
+    ctl.rules.plans["B"] = SimpleNamespace(stage="downwind", d_join=11.0, side=-1.0)
+    longest = ctl.rules.max_join(-1.0)
+    assert ctl.extend_downwind("B", 1.0) == (11.0 + 1.0 <= longest + 1e-6)
+    assert not ctl.extend_downwind("B", longest)  # never beyond the RMA
