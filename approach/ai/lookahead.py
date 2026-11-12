@@ -442,7 +442,7 @@ MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend")
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves, copy = args
+    sessions, draws, min_gain, with_competitor, moves, copy, parts = args
     env = LookAheadEnv(hours=[s["hour"] for s in sessions])
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -451,8 +451,13 @@ def _run(args: tuple) -> list[dict]:
         policy = load_copy(copy)
     rows = []
     for s in sessions:
+        part = parts / f"session_{s['id']:03d}.json"
+        if part.is_file():  # flown before the run was stopped
+            rows += json.loads(part.read_text())
+            continue
         options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"]}
         meta = {"session": s["id"], "hour": f"{s['hour'][0]}T{s['hour'][1]:02d}", "offset_min": round(s["offset_s"] / 60)}
+        n_before = len(rows)
         try:
             if with_competitor:
                 row, secs = fly_session(env, {**options, "teacher": True}, None)
@@ -471,6 +476,7 @@ def _run(args: tuple) -> list[dict]:
             print(f"session {s['id']}: {row['separation_losses']} losses of separation, {row['go_arounds']} go-arounds, "
                   f"{row['gaps_inside_minimum']} gaps inside the minimum, {la.stats['changes']} changes, "
                   f"{la.stats['copies']} copies, {secs / 60:.1f} min", flush=True)
+            part.write_text(json.dumps(rows[n_before:]))
         except Exception as e:  # noqa: BLE001
             print(f"session {s['id']} {s['hour']} skipped: {e!r}", flush=True)
     return rows
@@ -510,7 +516,11 @@ def main() -> None:
     cache = COMPETITOR_DIR / f"2_seed{args.seed}_n120_{code_hash()}.csv"
     saved = list(csv.DictReader(cache.open())) if cache.is_file() and not args.train else []
     print(f"{'Reusing' if saved else 'Flying'} the competitor's results{' from ' + cache.name if saved else ''}", flush=True)
-    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves, args.copy)
+    # Each session's rows are saved as it finishes, so a run stopped part way (the machine restarted) carries on
+    # from where it was when started again with the same arguments.
+    parts = Path(f"{args.out}.parts")
+    parts.mkdir(parents=True, exist_ok=True)
+    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves, args.copy, parts)
               for k in range(args.workers)]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, chunks) for r in part]
