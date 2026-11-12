@@ -21,10 +21,13 @@ Two sets of moves (``moves``):
   up or down, a speed 10 or 20 kt either way, held until taken back.
 * "wide": looks HORIZON_WIDE_S (7 minutes) ahead, so a decision on the downwind can see the landing; a gap inside
   the minimum is a problem too (its follower and leader are involved), counting GAP_WEIGHT; and two more moves:
-  stop an aircraft in or on its way to a stack where it is (a holding aircraft cleared down through, or into, a
-  level another holding aircraft will be at was the commonest loss of separation left), until taken back; and
+  keep an aircraft in or on its way to a stack where it is, or 1,000 ft above or below that, until taken back (a
+  holding aircraft cleared down through, or into, a level another holding aircraft will be at was the commonest
+  loss of separation left; these aircraft aren't yet in the landing sequence the AI's other moves act on); and
   extend an aircraft's downwind by 1 or 2 NM before its base turn (a gap inside the minimum on final can't be
-  opened once the follower is on the localiser).
+  opened once the follower is on the localiser). A move stays in force at least MIN_KEEP_S before it can be
+  taken back: three draws give a noisy picture, and without it a stack level was given, taken back and given
+  again a minute apart.
 
 What the copies know is what a controller would: the traffic in the sector and the arrivals due in the next few
 minutes (the scenario's real arrivals spawn in the copies at their real times, as their flight strips would show),
@@ -59,6 +62,7 @@ DRAWS = 3
 MIN_GAIN = 1.0  # a move must score this much better than doing nothing (a fifth of a loss of separation)
 GAP_WEIGHT = 3.0  # "wide": each gap inside the minimum at a landing, in the score
 EXTEND_NM = (1.0, 2.0)
+MIN_KEEP_S = 120  # "wide": a move stays in force at least this long before it can be taken back
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
 REVERTS = ("release", "set_planned")
@@ -72,9 +76,12 @@ class LookAheadController(VectorController):
         super().__init__(*args, **{**kwargs, "hold": True})
         self.held_level: dict[str, float] = {}
 
-    def hold_level(self, cs: str, views: list) -> bool:
-        """Keep an aircraft in or on its way to a stack where it is: at its cleared level, or, if descending, at the
-        level above it."""
+    def hold_level(self, cs: str, views: list, step: int = 0) -> bool:
+        """Keep an aircraft in or on its way to a stack where it is (step 0): at its cleared level, or, if
+        descending, at the level above it; or 1,000 ft above (step 1) or below (step -1) that, never below the
+        lowest stack level."""
+        from approach.controllers.rules import STACK_BASE_FT
+
         v = next((w for w in views if w.cs == cs), None)
         p = self.rules.plans.get(cs)
         if v is None or p is None or p.stage != "inbound":
@@ -82,6 +89,9 @@ class LookAheadController(VectorController):
         level = v.target_alt
         if v.target_alt < v.alt_ft - 100:
             level = max(v.target_alt, math.ceil((v.alt_ft - 300) / 1000.0) * 1000.0)
+        level += 1000.0 * step
+        if level < STACK_BASE_FT:
+            return False
         self.held_level[cs] = level
         return True
 
@@ -140,7 +150,7 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
     if kind in ("set", "set_planned") and cs in env.slots:
         action[move[2] * N_MAX + env.slots.index(cs)] = move[3]
     elif kind == "hold_level":
-        ctl.hold_level(cs, env.session.world.views())
+        ctl.hold_level(cs, env.session.world.views(), move[2] if len(move) > 2 else 0)
     elif kind == "release":
         ctl.release(cs)
     elif kind == "extend":
@@ -253,11 +263,13 @@ class LookAhead:
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
         self.last_look = -1e9
+        self.made: dict[tuple, float] = {}  # when each move in force was made: (cs, dimension or "stack") -> t
         self.stats = Counter()
         self.changes: list[dict] = []
 
     def reset(self) -> None:
         self.last_look = -1e9
+        self.made = {}
 
     def score(self, copy: dict) -> float:
         return copy["reward"] - self.gap_weight * len(copy.get("gaps", []))
@@ -272,7 +284,7 @@ class LookAhead:
             for b in range(3):
                 if obs[i, CAN[b]] < 0.5:
                     continue
-                if now[b] != 0:
+                if now[b] != 0 and self.can_take_back(env, (cs, b)):
                     out.append(("set_planned", cs, b, PLANNED))
                 if cs in involved:
                     out += [("set", cs, b, PLANNED + k) for k in range(1, len(OFFSETS[b])) if k != now[b]]
@@ -282,10 +294,21 @@ class LookAhead:
             if cs in involved and p is not None and p.stage == "downwind":
                 out += [("extend", cs, nm) for nm in EXTEND_NM if p.d_join + nm <= rules.max_join(p.side) + 1e-6]
         if self.moves == "wide":  # the stacks: aircraft not yet in the landing sequence (env.slots)
-            out += [("release", cs) for cs in sorted(ctl.held_level)]
-            out += [("hold_level", cs) for cs in sorted(involved) if cs in views and cs not in ctl.held_level
-                    and rules.stage_of(cs) == "inbound"]
+            from approach.controllers.rules import STACK_BASE_FT
+
+            out += [("release", cs) for cs in sorted(ctl.held_level) if self.can_take_back(env, (cs, "stack"))]
+            for cs in sorted(involved):
+                v = views.get(cs)
+                if v is None or rules.stage_of(cs) != "inbound":
+                    continue
+                steps = (1, -1) if cs in ctl.held_level else (0, 1, -1)
+                out += [("hold_level", cs, k) for k in steps if k >= 0 or v.target_alt - 1000 >= STACK_BASE_FT]
         return out
+
+    def can_take_back(self, env: VectorEnv, key: tuple) -> bool:
+        """"wide": a move stays in force at least MIN_KEEP_S (a controller doesn't take back an instruction
+        moments after giving it)."""
+        return self.moves != "wide" or env.session.t - self.made.get(key, -1e9) >= MIN_KEEP_S
 
     def choose(self, env: VectorEnv, obs: np.ndarray) -> np.ndarray:
         """The choices for this step: keep everything, except at a look, when one move may be made."""
@@ -352,8 +375,12 @@ class LookAhead:
                  "problem": bool(involved)}
         if best[0] in ("set", "set_planned"):
             entry.update({"kind": DIMS[best[2]], "offset": 0 if best[3] == PLANNED else OFFSETS[best[2]][best[3] - 1]})
+            self.made[(best[1], best[2])] = t
         elif best[0] == "extend":
             entry["nm"] = best[2]
+        elif best[0] == "hold_level":
+            entry["step_ft"] = 1000 * best[2]
+            self.made[(best[1], "stack")] = t
         self.changes.append(entry)
         return best
 

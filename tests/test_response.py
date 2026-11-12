@@ -302,6 +302,10 @@ def test_the_look_ahead_can_stop_a_stack_descent_and_extend_a_downwind(airport):
     ctl.release("A")
     assert ctl.hold_level("A", [a])
     assert [(i.value, own) for i, own in ctl.clearances(0.0, [a]) if i.kind == "altitude"] == [(9000.0, True)]
+    assert ctl.hold_level("A", [a], step=1) and ctl.held_level["A"] == 10000.0  # or a level above
+    assert ctl.hold_level("A", [a], step=-1) and ctl.held_level["A"] == 8000.0  # or below
+    a.target_alt, a.alt_ft = 7000.0, 7000.0
+    assert not ctl.hold_level("A", [a], step=-1)  # never below the lowest stack level
     ctl.rules.plans["A"].stage = "downwind"  # off the stack: the planner's again
     ctl.clearances(0.0, [a])
     assert "A" not in ctl.held_level
