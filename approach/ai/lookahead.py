@@ -312,7 +312,10 @@ def quick_copy(env: VectorEnv, dt_s: float | None = COPY_DT_S) -> None:
         world.steps_per_second = max(1, round(1.0 / dt_s))
 
 
-QUICK_COPIES = False  # on once checked against full copies (scratchpad quick_agree.py)
+# Checked on 135 looks of three busy training sessions: given the same pilots, quick copies give the full copies'
+# verdict (trouble or not) 97% of the time and name 92% of the same aircraft, where two sets of full copies with
+# different pilots agree 90% and 66%; they took 208 s to the full copies' 328 s.
+QUICK_COPIES = True
 
 
 def _copy(env: VectorEnv, seed: int, move: tuple | None, horizon_s: float) -> dict:
