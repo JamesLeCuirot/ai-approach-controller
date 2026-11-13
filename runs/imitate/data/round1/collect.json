@@ -1,0 +1,12 @@
+{
+  "cmd": "collect",
+  "sessions": 32,
+  "first": 0,
+  "workers": 4,
+  "seed": 32,
+  "window": 3600,
+  "driver": "runs/imitate/copy-01/model.zip",
+  "beta": 0.0,
+  "out": "runs/imitate/data/round1",
+  "hours": "train"
+}
