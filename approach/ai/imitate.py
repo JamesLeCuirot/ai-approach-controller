@@ -238,12 +238,13 @@ class CopyPolicy(ActorCriticPolicy):
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
 
 
-def make_policy():
+def make_policy(n_features: int = len(COPY_FEATURES)):
+    """The copy's network; with n_features one more than COPY_FEATURES it also sees TROUBLE (with_trouble)."""
     from gymnasium import spaces
 
     from approach.ai.policy import AircraftAttention
 
-    obs_space = spaces.Box(-5.0, 5.0, shape=(N_ROWS, len(COPY_FEATURES)), dtype=np.float32)
+    obs_space = spaces.Box(-5.0, 5.0, shape=(N_ROWS, n_features), dtype=np.float32)
     return CopyPolicy(obs_space, spaces.Discrete(N_ACTIONS), _constant_lr, features_extractor_class=AircraftAttention,
                       **COPY_POLICY_KWARGS)
 
@@ -261,13 +262,30 @@ def masked_logits(policy, x, mask):
     return torch.log_softmax(logits.masked_fill(~mask, -1e9), dim=-1)
 
 
-class CopyDriver:
-    """Flies the copy: at each look, the move it rates best among those that can be made now (or nothing)."""
+def with_trouble(x: np.ndarray, rows: tuple[list[str], list[str]], shares: dict[str, float]) -> np.ndarray:
+    """The copy's picture plus TROUBLE: for each row, the share of the look-ahead's copies of the next minutes, with
+    nothing changed, in which that aircraft ran into trouble (LookAhead.probe)."""
+    col = np.zeros((N_ROWS, 1), dtype=x.dtype)
+    for r, cs in enumerate(rows[0]):
+        col[r, 0] = shares.get(cs, 0.0)
+    for j, cs in enumerate(rows[1]):
+        col[N_MAX + j, 0] = shares.get(cs, 0.0)
+    return np.concatenate([x, col], axis=-1)
 
-    def __init__(self, policy):
+
+TROUBLE = "trouble"
+
+
+class CopyDriver:
+    """Flies the copy: at each look, the move it rates best among those that can be made now (or nothing). A copy
+    that sees TROUBLE first flies the look-ahead's copies with nothing changed (LookAhead.probe) to tell it."""
+
+    def __init__(self, policy, probe_seed: int = 0):
         self.policy = policy
         self.stats = Counter()
         self.changes: list[dict] = []
+        self.sees_trouble = policy.observation_space.shape[-1] == len(COPY_FEATURES) + 1
+        self.probe = LookAhead(workers=1, seed=probe_seed, moves="wide") if self.sees_trouble else None
         self.reset()
 
     def reset(self) -> None:
@@ -290,6 +308,10 @@ class CopyDriver:
             self.stats["nothing_to_adjust"] += 1
             return apply_move(env, None)
         t0 = time.time()
+        if self.sees_trouble:
+            self.probe.probe(env)
+            self.stats["copies"] += self.probe.draws
+            x = with_trouble(x, rows, self.probe.last_involved)
         move = self.pick(x, mask, rows)
         self.stats["look_seconds"] += time.time() - t0
         self.stats["looks"] += 1
@@ -345,7 +367,8 @@ def collect_session(env, options: dict, la: LookAhead, driver: CopyDriver | None
                 move = teacher
                 if driver is not None and (rng is None or rng.random() >= beta):
                     la.made = made_before
-                    move = driver.pick(x, mask, rows)
+                    seen = with_trouble(x, rows, la.last_involved) if driver.sees_trouble else x
+                    move = driver.pick(seen, mask, rows)
                     note_made(la.made, move, t)
                     counts["same_as_teacher"] += move == teacher
                 counts["moves_made"] += move is not None
@@ -414,10 +437,11 @@ def collect_main(args) -> None:
 
 
 # ---- the head start: copying the look-ahead -----------------------------------------------------------------------
-def load_data(dirs: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_data(dirs: list[str]) -> tuple[np.ndarray, ...]:
     """Every recorded look in these folders: pictures, valid moves, the look-ahead's moves, whether its copies
-    showed a problem, and the session of each."""
-    xs, ms, ys, ps, ss = [], [], [], [], []
+    showed a problem, the session of each, and who ran into trouble in its copies by row (NaN where the recording
+    didn't keep it: round 0)."""
+    xs, ms, ys, ps, ss, inv = [], [], [], [], [], []
     for k, d in enumerate(dirs):
         for path in sorted(Path(d).glob("session_*.npz")):
             z = np.load(path)
@@ -429,8 +453,10 @@ def load_data(dirs: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.n
             ys.append(z["label"].astype(np.int64))
             ps.append(z["problem"])
             ss.append(np.full(n, k * 10000 + int(path.stem.split("_")[1])))
+            inv.append(z["involved"].astype(np.float32) if "involved" in z.files and len(z["involved"]) == n
+                       else np.full((n, N_ROWS), np.nan, dtype=np.float32))
     return (np.concatenate(xs).astype(np.float32), np.concatenate(ms), np.concatenate(ys), np.concatenate(ps),
-            np.concatenate(ss))
+            np.concatenate(ss), np.concatenate(inv))
 
 
 def agreement(pred: np.ndarray, label: np.ndarray) -> dict:
@@ -452,27 +478,56 @@ def move_score(a: dict) -> float:
 
 
 def fit(dirs: list[str], out: str, epochs: int = 100, lr: float = 1e-3, batch: int = 128, move_weight: float = 4.0,
-        weight_decay: float = 0.01, val_every: int = 7, seed: int = 0, threads: int = 4) -> dict:
+        weight_decay: float = 0.01, val_every: int = 7, seed: int = 0, threads: int = 4, sees_trouble: bool = False,
+        learn_trouble: float = 0.0) -> dict:
     """Train the copy on the recorded looks (sessions whose number is a multiple of val_every are held out to
     measure it), keeping the network whose moves best match the look-ahead's on the held-out looks (move_score).
 
     With 14 sessions, a network trained long enough made every recorded move exactly on its training looks but only
     13-23% of them on held-out sessions, so it is held back from memorising them (weight decay), and the held-out
     loss is not the measure to keep it by: it was lowest after 14 passes, when the copy still made a fifth of the
-    look-ahead's moves even on its training looks."""
+    look-ahead's moves even on its training looks.
+
+    Two ways to give the copy the look-ahead's foresight, on the rounds that recorded who ran into trouble in its
+    copies (round 1 on): sees_trouble adds TROUBLE to its picture (flown, it needs LookAhead.probe at each look);
+    learn_trouble > 0 also trains it to say, for each aircraft, whether it is heading for trouble, from its picture
+    alone (a second output used only in training, counting learn_trouble against the moves)."""
     import copy as copy_module
 
     from torch.nn import functional as F
 
     torch.manual_seed(seed)
     torch.set_num_threads(threads)
-    x, m, y, prob, sess = load_data(dirs)
+    x, m, y, prob, sess, inv = load_data(dirs)
+    if sees_trouble or learn_trouble > 0:  # only the looks whose recording kept who ran into trouble
+        keep = ~np.isnan(inv).any(axis=1)
+        x, m, y, prob, sess, inv = (a[keep] for a in (x, m, y, prob, sess, inv))
+    if sees_trouble:
+        x = np.concatenate([x, inv[..., None]], axis=-1)
     val = (sess % 10000) % val_every == 0
-    xt, mt, yt = (torch.as_tensor(a[~val]) for a in (x, m, y))
-    xv, mv, yv = (torch.as_tensor(a[val]) for a in (x, m, y))
-    policy = make_policy()
-    opt = torch.optim.AdamW(policy.parameters(), lr=lr, weight_decay=weight_decay)
+    xt, mt, yt, it = (torch.as_tensor(a[~val]) for a in (x, m, y, inv))
+    xv, mv, yv, iv = (torch.as_tensor(a[val]) for a in (x, m, y, inv))
+    policy = make_policy(x.shape[-1])
+    dim = COPY_POLICY_KWARGS["features_extractor_kwargs"]["dim"]
+    trouble_head = nn.Linear(dim, 1)
+    params = list(policy.parameters()) + (list(trouble_head.parameters()) if learn_trouble > 0 else [])
+    opt = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
     weight_t = torch.where(yt == 0, 1.0, move_weight)
+
+    def trouble_logits(xe):
+        h = policy.extract_features(xe).view(len(xe), N_ROWS, dim)
+        return trouble_head(h).squeeze(-1)
+
+    def trouble_quality(xe, ie) -> dict:
+        """For the aircraft present: of those that ran into trouble in the look-ahead's copies, the share it says
+        are heading for it, and of those it says are, the share that did."""
+        with torch.no_grad():
+            said = torch.cat([trouble_logits(xe[k:k + 1024]) for k in range(0, len(xe), 1024)]) > 0
+        present, real = xe[..., 0] > 0.5, ie > 0
+        hit = (said & real & present).sum().item()
+        return {"found": round(hit / max((real & present).sum().item(), 1), 3),
+                "right": round(hit / max((said & present).sum().item(), 1), 3),
+                "aircraft_in_trouble": int((real & present).sum().item())}
 
     def evaluate(xe, me, ye):
         policy.set_training_mode(False)
@@ -491,19 +546,27 @@ def fit(dirs: list[str], out: str, epochs: int = 100, lr: float = 1e-3, batch: i
             lp = masked_logits(policy, xt[idx], mt[idx])
             w = weight_t[idx]
             loss = (F.nll_loss(lp, yt[idx], reduction="none") * w).sum() / w.sum()
+            if learn_trouble > 0:
+                present = xt[idx][..., 0] > 0.5
+                bce = F.binary_cross_entropy_with_logits(trouble_logits(xt[idx])[present],
+                                                         (it[idx][present] > 0).float())
+                loss = loss + learn_trouble * bce
             opt.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
             opt.step()
         vloss, vpred = evaluate(xv, mv, yv)
         a = agreement(vpred, y[val])
+        if learn_trouble > 0:
+            a["trouble"] = trouble_quality(xv, iv)
         history.append({"epoch": epoch + 1, "held_out_loss": round(vloss, 4), "move_score": round(move_score(a), 3), **a})
         print(f"epoch {epoch + 1}: held-out loss {vloss:.4f}, move score {move_score(a):.3f}; same move "
               f"{a['same_move_when_look_ahead_moved']}, look-ahead moved when copy moved "
               f"{a['look_ahead_moved_when_copy_moved']}", flush=True)
         if move_score(a) > best_score:
-            best, best_score = copy_module.deepcopy(policy.state_dict()), move_score(a)
-    policy.load_state_dict(best)
+            best, best_score = copy_module.deepcopy((policy.state_dict(), trouble_head.state_dict())), move_score(a)
+    policy.load_state_dict(best[0])
+    trouble_head.load_state_dict(best[1])
     _, tpred = evaluate(xt, mt, yt)
     vloss, vpred = evaluate(xv, mv, yv)
     path = Path(out)
@@ -524,8 +587,9 @@ def fit(dirs: list[str], out: str, epochs: int = 100, lr: float = 1e-3, batch: i
               "sessions": int(len(set(sess.tolist()))), "held_out_sessions": int(len(set(sess[val].tolist()))),
               "look_ahead_moves": int((y != 0).sum()), "looks_with_a_problem": int(prob.sum()),
               "epochs": epochs, "lr": lr, "batch": batch, "move_weight": move_weight, "weight_decay": weight_decay,
-              "seed": seed, "kept_by": "held-out move_score",
-              "policy": {"rows": N_ROWS, "features": len(COPY_FEATURES), "actions": N_ACTIONS, **COPY_POLICY_KWARGS},
+              "seed": seed, "kept_by": "held-out move_score", "sees_trouble": sees_trouble, "learn_trouble": learn_trouble,
+              **({"held_out_trouble": trouble_quality(xv, iv)} if learn_trouble > 0 else {}),
+              "policy": {"rows": N_ROWS, "features": int(x.shape[-1]), "actions": N_ACTIONS, **COPY_POLICY_KWARGS},
               "parameters": int(sum(p.numel() for p in policy.parameters())),
               "best_epoch": int(np.argmax([h["move_score"] for h in history]) + 1), "held_out_loss": round(vloss, 4),
               "held_out_move_score": round(best_score, 3),
@@ -555,12 +619,17 @@ def main() -> None:
     f.add_argument("--move-weight", type=float, default=4.0)
     f.add_argument("--weight-decay", type=float, default=0.01)
     f.add_argument("--seed", type=int, default=0)
+    f.add_argument("--sees-trouble", action="store_true",
+                   help="the copy also sees who runs into trouble in the look-ahead's copies (flown, it probes)")
+    f.add_argument("--learn-trouble", type=float, default=0.0,
+                   help="also train it to say who is heading for trouble from its picture alone, counting this much")
     args = ap.parse_args()
     if args.cmd == "collect":
         collect_main(args)
     else:
         record = fit(args.data, args.out, epochs=args.epochs, lr=args.lr, move_weight=args.move_weight,
-                     weight_decay=args.weight_decay, seed=args.seed)
+                     weight_decay=args.weight_decay, seed=args.seed, sees_trouble=args.sees_trouble,
+                     learn_trouble=args.learn_trouble)
         print(json.dumps({k: v for k, v in record.items() if k != "history"}, indent=2))
 
 

@@ -368,14 +368,15 @@ class LookAhead:
             self.stats["look_seconds"] += time.time() - t0
         return apply_move(env, move)
 
-    def _look(self, env: VectorEnv, obs: np.ndarray, t: float) -> tuple | None:
+    def probe(self, env: VectorEnv) -> tuple[list[int], list[dict], set[str]]:
+        """Fly the copies with nothing changed: their pilot seeds, results, and the aircraft that ran into trouble
+        in any of them. Also keeps the share of the copies each aircraft ran into trouble in (last_involved)."""
+        self.last_involved = {}
         seeds = [self.rng.randrange(1 << 30) for _ in range(self.draws)]
         base = fly_copies(env, [(s, None) for s in seeds], self.workers, self.horizon_s)
         base = [b for b in base if "error" not in b]
         self.stats["looks"] += 1
         self.stats["copies"] += len(seeds)
-        if not base:
-            return None
         involved, in_draws = set(), Counter()
         for b in base:
             mine = set()
@@ -391,7 +392,13 @@ class LookAhead:
             involved |= mine
             in_draws.update(mine)
         # The share of the copies in which each aircraft ran into trouble (approach.ai.imitate records it).
-        self.last_involved = {cs: n / len(base) for cs, n in in_draws.items()}
+        self.last_involved = {cs: n / len(base) for cs, n in in_draws.items()} if base else {}
+        return seeds, base, involved
+
+    def _look(self, env: VectorEnv, obs: np.ndarray, t: float) -> tuple | None:
+        seeds, base, involved = self.probe(env)
+        if not base:
+            return None
         if involved:
             self.stats["looks_with_a_problem"] += 1
         cands = self.candidates(env, obs, involved)
@@ -468,7 +475,7 @@ def _run(args: tuple) -> list[dict]:
                 row, secs = fly_session(env, {**options, "teacher": True}, None)
                 rows.append({**meta, "controller": "rules_vector", **row})
             if policy is not None:
-                la = CopyDriver(policy)
+                la = CopyDriver(policy, probe_seed=s["pilot_seed"])
             else:
                 la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves)
             row, secs = fly_session(env, options, la)
