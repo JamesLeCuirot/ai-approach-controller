@@ -376,17 +376,22 @@ class LookAhead:
         self.stats["copies"] += len(seeds)
         if not base:
             return None
-        involved = set()
+        involved, in_draws = set(), Counter()
         for b in base:
+            mine = set()
             for pair in b["losses"]:
-                involved.update(pair)
+                mine.update(pair)
             for cs in b["go_arounds"]:
-                involved.add(cs)
+                mine.add(cs)
                 if cs in env.slots and env.slots.index(cs) > 0:
-                    involved.add(env.slots[env.slots.index(cs) - 1])  # the aircraft ahead of it
+                    mine.add(env.slots[env.slots.index(cs) - 1])  # the aircraft ahead of it
             if self.moves == "wide":
                 for pair in b["gaps"]:
-                    involved.update(pair)
+                    mine.update(pair)
+            involved |= mine
+            in_draws.update(mine)
+        # The share of the copies in which each aircraft ran into trouble (approach.ai.imitate records it).
+        self.last_involved = {cs: n / len(base) for cs, n in in_draws.items()}
         if involved:
             self.stats["looks_with_a_problem"] += 1
         cands = self.candidates(env, obs, involved)

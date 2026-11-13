@@ -312,7 +312,7 @@ def collect_session(env, options: dict, la: LookAhead, driver: CopyDriver | None
     obs, _ = env.reset(options=options)
     la.reset()
     keep = np.zeros(3 * N_MAX, dtype=np.int64)
-    xs, masks, labels, problems, ts = [], [], [], [], []
+    xs, masks, labels, problems, ts, involved = [], [], [], [], [], []
     counts = Counter()
     last_look, done, total = -1e9, False, 0.0
     while not done:
@@ -337,6 +337,10 @@ def collect_session(env, options: dict, la: LookAhead, driver: CopyDriver | None
                     labels.append(label)
                     problems.append(la.stats["looks_with_a_problem"] > problems_before)
                     ts.append(t)
+                    # Who ran into trouble in the look-ahead's copies, by row (the share of its copies)
+                    seen = getattr(la, "last_involved", {})
+                    involved.append([seen.get(cs, 0.0) for cs in rows[0]] + [0.0] * (N_MAX - len(rows[0]))
+                                    + [seen.get(cs, 0.0) for cs in rows[1]] + [0.0] * (N_STACK - len(rows[1])))
                     counts["teacher_moves"] += label != 0
                 move = teacher
                 if driver is not None and (rng is None or rng.random() >= beta):
@@ -351,7 +355,7 @@ def collect_session(env, options: dict, la: LookAhead, driver: CopyDriver | None
     data = {"x": np.array(xs, dtype=np.float16).reshape(-1, N_ROWS, len(COPY_FEATURES)),
             "mask": np.packbits(np.array(masks, dtype=bool).reshape(-1, N_ACTIONS), axis=1),
             "label": np.array(labels, dtype=np.int16), "problem": np.array(problems, dtype=bool),
-            "t": np.array(ts, dtype=np.float32)}
+            "t": np.array(ts, dtype=np.float32), "involved": np.array(involved, dtype=np.float16).reshape(-1, N_ROWS)}
     return episode_row(info, total), data, counts
 
 
