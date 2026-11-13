@@ -436,6 +436,93 @@ def collect_main(args) -> None:
     print(f"{len(metas)} sessions in {out}", flush=True)
 
 
+def replay_trouble(env, options: dict, pilot_seed: int, path: Path) -> Counter:
+    """Add who ran into trouble in the look-ahead's copies to a session recorded before it was kept (round 0).
+
+    The session is flown again with the look-ahead's recorded moves, and at each of its looks the look-ahead's
+    copies with nothing changed are flown again with the same pilot seeds (its seeds come from a generator seeded
+    with the session's, three a look, and its moves used no others), so they are its copies of that moment. A look
+    whose move wasn't recorded (its aircraft had no row) can't be repeated: from there the session differs, and its
+    looks are left without (NaN). Each repeated picture is checked against the recorded one."""
+    z = dict(np.load(path))
+    times = {round(float(t)): k for k, t in enumerate(z["t"])}
+    involved = np.full((len(z["label"]), N_ROWS), np.nan, dtype=np.float32)
+    obs, _ = env.reset(options=options)
+    la = LookAhead(workers=1, seed=pilot_seed, moves="wide")
+    la.reset()
+    keep = np.zeros(3 * N_MAX, dtype=np.int64)
+    counts, last_look, done, same = Counter(), -1e9, False, True
+    while not done and same:
+        act, t = keep, env.session.t
+        if t - last_look >= LOOK_EVERY_S:
+            last_look = t
+            x, rows = observe_copy(env, obs, la.made, t)
+            mask = valid_moves(env, obs, rows, la.made, t)
+            if mask[1:].any():
+                la.probe(env)
+                k = times.get(round(t))
+                if k is None:  # the look-ahead moved an aircraft without a row here
+                    counts["stopped_at_unrecorded_move"] += 1
+                    same = False
+                    continue
+                if not np.allclose(x.astype(np.float16).astype(np.float32), z["x"][k].astype(np.float32), atol=1e-2):
+                    counts["picture_differs"] += 1
+                    same = False
+                    continue
+                shares = la.last_involved
+                involved[k] = [shares.get(cs, 0.0) for cs in rows[0]] + [0.0] * (N_MAX - len(rows[0])) + \
+                    [shares.get(cs, 0.0) for cs in rows[1]] + [0.0] * (N_STACK - len(rows[1]))
+                move = move_of(int(z["label"][k]), rows)
+                note_made(la.made, move, t)
+                act = apply_move(env, move)
+                counts["looks"] += 1
+        obs, _, done, _, _ = env.step(act)
+    z["involved"] = involved.astype(np.float16)
+    counts["looks_recorded"] = len(z["label"])
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez_compressed(tmp, **z)
+    tmp.replace(path)
+    return counts
+
+
+def _replay(args: tuple) -> list[dict]:
+    sessions, out = args
+    env = LookAheadEnv(hours=[s["hour"] for s in sessions])
+    rows = []
+    for s in sessions:
+        path = Path(out) / f"session_{s['id']:03d}.npz"
+        if not path.is_file() or "involved" in np.load(path).files:
+            continue
+        t0 = time.time()
+        options = {"hour": s["hour"], "offset_s": s["offset_s"], "pilot_seed": s["pilot_seed"]}
+        try:
+            counts = replay_trouble(env, options, s["pilot_seed"], path)
+        except Exception as e:  # noqa: BLE001
+            print(f"session {s['id']} {s['hour']} skipped: {e!r}", flush=True)
+            continue
+        print(f"session {s['id']}: trouble added to {counts['looks']} of {counts['looks_recorded']} looks"
+              f"{'; stopped: ' + ', '.join(k for k in ('stopped_at_unrecorded_move', 'picture_differs') if counts[k]) if counts['looks'] < counts['looks_recorded'] else ''}"
+              f"; {(time.time() - t0) / 60:.1f} min", flush=True)
+        rows.append({"session": s["id"], **counts})
+    return rows
+
+
+def replay_main(args) -> None:
+    from multiprocessing import Pool
+
+    from approach.ai.env import training_hours
+
+    settings = json.loads((Path(args.data) / "collect.json").read_text())
+    if settings.get("driver") or settings.get("window", 3600) != 3600:
+        raise SystemExit("replay is for rounds the look-ahead flew itself, with whole hours")
+    rng = random.Random(settings["seed"])
+    hours = training_hours()
+    sessions = [{"id": k, "hour": rng.choice(hours), "offset_s": rng.uniform(0, 3600), "pilot_seed": rng.randrange(1 << 30)}
+                for k in range(settings["first"] + settings["sessions"])][settings["first"]:]
+    with Pool(args.workers) as pool:
+        pool.map(_replay, [(sessions[k::args.workers], args.data) for k in range(args.workers)])
+
+
 # ---- the head start: copying the look-ahead -----------------------------------------------------------------------
 def load_data(dirs: list[str]) -> tuple[np.ndarray, ...]:
     """Every recorded look in these folders: pictures, valid moves, the look-ahead's moves, whether its copies
@@ -611,6 +698,9 @@ def main() -> None:
     c.add_argument("--driver", default="", help="a saved copy: fly it, and record the look-ahead's moves (DAgger)")
     c.add_argument("--beta", type=float, default=0.0, help="with --driver: make the look-ahead's move this often")
     c.add_argument("--out", required=True)
+    r = sub.add_parser("replay", help="add who ran into trouble in the look-ahead's copies to an older round")
+    r.add_argument("--data", required=True)
+    r.add_argument("--workers", type=int, default=4)
     f = sub.add_parser("fit", help="train the copy on recorded decisions")
     f.add_argument("--data", action="append", required=True)
     f.add_argument("--out", required=True)
@@ -626,6 +716,8 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd == "collect":
         collect_main(args)
+    elif args.cmd == "replay":
+        replay_main(args)
     else:
         record = fit(args.data, args.out, epochs=args.epochs, lr=args.lr, move_weight=args.move_weight,
                      weight_decay=args.weight_decay, seed=args.seed, sees_trouble=args.sees_trouble,
