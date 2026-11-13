@@ -423,9 +423,11 @@ def collect_main(args) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "collect.json").write_text(json.dumps({**vars(args), "hours": "train"}, indent=2))
-    chunks = [(sessions[k::args.workers], str(out), args.driver, args.beta, args.window) for k in range(args.workers)]
+    # One session a task, handed to whichever process is free: dealt out in a fixed order, one process could be
+    # left with several busy hours while the others sat idle.
+    tasks = [([s], str(out), args.driver, args.beta, args.window) for s in sessions]
     with Pool(args.workers) as pool:
-        pool.map(_collect, chunks)
+        pool.map(_collect, tasks, chunksize=1)
     metas = [json.loads(p.read_text()) for p in sorted(out.glob("session_*.json"))]
     if metas:
         with (out / "sessions.csv").open("w", newline="") as f:
@@ -520,7 +522,7 @@ def replay_main(args) -> None:
     sessions = [{"id": k, "hour": rng.choice(hours), "offset_s": rng.uniform(0, 3600), "pilot_seed": rng.randrange(1 << 30)}
                 for k in range(settings["first"] + settings["sessions"])][settings["first"]:]
     with Pool(args.workers) as pool:
-        pool.map(_replay, [(sessions[k::args.workers], args.data) for k in range(args.workers)])
+        pool.map(_replay, [([s], args.data) for s in sessions], chunksize=1)
 
 
 # ---- the head start: copying the look-ahead -----------------------------------------------------------------------

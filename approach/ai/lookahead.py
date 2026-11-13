@@ -606,10 +606,11 @@ def main() -> None:
     # from where it was when started again with the same arguments.
     parts = Path(f"{args.out}.parts")
     parts.mkdir(parents=True, exist_ok=True)
-    chunks = [(sessions[k::args.workers], args.draws, args.min_gain, not saved, args.moves, args.copy, parts)
-              for k in range(args.workers)]
+    # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
+    # with several busy hours while the others sat idle).
+    tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts) for s in sessions]
     with Pool(args.workers) as pool:
-        rows = [r for part in pool.map(_run, chunks) for r in part]
+        rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
     if saved:
         rows += [r for r in saved if int(r["session"]) in flown]
