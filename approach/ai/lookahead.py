@@ -246,8 +246,79 @@ def _instrument(env: VectorEnv, log: dict) -> None:
     env._conflicts, env._advance, env._gap_at_landing = _conflicts, _advance, _gap
 
 
+class _FastLinear:
+    """BlueSky's wind interpolation (scipy's RegularGridInterpolator, linear, 0 outside the grid) without scipy's
+    checks on every call: the same arithmetic, the eight corners of each grid cell at once, and the last answer
+    reused when asked again for the same positions (BlueSky asks several times a step). It was 30% of a copy."""
+
+    def __init__(self, rgi):
+        axes, values = [np.asarray(g, dtype=float) for g in rgi.grid], np.asarray(rgi.values, dtype=float)
+        if len(axes) != 3 or any(len(g) < 2 for g in axes):
+            raise ValueError("a 3-D grid with two points on each axis")
+        for d, g in enumerate(axes):
+            if g[0] > g[-1]:
+                axes[d], values = g[::-1], np.flip(values, axis=d)
+        self.axes, self.fill, self.grid = axes, rgi.fill_value, rgi.grid
+        self.flat = np.ascontiguousarray(values).ravel()
+        strides = np.array([values.shape[1] * values.shape[2], values.shape[2], 1])
+        self.strides = strides
+        self.offsets = np.array([c0 * strides[0] + c1 * strides[1] + c2 * strides[2]
+                                 for c0 in (0, 1) for c1 in (0, 1) for c2 in (0, 1)])
+        self.lo = np.array([g[0] for g in axes])
+        self.hi = np.array([g[-1] for g in axes])
+        self._last_in, self._last_out = None, None
+
+    def __call__(self, pts):
+        pts = np.asarray(pts, dtype=float).reshape(-1, 3)
+        if self._last_in is not None and pts.shape == self._last_in.shape and np.array_equal(pts, self._last_in):
+            return self._last_out.copy()
+        n = len(pts)
+        i = np.empty((n, 3), dtype=np.int64)
+        w = np.empty((n, 3))
+        for d, g in enumerate(self.axes):
+            k = np.clip(np.searchsorted(g, pts[:, d], side="right") - 1, 0, len(g) - 2)
+            i[:, d] = k
+            w[:, d] = (pts[:, d] - g[k]) / (g[k + 1] - g[k])
+        base = i @ self.strides
+        vals = self.flat[base[:, None] + self.offsets[None, :]]  # (n, 8), corners in (alt, lat, lon) bit order
+        w0 = np.stack([1.0 - w[:, 0], w[:, 0]], axis=1)
+        w1 = np.stack([1.0 - w[:, 1], w[:, 1]], axis=1)
+        w2 = np.stack([1.0 - w[:, 2], w[:, 2]], axis=1)
+        weights = (w0[:, :, None, None] * w1[:, None, :, None] * w2[:, None, None, :]).reshape(n, 8)
+        out = (weights * vals).sum(axis=1)
+        if self.fill is not None:
+            out[((pts < self.lo) | (pts > self.hi)).any(axis=1)] = self.fill
+        self._last_in, self._last_out = pts.copy(), out
+        return out.copy()
+
+
+COPY_DT_S = 1.0  # the simulator's step in the copies (the session itself steps every 0.5 s)
+
+
+def quick_copy(env: VectorEnv, dt_s: float | None = COPY_DT_S) -> None:
+    """In a forked child: fly the copy with the faster wind interpolation and the simulator stepping every dt_s.
+    The copies are previews, so a step of a second (pilots respond in several) costs them little; together these
+    roughly halve a copy's time. The session itself is never changed."""
+    world = env.session.world
+    bs = world.bs
+    wind = bs.traf.wind
+    if wind.fe is not None and not isinstance(wind.fe, _FastLinear):
+        wind.fe, wind.fn = _FastLinear(wind.fe), _FastLinear(wind.fn)
+    if dt_s and abs(dt_s - bs.sim.simdt) > 1e-9:
+        from bluesky.core import simtime
+
+        simtime.setdt(dt_s)
+        bs.sim.simdt = dt_s
+        world.steps_per_second = max(1, round(1.0 / dt_s))
+
+
+QUICK_COPIES = False  # on once checked against full copies (scratchpad quick_agree.py)
+
+
 def _copy(env: VectorEnv, seed: int, move: tuple | None, horizon_s: float) -> dict:
     """In a forked child: make the move, then fly on with fresh pilots, keeping everything, for horizon_s."""
+    if QUICK_COPIES:
+        quick_copy(env)
     redraw_pilots(env.session.world, seed)
     log = {"losses": [], "go_arounds": [], "gaps": []}
     _instrument(env, log)
