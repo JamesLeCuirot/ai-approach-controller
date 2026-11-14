@@ -63,6 +63,7 @@ RUNWAY_OCCUPANCY_S = 50.0
 # The longest a turn in a hold takes before the pilot carries on regardless: half a turn at the lowest measured bank
 # (15 degrees) and holding speed high up takes about 3 minutes; the turn back towards the inbound leg is a quarter turn.
 HOLD_TURN_MAX_S = {"turn_out": 240.0, "turn_in": 150.0}
+WIND_CEILING_FT = 45000.0  # the weather model's top-level wind is given to BlueSky up to here
 MIN_FINAL_GAP_NM = 2.0  # tower sends the follower around below this
 MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilot still captures
 
@@ -235,9 +236,14 @@ class World:
         import numpy as np
 
         lat, lon = np.meshgrid(np.array(wind.lats), np.array(wind.lons), indexing="ij")  # south-north, west-east
-        veast = np.array([np.array(g).ravel() for g in wind.u_kt]) / KT_PER_MS  # (levels, points), m/s
-        vnorth = np.array([np.array(g).ravel() for g in wind.v_kt]) / KT_PER_MS
-        alt_m = np.array(wind.heights_ft) / FT_PER_M
+        # The weather model's top level (about 13,400 ft) again high up: BlueSky has no wind above its top level,
+        # so aircraft handed over at FL150 flew in calm air and met the full wind lower down (one, turning outbound
+        # in a hold in calm air, then crabbed into the wind below). Above the top the wind stays as it is there,
+        # as WindProfile.uv has it.
+        top = max(WIND_CEILING_FT, wind.heights_ft[-1] + 1000.0)
+        veast = np.array([np.array(g).ravel() for g in wind.u_kt + wind.u_kt[-1:]]) / KT_PER_MS  # (levels, points), m/s
+        vnorth = np.array([np.array(g).ravel() for g in wind.v_kt + wind.v_kt[-1:]]) / KT_PER_MS
+        alt_m = np.array(list(wind.heights_ft) + [top]) / FT_PER_M
         self.bs.traf.wind.clear()
         self.bs.traf.wind.addpointvne(lat.ravel(), lon.ravel(), vnorth, veast, alt_m)
         if self.bs.traf.wind.fe is None:

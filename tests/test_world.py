@@ -160,3 +160,25 @@ def test_spawning_a_callsign_already_in_the_air_is_refused(airport):
     spawn_at_willo(world, airport, cs="DUP1")
     with pytest.raises(ValueError):
         spawn_at_willo(world, airport, cs="DUP1")
+
+
+def test_wind_above_the_weather_models_top_level(airport):
+    """Above the weather model's top level the wind stays as it is there (BlueSky alone has none up there)."""
+    from approach.data.gfs import GRID_DEG, WindProfile
+    from approach.sim.world import World
+
+    lats = [50.0 + GRID_DEG * k for k in range(9)]
+    lons = [-1.0 + GRID_DEG * k for k in range(9)]
+
+    def grid(value):
+        return [[value] * len(lons) for _ in lats]
+
+    profile = WindProfile(valid="", source="test", lats=lats, lons=lons, heights_ft=[200.0, 6000.0, 13400.0],
+                          u_kt=[grid(10.0), grid(30.0), grid(50.0)], v_kt=[grid(0.0)] * 3)
+    world = World(airport, "26L", wind=profile)
+    world.spawn("LOW", "A320", 51.0, 0.0, 90.0, 6000, 220)
+    world.spawn("HIGH", "A320", 51.0, 0.0, 90.0, 15000, 250)
+    world.step(1)
+    winds = {v.cs: v.wind_e_kt for v in world.views()}
+    assert winds["LOW"] == pytest.approx(30.0, abs=1.0)
+    assert winds["HIGH"] == pytest.approx(50.0, abs=1.0)
