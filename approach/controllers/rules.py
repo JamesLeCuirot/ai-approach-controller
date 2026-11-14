@@ -156,7 +156,11 @@ class RulesController(Controller):
         order its aircraft joined, so re-ordering the queue never moves an aircraft up or down a stack. Tried on 40
         training sessions (the planner alone), "soonest" was no better: 25.6 minutes per arrival against 24.8, 119
         losses of separation against 113, 42 go-arounds against 34, 10 wake infringements against 4 (mixing the two
-        stacks' aircraft on the downwind); it stays an option, "arrival" the default."""
+        stacks' aircraft on the downwind); it stays an option, "arrival" the default. "skip" keeps first come first
+        served but passes over an aircraft that can't leave for a reason of its own (an aircraft below it in its
+        stack, or too high to get down in time on any path): in 128 spells of an idle runway with aircraft holding,
+        the next to land was held back by an aircraft ahead of it in the queue 30% of the time and was itself too
+        high 31% (40 training sessions)."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -165,8 +169,8 @@ class RulesController(Controller):
             raise ValueError(f"base_turns must be rule or ai, not {base_turns!r}")
         if descent not in ("base", "plan"):
             raise ValueError(f"descent must be base or plan, not {descent!r}")
-        if sequence not in ("arrival", "soonest"):
-            raise ValueError(f"sequence must be arrival or soonest, not {sequence!r}")
+        if sequence not in ("arrival", "soonest", "skip"):
+            raise ValueError(f"sequence must be arrival, soonest or skip, not {sequence!r}")
         self.sequence = sequence
         self.descent = descent
         # Stage 2: with ``proposals`` the controller works out every heading, level and speed as usual but doesn't
@@ -352,10 +356,12 @@ class RulesController(Controller):
         if self.descent == "plan" and not blocked:
             longest = self.max_join(side)
             blocked = longest < 0 or not self._height_ok(v, probe, max(longest, shortest))
+        if self.sequence == "skip":
+            return (blocked, p.key)
         return (blocked, earliest - SOONEST_FAIRNESS * max(earliest - p.key, 0.0))
 
     def _replan(self, t: float, views: dict) -> None:
-        if self.sequence == "soonest":
+        if self.sequence in ("soonest", "skip"):
             rank = {p.cs: self._release_order(t, p, views) for p in self.plans.values()
                     if p.cs in views and p.stage == "inbound"}
             order = sorted((p for p in self.plans.values() if p.cs in views),
