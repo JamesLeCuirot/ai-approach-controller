@@ -1,0 +1,86 @@
+{
+  "controller": "lookahead",
+  "moves": "wide",
+  "hours": "train",
+  "sessions": 12,
+  "seed": 2026,
+  "draws": 3,
+  "min_gain": 1.0,
+  "look_every_s": 30,
+  "horizon_s": 420,
+  "gap_weight": 3.0,
+  "time_weight": 0.0,
+  "releases": false,
+  "quick_copies": true,
+  "changes": 141,
+  "back_to_plan": 89,
+  "moves_set": 33,
+  "moves_set_planned": 18,
+  "moves_hold_level": 105,
+  "moves_release": 71,
+  "moves_extend": 3,
+  "moves_release_now": 0,
+  "copies": 10206,
+  "looks": 1602,
+  "looks_with_a_problem": 173,
+  "seconds_per_look": 6.5,
+  "minutes_per_session": 14.7,
+  "ai": {
+    "sessions": 12,
+    "landed": 182,
+    "mean_gap_error_nm": 2.997,
+    "gaps_inside_minimum": 1,
+    "separation_losses": 0,
+    "losses_at_stack": 0,
+    "wake_infringements": 1,
+    "go_arounds": 0,
+    "speed_instructions_per_arrival": 0.67,
+    "mean_reward": 6.95,
+    "minutes_per_arrival": 25.1
+  },
+  "rules_vector": {
+    "sessions": 12,
+    "landed": 178,
+    "mean_gap_error_nm": 2.907,
+    "gaps_inside_minimum": 12,
+    "separation_losses": 41,
+    "losses_at_stack": 19,
+    "wake_infringements": 3,
+    "go_arounds": 14,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -16.07,
+    "minutes_per_arrival": 25.1
+  },
+  "ai_minus_rules_vector": {
+    "separation_losses": {
+      "difference": -41,
+      "range_95": 24.6,
+      "beyond_chance": true
+    },
+    "losses_at_stack": {
+      "difference": -19,
+      "range_95": 12.8,
+      "beyond_chance": true
+    },
+    "wake_infringements": {
+      "difference": -2,
+      "range_95": 2.6,
+      "beyond_chance": false
+    },
+    "go_arounds": {
+      "difference": -14,
+      "range_95": 10.4,
+      "beyond_chance": true
+    },
+    "gaps_inside_minimum": {
+      "difference": -11,
+      "range_95": 7.4,
+      "beyond_chance": true
+    },
+    "landed": {
+      "difference": 4,
+      "range_95": 4.4,
+      "beyond_chance": false
+    }
+  }
+}
