@@ -136,6 +136,29 @@ class LookAheadController(VectorController):
             if p is not None:
                 p.alt_cmd = None
 
+    def release_now(self, cs: str, views: list) -> bool:
+        """Off its stack now, onto its downwind, though the planner would keep it holding longer: only the lowest in
+        its stack, inside the RMA, as the planner itself releases (RulesController._replan), which then plans its
+        path and descent."""
+        rules = self.rules
+        by_cs = {v.cs: v for v in views}
+        p, v = rules.plans.get(cs), by_cs.get(cs)
+        if p is None or v is None or p.stage != "inbound" or not p.holding:
+            return False
+        if (not p.below_stack and rules._anyone_below_in_stack(p, by_cs)) or not rules._inside(v.x, v.y):
+            return False
+        side = rules._side(v)
+        if rules.max_join(side) < 0:
+            return False
+        p.stage, p.side, p.holding = "downwind", side, False
+        ahead = sum(1 for q in rules.plans.values() if q.stage == "downwind" and q.cs in by_cs)
+        p.level = min(6000, 4000 + 1000 * ahead)
+        p.alt_cmd = None
+        p.hdg_cmd = None
+        self.held_level.pop(cs, None)
+        rules.last_plan_t = -1e9
+        return True
+
     def extend_downwind(self, cs: str, nm: float) -> bool:
         """A longer downwind (a later base turn) for an aircraft not yet turned onto base."""
         p = self.rules.plans.get(cs)
@@ -193,6 +216,8 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
         ctl.release(cs)
     elif kind == "extend":
         ctl.extend_downwind(cs, move[2])
+    elif kind == "release_now":
+        ctl.release_now(cs, env.session.world.views())
     return action
 
 
@@ -327,12 +352,19 @@ def _copy(env: VectorEnv, seed: int, move: tuple | None, horizon_s: float) -> di
     _instrument(env, log)
     action = apply_move(env, move)
     keep = np.zeros_like(action)
-    t_end, total, done, first = env.session.t + horizon_s, 0.0, False, True
+    t_end, total, done, first, minutes = env.session.t + horizon_s, 0.0, False, True, 0.0
     while not done and env.session.t < t_end:
+        t0 = env.session.t
         _, r, done, _, _ = env.step(action if first else keep)
         first = False
         total += float(r)
-    return {"reward": total, **log}
+        minutes += len(env.session.world.views()) * (env.session.t - t0) / 60.0
+    # The minutes the planner still expects each aircraft to need at the end (its landing time; for one holding,
+    # the slot it would be given): what a move does to the queue beyond the copy's minutes.
+    views = {v.cs: v for v in env.session.world.views()}
+    remaining = sum(max(p.landing_t - env.session.t, 0.0) for p in env.vector.rules.plans.values()
+                    if p.cs in views) / 60.0
+    return {"reward": total, "aircraft_minutes": minutes, "remaining_minutes": remaining, **log}
 
 
 def fly_copies(env: VectorEnv, jobs: list[tuple[int, tuple | None]], workers: int = 1,
@@ -367,10 +399,14 @@ class LookAhead:
     """Chooses stage 2's adjustments (and, with moves="wide", the wider moves) by trying them in copies."""
 
     def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
-                 moves: str = "small"):
+                 moves: str = "small", time_weight: float = 0.0, releases: bool = False):
+        """``time_weight`` (efficient look-ahead): each aircraft-minute in the sector during the copies, and each
+        minute the planner still expects aircraft to need at their end, costs this much in the score (a loss of
+        separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
+        self.time_weight, self.releases = time_weight, releases
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
@@ -384,7 +420,8 @@ class LookAhead:
         self.made = {}
 
     def score(self, copy: dict) -> float:
-        return copy["reward"] - self.gap_weight * len(copy.get("gaps", []))
+        time = copy.get("aircraft_minutes", 0.0) + copy.get("remaining_minutes", 0.0)
+        return copy["reward"] - self.gap_weight * len(copy.get("gaps", [])) - self.time_weight * time
 
     def candidates(self, env: VectorEnv, obs: np.ndarray, involved: set[str]) -> list[tuple]:
         """Taking back each move in force, and every move for each aircraft involved, where it can be made now."""
@@ -409,6 +446,15 @@ class LookAhead:
             from approach.controllers.rules import STACK_BASE_FT
 
             out += [("release", cs) for cs in sorted(ctl.held_level) if self.can_take_back(env, (cs, "stack"))]
+            if self.releases:  # the lowest holding aircraft of each stack, off it now (the planner would wait)
+                from approach.controllers.rules import STACKS
+
+                for fix in STACKS:
+                    members = [p for p in rules._stack(fix, views) if p.holding and p.cs in views]
+                    if members:
+                        low = min(members, key=lambda p: views[p.cs].alt_ft)
+                        if not rules._anyone_below_in_stack(low, views):
+                            out.append(("release_now", low.cs))
             for cs in sorted(involved):
                 v = views.get(cs)
                 if v is None or rules.stage_of(cs) != "inbound":
@@ -502,6 +548,8 @@ class LookAhead:
             self.made[(best[1], best[2])] = t
         elif best[0] == "extend":
             entry["nm"] = best[2]
+        elif best[0] == "release_now":
+            self.made[(best[1], "stack")] = t
         elif best[0] == "hold_level":
             entry["step_ft"] = 1000 * best[2]
             self.made[(best[1], "stack")] = t
@@ -524,11 +572,11 @@ def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[di
     return episode_row(info, total), time.time() - t0
 
 
-MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend")
+MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend", "release_now")
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves, copy, parts = args
+    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases = args
     env = LookAheadEnv(hours=[s["hour"] for s in sessions])
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -551,7 +599,8 @@ def _run(args: tuple) -> list[dict]:
             if policy is not None:
                 la = CopyDriver(policy, probe_seed=s["pilot_seed"])
             else:
-                la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves)
+                la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
+                               time_weight=time_weight, releases=releases)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -584,6 +633,10 @@ def main() -> None:
     ap.add_argument("--moves", default="small", choices=("small", "wide"))
     ap.add_argument("--train", action="store_true",
                     help="training hours instead of the test's (for trying settings without looking at the test)")
+    ap.add_argument("--time-weight", type=float, default=0.0,
+                    help="each aircraft-minute (in the copies, and still expected at their end) costs this much")
+    ap.add_argument("--releases", action="store_true",
+                    help="also try taking the lowest aircraft of each stack off it now (the planner would wait)")
     ap.add_argument("--copy", default="",
                     help="fly the network that copies the look-ahead (a saved approach.ai.imitate model) instead")
     ap.add_argument("--out", required=True)
@@ -608,7 +661,8 @@ def main() -> None:
     parts.mkdir(parents=True, exist_ok=True)
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
-    tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts) for s in sessions]
+    tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases)
+             for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -630,6 +684,7 @@ def main() -> None:
                "moves": args.moves, "hours": "train" if args.train else "test",
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
                "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
+               "time_weight": args.time_weight, "releases": args.releases, "quick_copies": QUICK_COPIES,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
                "copies": sum(int(r["copies"]) for r in ai), "looks": looks,
