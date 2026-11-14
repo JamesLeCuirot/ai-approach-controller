@@ -76,6 +76,9 @@ PLANNING_MARGIN_NM = 1.0  # plan slightly long: the final director can close a g
 # Stage 1a (fixed paths): plan gaps about 4.5 NM, the real controllers' median with no departure in between
 # (data/real/egkk/landing_gaps.csv). Speed alone can't open a gap that was planned too tight.
 FIXED_PATH_MARGIN_NM = 1.5
+# sequence="soonest": the share of the delay an aircraft has already taken on (against the landing time first
+# estimated for it) that counts in its favour when choosing who leaves the holds next, so none is passed for ever.
+SOONEST_FAIRNESS = 0.25
 SPEED_DOWNWIND, SPEED_BASE, SPEED_FINAL = 220, 180, 160
 GS_DOWNWIND, GS_BASE = 235.0, 190.0  # rough ground speeds used for timing (no wind)
 REISSUE_DEG = 8.0
@@ -131,7 +134,7 @@ class RulesController(Controller):
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
-                 descent: str = "base", proposals: bool = False):
+                 descent: str = "base", proposals: bool = False, sequence: str = "arrival"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -143,7 +146,17 @@ class RulesController(Controller):
         ``base_turns`` = "ai" (stage 1b): the planner still turns each aircraft at its own point unless the AI says
         otherwise: turn_base_now() turns it now, and hold_base_turn() (as the planner is about to turn it) leaves the
         turn to the AI, the aircraft flying on until the AI turns it or it reaches the last point that keeps its
-        base inside the RMA."""
+        base inside the RMA.
+
+        ``sequence`` is the order aircraft leave the holds in: "arrival" (every result before 14 Nov 2026), first
+        come first served by the landing time first estimated for each; "soonest", whichever could reach the runway
+        soonest (SOONEST_FAIRNESS). On 40 training sessions with the competitor, in 82% of releases from a hold another
+        holding aircraft could have landed sooner (27% by over 2 minutes), and the runway stood idle while others
+        held. Either way an aircraft leaves its stack only when none is below it, and each stack's levels stay in the
+        order its aircraft joined, so re-ordering the queue never moves an aircraft up or down a stack. Tried on 40
+        training sessions (the planner alone), "soonest" was no better: 25.6 minutes per arrival against 24.8, 119
+        losses of separation against 113, 42 go-arounds against 34, 10 wake infringements against 4 (mixing the two
+        stacks' aircraft on the downwind); it stays an option, "arrival" the default."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -152,6 +165,9 @@ class RulesController(Controller):
             raise ValueError(f"base_turns must be rule or ai, not {base_turns!r}")
         if descent not in ("base", "plan"):
             raise ValueError(f"descent must be base or plan, not {descent!r}")
+        if sequence not in ("arrival", "soonest"):
+            raise ValueError(f"sequence must be arrival or soonest, not {sequence!r}")
+        self.sequence = sequence
         self.descent = descent
         # Stage 2: with ``proposals`` the controller works out every heading, level and speed as usual but doesn't
         # send them; each plan's hdg_cmd, alt_cmd and spd_cmd is then its proposal, for the AI to keep or adjust
@@ -323,9 +339,31 @@ class RulesController(Controller):
         return self.airport.magnetic_to_true(mag % 360)
 
     # ---- sequencing ------------------------------------------------------------
+    def _release_order(self, t: float, p: Plan, views: dict) -> tuple:
+        """sequence="soonest": an aircraft not yet released, by the earliest it could land on the shortest path (less
+        SOONEST_FAIRNESS of the delay it has already taken on, so none waits for ever), after those that could go:
+        one with an aircraft below it in its stack, or that can't get down in time on any path, comes last."""
+        v = views[p.cs]
+        side = self._side(v)
+        probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
+        shortest = D_JOIN_FIXED_NM if self.fixed_paths else D_JOIN_MIN_NM
+        earliest = t + self._eta(v, probe, shortest)
+        blocked = p.holding and not p.below_stack and self._anyone_below_in_stack(p, views)
+        if self.descent == "plan" and not blocked:
+            longest = self.max_join(side)
+            blocked = longest < 0 or not self._height_ok(v, probe, max(longest, shortest))
+        return (blocked, earliest - SOONEST_FAIRNESS * max(earliest - p.key, 0.0))
+
     def _replan(self, t: float, views: dict) -> None:
-        order = sorted((p for p in self.plans.values() if p.cs in views),
-                       key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3), p.key))
+        if self.sequence == "soonest":
+            rank = {p.cs: self._release_order(t, p, views) for p in self.plans.values()
+                    if p.cs in views and p.stage == "inbound"}
+            order = sorted((p for p in self.plans.values() if p.cs in views),
+                           key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3),
+                                          rank.get(p.cs, (False, p.key))))
+        else:
+            order = sorted((p for p in self.plans.values() if p.cs in views),
+                           key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3), p.key))
         prev_t, prev_type = None, None
         for p in order:
             v = views[p.cs]
