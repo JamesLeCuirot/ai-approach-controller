@@ -493,8 +493,8 @@ class LookAhead:
         in any of them. Also keeps the share of the copies each aircraft ran into trouble in (last_involved)."""
         self.last_involved = {}
         seeds = [self.rng.randrange(1 << 30) for _ in range(self.draws)]
-        base = fly_copies(env, [(s, None) for s in seeds], self.workers, self.horizon_s)
-        base = [b for b in base if "error" not in b]
+        self.last_base = fly_copies(env, [(s, None) for s in seeds], self.workers, self.horizon_s)  # one per seed
+        base = [b for b in self.last_base if "error" not in b]
         self.stats["looks"] += 1
         self.stats["copies"] += len(seeds)
         involved, in_draws = set(), Counter()
@@ -515,6 +515,19 @@ class LookAhead:
         self.last_involved = {cs: n / len(base) for cs, n in in_draws.items()} if base else {}
         return seeds, base, involved
 
+    def _no_new_trouble(self, copies: list[dict]) -> bool:
+        """An efficiency move (EFFICIENCY_MOVES) is made only if, in every copy, it brings no more losses of
+        separation, go-arounds or gaps inside the minimum than the same copy (the same pilots) without it: time is
+        saved only where it costs no safety. Without this, on 9 of the 12 dev training sessions the look-ahead with
+        releases and a time weight of 0.1 had 7 go-arounds (a go-around costs 3, and a release that saves ten
+        aircraft two minutes each scores 2)."""
+        def trouble(c):
+            return len(c.get("losses", [])) + len(c.get("go_arounds", [])) + len(c.get("gaps", []))
+        for c, b in zip(copies, getattr(self, "last_base", [])):
+            if "error" in c or "error" in b or trouble(c) > trouble(b):
+                return False
+        return len(copies) == len(getattr(self, "last_base", []))
+
     def _look(self, env: VectorEnv, obs: np.ndarray, t: float) -> tuple | None:
         seeds, base, involved = self.probe(env)
         if not base:
@@ -534,6 +547,8 @@ class LookAhead:
             if len(rs) < len(seeds):
                 continue
             gain = float(np.mean([self.score(r) for r in rs])) - base_score
+            if cand[0] in EFFICIENCY_MOVES and not self._no_new_trouble(res[k * len(seeds):(k + 1) * len(seeds)]):
+                continue
             need = 0.0 if cand[0] in REVERTS else self.min_gain
             if gain >= need and (best_gain is None or gain > best_gain):
                 best, best_gain = cand, gain
@@ -573,6 +588,7 @@ def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[di
 
 
 MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend", "release_now")
+EFFICIENCY_MOVES = ("release_now",)  # made only where every copy shows no new trouble (LookAhead._no_new_trouble)
 
 
 def _run(args: tuple) -> list[dict]:
