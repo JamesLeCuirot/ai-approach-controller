@@ -90,3 +90,17 @@ def test_final_approach_minimum_is_2_5_nm(airport):
     assert score(on_final, airport, "26L")["separation_losses"] == 0
     off_final = SessionLog(meta={}, map={}, frames=[frame(0, 20.0, 22.7, lateral=6.0, phase="vectoring")])
     assert score(off_final, airport, "26L")["separation_losses"] == 1
+
+
+def test_a_callsign_used_twice_in_a_window_gets_a_second_name(airport):
+    """Two airframes broadcasting one callsign minutes apart are two aircraft in the simulator."""
+    from approach.data.real_sessions import real_scenario
+
+    def arrival(t, cs):
+        return {"callsign": cs, "type": "A320", "runway": "26L", "landed_t": t + 1200.0,
+                "handover": {"t": t, "lat": 51.0, "lon": 0.3, "alt": 12000, "track": 300.0, "gs": 300}}
+
+    day = {"day": "2024-09-23", "source": "test",
+           "arrivals": [arrival(1000.0, "EFW0BP"), arrival(1300.0, "EZY1AB"), arrival(1420.0, "EFW0BP")]}
+    scenario = real_scenario(day, airport, 0.0, 3600.0, wind=False)
+    assert [a.callsign for a in scenario.arrivals] == ["EFW0BP", "EZY1AB", "EFW0BP_2"]

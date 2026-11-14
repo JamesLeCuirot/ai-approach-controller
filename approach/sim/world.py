@@ -246,6 +246,10 @@ class World:
 
     # ---- traffic -----------------------------------------------------------------
     def spawn(self, cs: str, actype: str, lat: float, lon: float, hdg_true: float, alt_ft: float, cas_kt: float) -> None:
+        if cs in self.pilots:
+            # BlueSky keeps the aircraft already flying and the new pilot would take it over (once, a holding
+            # aircraft lost its hold and flew off 139 NM): two aircraft in the air need two names.
+            raise ValueError(f"{cs} is already in the air")
         self.stack(f"CRE {cs} {actype} {lat:.6f} {lon:.6f} {hdg_true:.1f} {alt_ft:.0f} {cas_kt:.0f}")
         self.bs.sim.step()  # process the command so the aircraft exists
         p = Pilot(cs, actype, self.t, hdg_true, alt_ft, cas_kt)

@@ -184,12 +184,17 @@ def real_scenario(day: dict, airport: Airport, start: float, end: float, name: s
     arrivals = window_arrivals(day, start, end)
     runway = runway_in_use(arrivals)
     out = []
+    seen: dict[str, int] = {}
     for a in arrivals:
         h = a["handover"]
         nearest = min(airport.holds.values(), key=lambda hold: math.hypot(
             *(u - v for u, v in zip(airport.xy(hold.position), airport.grid.to_xy(h["lat"], h["lon"])))))
+        # The same callsign twice in a window (5 times in 76 days: two airframes broadcasting one callsign, minutes
+        # apart): the second is a different aircraft, so it gets its own name in the simulator.
+        seen[a["callsign"]] = seen.get(a["callsign"], 0) + 1
+        callsign = a["callsign"] if seen[a["callsign"]] == 1 else f"{a['callsign']}_{seen[a['callsign']]}"
         out.append(Arrival(
-            callsign=a["callsign"], actype=a["type"], fix=nearest.fix, release_s=round(h["t"] - start, 1),
+            callsign=callsign, actype=a["type"], fix=nearest.fix, release_s=round(h["t"] - start, 1),
             level_ft=int(round(h["alt"] / 100.0) * 100), speed_kt=0,
             lat=h["lat"], lon=h["lon"], track=h["track"], gs_kt=h["gs"],
         ))

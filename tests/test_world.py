@@ -151,3 +151,12 @@ def test_hold_survives_wind_after_the_outbound_turn(airport):
     assert abs((v.hdg - v.trk + 540) % 360 - 180) > 5  # crabbing in the wind
     assert back
     assert furthest < 12.0
+
+
+def test_spawning_a_callsign_already_in_the_air_is_refused(airport):
+    from approach.sim.world import World
+
+    world = World(airport, "26L")
+    spawn_at_willo(world, airport, cs="DUP1")
+    with pytest.raises(ValueError):
+        spawn_at_willo(world, airport, cs="DUP1")
