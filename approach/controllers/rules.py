@@ -160,7 +160,10 @@ class RulesController(Controller):
         served but passes over an aircraft that can't leave for a reason of its own (an aircraft below it in its
         stack, or too high to get down in time on any path): in 128 spells of an idle runway with aircraft holding,
         the next to land was held back by an aircraft ahead of it in the queue 30% of the time and was itself too
-        high 31% (40 training sessions)."""
+        high 31% (40 training sessions). On the same 40 sessions it was no better either: 25.5 minutes per arrival
+        against 24.8, 606 landed against 593, 112 losses of separation against 113, but 44 go-arounds against 34,
+        27 gaps inside the minimum against 21, 8 wake infringements against 4. Changing who leaves the holds by a
+        fixed rule moves the delay onto final, where this planner can't absorb a changed order."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
