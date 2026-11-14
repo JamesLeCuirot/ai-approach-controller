@@ -62,6 +62,10 @@ DRAWS = 3
 MIN_GAIN = 1.0  # a move must score this much better than doing nothing (a fifth of a loss of separation)
 GAP_WEIGHT = 3.0  # "wide": each gap inside the minimum at a landing, in the score
 EXTEND_NM = (1.0, 2.0)
+# An efficiency move (a release from a stack) is judged over this longer horizon: an aircraft released from a stack
+# reaches final 10 to 15 minutes later, and over HORIZON_WIDE_S its copies showed no trouble from the releases that
+# later brought go-arounds (the safety veto never fired on 3 dev training sessions it was tried on).
+RELEASE_HORIZON_S = 900
 MIN_KEEP_S = 120  # "wide": a move stays in force at least this long before it can be taken back
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
@@ -446,15 +450,18 @@ class LookAhead:
             from approach.controllers.rules import STACK_BASE_FT
 
             out += [("release", cs) for cs in sorted(ctl.held_level) if self.can_take_back(env, (cs, "stack"))]
-            if self.releases:  # the lowest holding aircraft of each stack, off it now (the planner would wait)
+            if self.releases:  # the holding aircraft next in the planner's queue, off its stack now
                 from approach.controllers.rules import STACKS
 
+                lows = []
                 for fix in STACKS:
                     members = [p for p in rules._stack(fix, views) if p.holding and p.cs in views]
                     if members:
                         low = min(members, key=lambda p: views[p.cs].alt_ft)
                         if not rules._anyone_below_in_stack(low, views):
-                            out.append(("release_now", low.cs))
+                            lows.append(low)
+                if lows:
+                    out.append(("release_now", min(lows, key=lambda p: p.landing_t).cs))
             for cs in sorted(involved):
                 v = views.get(cs)
                 if v is None or rules.stage_of(cs) != "inbound":
@@ -515,7 +522,7 @@ class LookAhead:
         self.last_involved = {cs: n / len(base) for cs, n in in_draws.items()} if base else {}
         return seeds, base, involved
 
-    def _no_new_trouble(self, copies: list[dict]) -> bool:
+    def _no_new_trouble(self, copies: list[dict], base: list[dict] | None = None) -> bool:
         """An efficiency move (EFFICIENCY_MOVES) is made only if, in every copy, it brings no more losses of
         separation, go-arounds or gaps inside the minimum than the same copy (the same pilots) without it: time is
         saved only where it costs no safety. Without this, on 9 of the 12 dev training sessions the look-ahead with
@@ -523,10 +530,11 @@ class LookAhead:
         aircraft two minutes each scores 2)."""
         def trouble(c):
             return len(c.get("losses", [])) + len(c.get("go_arounds", [])) + len(c.get("gaps", []))
-        for c, b in zip(copies, getattr(self, "last_base", [])):
+        base = getattr(self, "last_base", []) if base is None else base
+        for c, b in zip(copies, base):
             if "error" in c or "error" in b or trouble(c) > trouble(b):
                 return False
-        return len(copies) == len(getattr(self, "last_base", []))
+        return len(copies) == len(base)
 
     def _look(self, env: VectorEnv, obs: np.ndarray, t: float) -> tuple | None:
         seeds, base, involved = self.probe(env)
@@ -537,21 +545,36 @@ class LookAhead:
         cands = self.candidates(env, obs, involved)
         if not cands:
             return None
-        jobs = [(s, cand) for cand in cands for s in seeds]
-        res = fly_copies(env, jobs, self.workers, self.horizon_s)
-        self.stats["copies"] += len(jobs)
-        base_score = float(np.mean([self.score(b) for b in base]))
         best, best_gain = None, None
-        for k, cand in enumerate(cands):
-            rs = [r for r in res[k * len(seeds):(k + 1) * len(seeds)] if "error" not in r]
-            if len(rs) < len(seeds):
+        for group, horizon in ((tuple(c for c in cands if c[0] not in EFFICIENCY_MOVES), self.horizon_s),
+                               (tuple(c for c in cands if c[0] in EFFICIENCY_MOVES), RELEASE_HORIZON_S)):
+            if not group:
                 continue
-            gain = float(np.mean([self.score(r) for r in rs])) - base_score
-            if cand[0] in EFFICIENCY_MOVES and not self._no_new_trouble(res[k * len(seeds):(k + 1) * len(seeds)]):
-                continue
-            need = 0.0 if cand[0] in REVERTS else self.min_gain
-            if gain >= need and (best_gain is None or gain > best_gain):
-                best, best_gain = cand, gain
+            ref = base
+            if horizon != self.horizon_s:  # copies with nothing changed over the longer horizon, the same pilots
+                ref_all = fly_copies(env, [(s, None) for s in seeds], self.workers, horizon)
+                self.stats["copies"] += len(seeds)
+                ref = [b for b in ref_all if "error" not in b]
+                if len(ref) < len(seeds):
+                    continue
+            else:
+                ref_all = self.last_base
+            jobs = [(s, cand) for cand in group for s in seeds]
+            res = fly_copies(env, jobs, self.workers, horizon)
+            self.stats["copies"] += len(jobs)
+            base_score = float(np.mean([self.score(b) for b in ref]))
+            for k, cand in enumerate(group):
+                mine = res[k * len(seeds):(k + 1) * len(seeds)]
+                rs = [r for r in mine if "error" not in r]
+                if len(rs) < len(seeds):
+                    continue
+                gain = float(np.mean([self.score(r) for r in rs])) - base_score
+                if cand[0] in EFFICIENCY_MOVES and not self._no_new_trouble(mine, ref_all):
+                    self.stats["vetoed"] += 1
+                    continue
+                need = 0.0 if cand[0] in REVERTS else self.min_gain
+                if gain >= need and (best_gain is None or gain > best_gain):
+                    best, best_gain = cand, gain
         if best is None:
             return None
         self.stats[best[0]] += 1
@@ -623,7 +646,8 @@ def _run(args: tuple) -> list[dict]:
                          "copies": la.stats["copies"], "changes": la.stats["changes"],
                          "back_to_plan": la.stats["back_to_plan"],
                          **{f"moves_{k}": la.stats[k] for k in MOVE_KINDS},
-                         "look_s": round(la.stats["look_seconds"], 1), "change_log": json.dumps(la.changes)})
+                         "look_s": round(la.stats["look_seconds"], 1), "vetoed": la.stats["vetoed"],
+                         "change_log": json.dumps(la.changes)})
             print(f"session {s['id']}: {row['separation_losses']} losses of separation, {row['go_arounds']} go-arounds, "
                   f"{row['gaps_inside_minimum']} gaps inside the minimum, {la.stats['changes']} changes, "
                   f"{la.stats['copies']} copies, {secs / 60:.1f} min", flush=True)
@@ -705,6 +729,7 @@ def main() -> None:
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
                "copies": sum(int(r["copies"]) for r in ai), "looks": looks,
                "looks_with_a_problem": sum(int(r["looks_with_a_problem"]) for r in ai),
+               "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai), "release_horizon_s": RELEASE_HORIZON_S,
                "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),
                "minutes_per_session": round(sum(int(r["wall_s"]) for r in ai) / 60 / max(len(ai), 1), 1),
                **summarise(rows)}
