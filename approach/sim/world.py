@@ -60,6 +60,9 @@ _BS_READY = False
 TURN_RATE_REF_DEG_S = 2.0  # BlueSky airliner turn rate at the reference speed below
 TURN_RATE_REF_TAS_KT = 247.0
 RUNWAY_OCCUPANCY_S = 50.0
+# The longest a turn in a hold takes before the pilot carries on regardless: half a turn at the lowest measured bank
+# (15 degrees) and holding speed high up takes about 3 minutes; the turn back towards the inbound leg is a quarter turn.
+HOLD_TURN_MAX_S = {"turn_out": 240.0, "turn_in": 150.0}
 MIN_FINAL_GAP_NM = 2.0  # tower sends the follower around below this
 MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilot still captures
 
@@ -417,7 +420,13 @@ class World:
         self.stack(f"SPD {p.cs} {p.spd_set:.1f}")
 
     def _hold_tick(self, p: Pilot, v: AircraftView) -> None:
-        """Fly the published racetrack: to the fix, turn outbound, a timed leg, turn back, inbound to the fix."""
+        """Fly the published racetrack: to the fix, turn outbound, a timed leg, turn back, inbound to the fix.
+
+        A turn is finished when the heading or the track is near the one wanted: BlueSky's autopilot keeps the
+        track a heading command gave in the wind at that moment, so an aircraft that descends into wind after its
+        turn crabs, and its heading can stay several degrees off for good. Waiting for the heading alone left a
+        pilot on its outbound turn for 18 minutes, 85 NM from the fix. HOLD_TURN_MAX_S ends a turn that still
+        hasn't finished."""
         hold = self.airport.holds[p.hold_fix]
         fx, fy = self.airport.xy(hold.position)
         inbound = self.airport.magnetic_to_true(hold.inbound_course_mag)
@@ -425,24 +434,29 @@ class World:
         side = 1.0 if hold.turn == "right" else -1.0
         leg_s = 60.0 if v.alt_ft <= 14000 else 90.0
         dist = math.hypot(fx - v.x, fy - v.y)
+
+        def near(course: float, tolerance: float) -> bool:
+            return min(abs(heading_difference(v.hdg, course)), abs(heading_difference(v.trk, course))) < tolerance
+
         if p.hold_state in ("to_fix", "inbound"):
             self._hdg(p.cs, self.heading_for_track(v, bearing_xy(v.x, v.y, fx, fy)))
             if dist < 0.7:
-                p.hold_state = "turn_out"
+                p.hold_state, p.hold_t = "turn_out", self.t
                 self._hdg(p.cs, (inbound + 90.0 * side) % 360)  # turn the published way
         elif p.hold_state == "turn_out":
             mid = (inbound + 90.0 * side) % 360
-            if abs(heading_difference(v.hdg, mid)) < 15:
+            late = self.t - p.hold_t >= HOLD_TURN_MAX_S["turn_out"]
+            if near(mid, 15) or late:
                 self._hdg(p.cs, outbound)
-            if abs(heading_difference(v.hdg, outbound)) < 5:
+            if near(outbound, 5) or late:
                 p.hold_state, p.hold_t = "outbound", self.t
         elif p.hold_state == "outbound":
             if self.t - p.hold_t >= leg_s:
-                p.hold_state = "turn_in"
+                p.hold_state, p.hold_t = "turn_in", self.t
                 self._hdg(p.cs, (outbound + 90.0 * side) % 360)
         elif p.hold_state == "turn_in":
             mid = (outbound + 90.0 * side) % 360
-            if abs(heading_difference(v.hdg, mid)) < 15:
+            if near(mid, 15) or self.t - p.hold_t >= HOLD_TURN_MAX_S["turn_in"]:
                 p.hold_state = "inbound"
 
     @staticmethod

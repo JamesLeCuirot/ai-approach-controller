@@ -112,3 +112,42 @@ def test_hold_at_willo(airport):
     assert turned < -600  # left turns: more than one and a half laps
     assert furthest < 10.0
     assert v.phase == "holding"
+
+
+def test_hold_survives_wind_after_the_outbound_turn(airport):
+    """A wind that starts after the turn outbound makes the autopilot crab to keep its track, so the heading stays
+    off the outbound one; the pilot still finishes the turn, flies the timed leg and comes back to the fix. (It used
+    to wait for the heading and fly on outbound for good.)"""
+    import math
+
+    from approach.data.gfs import GRID_DEG, WindProfile
+    from approach.sim.world import World
+
+    world = World(airport, "26L")
+    hold = airport.holds["TIMBA"]
+    fx, fy = airport.xy(hold.position)
+    inbound = airport.magnetic_to_true(hold.inbound_course_mag)
+    outbound = (inbound + 180.0) % 360.0
+    world.spawn("H1", "A320", hold.position.lat - 0.15, hold.position.lon + 0.2, inbound, 10000, 220)
+    world.instruct(Instruction("H1", "hold", "TIMBA"))
+    for _ in range(900):  # to the fix and round to the outbound heading, in calm air
+        world.step(1)
+        if world.pilots["H1"].hold_state == "turn_out" and world._last_hdg.get("H1") == pytest.approx(outbound):
+            break
+    assert world.pilots["H1"].hold_state == "turn_out"
+    world.step(3)  # BlueSky turns the heading command into a track with the wind when it takes it: calm here
+    lats = [hold.position.lat - 2 + GRID_DEG * k for k in range(17)]
+    lons = [hold.position.lon - 2 + GRID_DEG * k for k in range(17)]
+    grid = [[0.0] * len(lons) for _ in lats]
+    world.set_wind(WindProfile(valid="", source="test", lats=lats, lons=lons, heights_ft=[30.0, 20000.0],
+                               u_kt=[grid, grid], v_kt=[[[-50.0] * len(lons) for _ in lats]] * 2))  # 50 kt from the north
+    furthest, back = 0.0, False
+    for _ in range(900):
+        world.step(1)
+        v = world.views()[0]
+        d = math.hypot(v.x - fx, v.y - fy)
+        furthest = max(furthest, d)
+        back = back or (furthest > 3.0 and d < 1.0)
+    assert abs((v.hdg - v.trk + 540) % 360 - 180) > 5  # crabbing in the wind
+    assert back
+    assert furthest < 12.0
