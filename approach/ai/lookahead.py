@@ -142,8 +142,10 @@ class LookAheadController(VectorController):
 
     def release_now(self, cs: str, views: list) -> bool:
         """Off its stack now, onto its downwind, though the planner would keep it holding longer: only the lowest in
-        its stack, inside the RMA, as the planner itself releases (RulesController._replan), which then plans its
-        path and descent."""
+        its stack, inside the RMA, and low enough to get down in time on some path, as the planner itself releases
+        (RulesController._replan), which then plans its path and descent. Without the height check, 3 of the 5
+        go-arounds on two busy dev training sessions were aircraft released early 9 to 14 minutes before, 2 of
+        them passing the threshold too high to land."""
         rules = self.rules
         by_cs = {v.cs: v for v in views}
         p, v = rules.plans.get(cs), by_cs.get(cs)
@@ -152,8 +154,15 @@ class LookAheadController(VectorController):
         if (not p.below_stack and rules._anyone_below_in_stack(p, by_cs)) or not rules._inside(v.x, v.y):
             return False
         side = rules._side(v)
-        if rules.max_join(side) < 0:
+        longest = rules.max_join(side)
+        if longest < 0:
             return False
+        if rules.descent == "plan":  # the planner's own height check: it must be able to get down on some path
+            from approach.controllers.rules import Plan
+
+            probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
+            if not rules._height_ok(v, probe, longest):
+                return False
         p.stage, p.side, p.holding = "downwind", side, False
         ahead = sum(1 for q in rules.plans.values() if q.stage == "downwind" and q.cs in by_cs)
         p.level = min(6000, 4000 + 1000 * ahead)
