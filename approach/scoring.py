@@ -18,6 +18,7 @@ LABELS = {
     "mean_spacing_nm": "Average spacing at runway (NM)",
     "track_miles_per_arrival": "Track miles per arrival",
     "minutes_per_arrival": "Minutes from release to landing",
+    "minutes_per_arrival_all": "Minutes from release to landing, or to the end for those still flying",
     "instructions": "Instructions",
     "instructions_per_arrival": "Instructions per arrival",
     "safety_blocks": "Blocked by safety check",
@@ -135,6 +136,12 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
     landed_cs = [e["cs"] for e in landings]
     track = [miles[c] for c in landed_cs]
     minutes = [(e["t"] - released[e["cs"]]) / 60 for e in landings if e["cs"] in released]
+    # Every arrival handed over, landed or not: an aircraft still flying when the session ends counts its minutes
+    # to the end. Minutes per arrival above counts only those that landed, so a controller that leaves aircraft
+    # in the air looks quicker than it is.
+    end_t = max([f["t"] for f in frames] + [e["t"] for e in events], default=0.0)
+    landed_t = {e["cs"]: e["t"] for e in landings}
+    all_minutes = [(landed_t.get(cs, end_t) - t0) / 60 for cs, t0 in released.items()]
     checks = kinds["stable_check"]
     arrivals = len(kinds["takeover"])
 
@@ -148,6 +155,7 @@ def score(log: SessionLog, airport: Airport, runway: str) -> dict:
         "mean_spacing_nm": round(sum(spacings) / len(spacings), 1) if spacings else "",
         "track_miles_per_arrival": round(sum(track) / len(track), 1) if track else "",
         "minutes_per_arrival": round(sum(minutes) / len(minutes), 1) if minutes else "",
+        "minutes_per_arrival_all": round(sum(all_minutes) / len(all_minutes), 1) if all_minutes else "",
         "instructions": len(kinds["instruction"]),
         "instructions_per_arrival": round(len(kinds["instruction"]) / arrivals, 1) if arrivals else "",
         "safety_blocks": len(kinds["blocked"]),

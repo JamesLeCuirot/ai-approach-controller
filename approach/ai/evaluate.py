@@ -185,6 +185,11 @@ def summarise(rows: list[dict]) -> dict:
         minutes = [(float(r["minutes_per_arrival"]), int(r["landed"])) for r in g if r.get("minutes_per_arrival")]
         if minutes:
             out[who]["minutes_per_arrival"] = round(sum(m * n for m, n in minutes) / max(sum(n for _, n in minutes), 1), 1)
+        every = [(float(r["minutes_per_arrival_all"]), int(r["arrivals"])) for r in g
+                 if r.get("minutes_per_arrival_all") not in (None, "") and r.get("arrivals") not in (None, "")]
+        if every and len(every) == len(g):  # still-flying aircraft counted to the end (only when every row has it)
+            out[who]["arrivals"] = sum(n for _, n in every)
+            out[who]["minutes_per_arrival_all"] = round(sum(m * n for m, n in every) / max(sum(n for _, n in every), 1), 1)
     if "ai" in out and "rules_vector" in out:
         out["ai_minus_rules_vector"] = paired_differences(rows, "ai", "rules_vector")
     if "rules_vector" in out and "real" in out:
