@@ -403,14 +403,15 @@ class LookAhead:
     """Chooses stage 2's adjustments (and, with moves="wide", the wider moves) by trying them in copies."""
 
     def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
-                 moves: str = "small", time_weight: float = 0.0, releases: bool = False):
+                 moves: str = "small", time_weight: float = 0.0, releases: bool = False,
+                 go_around_extra: float = 0.0):
         """``time_weight`` (efficient look-ahead): each aircraft-minute in the sector during the copies, and each
         minute the planner still expects aircraft to need at their end, costs this much in the score (a loss of
         separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
-        self.time_weight, self.releases = time_weight, releases
+        self.time_weight, self.releases, self.go_around_extra = time_weight, releases, go_around_extra
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
@@ -425,7 +426,8 @@ class LookAhead:
 
     def score(self, copy: dict) -> float:
         time = copy.get("aircraft_minutes", 0.0) + copy.get("remaining_minutes", 0.0)
-        return copy["reward"] - self.gap_weight * len(copy.get("gaps", [])) - self.time_weight * time
+        return (copy["reward"] - self.gap_weight * len(copy.get("gaps", [])) - self.time_weight * time
+                - self.go_around_extra * len(copy.get("go_arounds", [])))
 
     def candidates(self, env: VectorEnv, obs: np.ndarray, involved: set[str]) -> list[tuple]:
         """Taking back each move in force, and every move for each aircraft involved, where it can be made now."""
@@ -615,7 +617,7 @@ EFFICIENCY_MOVES = ("release_now",)  # made only where every copy shows no new t
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases = args
+    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra = args
     env = LookAheadEnv(hours=[s["hour"] for s in sessions])
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -639,7 +641,7 @@ def _run(args: tuple) -> list[dict]:
                 la = CopyDriver(policy, probe_seed=s["pilot_seed"])
             else:
                 la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
-                               time_weight=time_weight, releases=releases)
+                               time_weight=time_weight, releases=releases, go_around_extra=go_around_extra)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -675,6 +677,8 @@ def main() -> None:
                     help="training hours instead of the test's (for trying settings without looking at the test)")
     ap.add_argument("--time-weight", type=float, default=0.0,
                     help="each aircraft-minute (in the copies, and still expected at their end) costs this much")
+    ap.add_argument("--go-around-extra", type=float, default=0.0,
+                    help="each go-around in the copies costs this much more than the training world's 3")
     ap.add_argument("--releases", action="store_true",
                     help="also try taking the lowest aircraft of each stack off it now (the planner would wait)")
     ap.add_argument("--copy", default="",
@@ -701,8 +705,8 @@ def main() -> None:
     parts.mkdir(parents=True, exist_ok=True)
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
-    tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases)
-             for s in sessions]
+    tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
+              args.go_around_extra) for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -724,7 +728,8 @@ def main() -> None:
                "moves": args.moves, "hours": "train" if args.train else "test",
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
                "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
-               "time_weight": args.time_weight, "releases": args.releases, "quick_copies": QUICK_COPIES,
+               "time_weight": args.time_weight, "releases": args.releases, "go_around_extra": args.go_around_extra,
+               "quick_copies": QUICK_COPIES,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
                "copies": sum(int(r["copies"]) for r in ai), "looks": looks,
