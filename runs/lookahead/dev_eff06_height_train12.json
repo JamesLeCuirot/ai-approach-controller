@@ -1,0 +1,89 @@
+{
+  "controller": "lookahead",
+  "moves": "wide",
+  "hours": "train",
+  "sessions": 12,
+  "seed": 2026,
+  "draws": 3,
+  "min_gain": 1.0,
+  "look_every_s": 30,
+  "horizon_s": 420,
+  "gap_weight": 3.0,
+  "time_weight": 0.1,
+  "releases": true,
+  "go_around_extra": 0.0,
+  "quick_copies": true,
+  "changes": 130,
+  "back_to_plan": 83,
+  "moves_set": 20,
+  "moves_set_planned": 14,
+  "moves_hold_level": 83,
+  "moves_release": 69,
+  "moves_extend": 1,
+  "moves_release_now": 26,
+  "copies": 14367,
+  "looks": 1590,
+  "looks_with_a_problem": 139,
+  "releases_vetoed": 138,
+  "release_horizon_s": 900,
+  "seconds_per_look": 11.5,
+  "minutes_per_session": 25.7,
+  "ai": {
+    "sessions": 12,
+    "landed": 174,
+    "mean_gap_error_nm": 2.748,
+    "gaps_inside_minimum": 0,
+    "separation_losses": 1,
+    "losses_at_stack": 1,
+    "wake_infringements": 0,
+    "go_arounds": 0,
+    "speed_instructions_per_arrival": 0.53,
+    "mean_reward": 6.77,
+    "minutes_per_arrival": 24.4
+  },
+  "rules_vector": {
+    "sessions": 12,
+    "landed": 178,
+    "mean_gap_error_nm": 2.907,
+    "gaps_inside_minimum": 12,
+    "separation_losses": 41,
+    "losses_at_stack": 19,
+    "wake_infringements": 3,
+    "go_arounds": 14,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -16.07,
+    "minutes_per_arrival": 25.1
+  },
+  "ai_minus_rules_vector": {
+    "separation_losses": {
+      "difference": -40,
+      "range_95": 24.5,
+      "beyond_chance": true
+    },
+    "losses_at_stack": {
+      "difference": -18,
+      "range_95": 13.1,
+      "beyond_chance": true
+    },
+    "wake_infringements": {
+      "difference": -3,
+      "range_95": 4.2,
+      "beyond_chance": false
+    },
+    "go_arounds": {
+      "difference": -14,
+      "range_95": 10.4,
+      "beyond_chance": true
+    },
+    "gaps_inside_minimum": {
+      "difference": -12,
+      "range_95": 7.7,
+      "beyond_chance": true
+    },
+    "landed": {
+      "difference": -4,
+      "range_95": 17.0,
+      "beyond_chance": false
+    }
+  }
+}
