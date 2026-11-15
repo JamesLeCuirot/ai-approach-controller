@@ -208,8 +208,8 @@ class RulesController(Controller):
             raise ValueError(f"height_by must be distance or time, not {height_by!r}")
         if inbound_speed not in ("standard", "keep"):
             raise ValueError(f"inbound_speed must be standard or keep, not {inbound_speed!r}")
-        if stack_check not in ("near", "stack"):
-            raise ValueError(f"stack_check must be near or stack, not {stack_check!r}")
+        if stack_check not in ("near", "stack", "zone"):
+            raise ValueError(f"stack_check must be near, stack or zone, not {stack_check!r}")
         self.stack_check = stack_check
         self.sequence = sequence
         self.height_by = height_by
@@ -777,11 +777,14 @@ class RulesController(Controller):
         within STACK_ZONE_NM of its fix (one that has just left it)."""
         out = {w.cs: w for w in self._near(v, views)}
         fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
+        zone = self.stack_check == "zone"
+        if zone and distance_xy(v.x, v.y, fx, fy) >= STACK_ZONE_NM:
+            return list(out.values())
         for q in self.plans.values():
             if q is p or q.cs not in views or q.hold_fix != p.hold_fix:
                 continue
             w = views[q.cs]
-            if (q.stage == "inbound" and not q.below_stack) or distance_xy(w.x, w.y, fx, fy) < STACK_ZONE_NM:
+            if (not zone and q.stage == "inbound" and not q.below_stack) or distance_xy(w.x, w.y, fx, fy) < STACK_ZONE_NM:
                 out[w.cs] = w
         return list(out.values())
 
@@ -789,7 +792,7 @@ class RulesController(Controller):
         """The lowest level from `want` up to the aircraft's current one that every aircraft below it nearby has left
         (stack_check="near"); with stack_check="stack", every aircraft below it in its stack, and that no aircraft in
         its stack is cleared to."""
-        stack = self.stack_check == "stack" and p.hold_fix
+        stack = self.stack_check in ("stack", "zone") and p.hold_fix
         others = self._in_stack(p, v, views) if stack else self._near(v, views)
         below = [w for w in others if w.alt_ft < v.alt_ft - 50]
         level, top = want, max(v.target_alt, want)
