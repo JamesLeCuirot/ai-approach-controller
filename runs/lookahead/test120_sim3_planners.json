@@ -1,0 +1,45 @@
+{
+  "rules_vector": {
+    "sessions": 120,
+    "landed": 1713,
+    "mean_gap_error_nm": 3.059,
+    "gaps_inside_minimum": 64,
+    "separation_losses": 258,
+    "losses_at_stack": 154,
+    "wake_infringements": 9,
+    "go_arounds": 65,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -6.84,
+    "minutes_per_arrival": 25.0,
+    "arrivals": 1785,
+    "minutes_per_arrival_all": 25.9
+  },
+  "rules_vector_time": {
+    "sessions": 120,
+    "landed": 1711,
+    "mean_gap_error_nm": 3.045,
+    "gaps_inside_minimum": 60,
+    "separation_losses": 251,
+    "losses_at_stack": 150,
+    "wake_infringements": 9,
+    "go_arounds": 63,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": -6.25,
+    "minutes_per_arrival": 24.4,
+    "arrivals": 1785,
+    "minutes_per_arrival_all": 25.4
+  },
+  "real": {
+    "sessions": 120,
+    "landed": 1776,
+    "mean_gap_error_nm": null,
+    "gaps_inside_minimum": 0,
+    "separation_losses": 4,
+    "losses_at_stack": 0,
+    "wake_infringements": 0,
+    "go_arounds": 14,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": 0.0,
+    "minutes_per_arrival": 17.8
+  }
+}
