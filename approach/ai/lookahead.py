@@ -626,8 +626,8 @@ EFFICIENCY_MOVES = ("release_now",)  # made only where every copy shows no new t
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra = args
-    env = LookAheadEnv(hours=[s["hour"] for s in sessions])
+    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra, planner = args
+    env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None)
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
         from approach.ai.imitate import CopyDriver, load_copy
@@ -690,10 +690,14 @@ def main() -> None:
                     help="each go-around in the copies costs this much more than the training world's 3")
     ap.add_argument("--releases", action="store_true",
                     help="also try taking the lowest aircraft of each stack off it now (the planner would wait)")
+    ap.add_argument("--planner", default="",
+                    help='changes to the planner (vector.PLANNER_2), as JSON, e.g. \'{"height_by": "time"}\': for the '
+                         "competitor and the look-ahead alike")
     ap.add_argument("--copy", default="",
                     help="fly the network that copies the look-ahead (a saved approach.ai.imitate model) instead")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    planner = json.loads(args.planner) if args.planner else {}
     if args.copy:
         args.moves = "wide"
     rng = random.Random(args.seed)
@@ -706,7 +710,7 @@ def main() -> None:
     sessions = [{"id": k, "hour": rng.choice(hours), "offset_s": rng.uniform(0, 3600), "pilot_seed": rng.randrange(1 << 30)}
                 for k in range(120)][:args.sessions]  # the test's own sessions, in its order
     cache = COMPETITOR_DIR / f"2_seed{args.seed}_n120_{code_hash()}.csv"
-    saved = list(csv.DictReader(cache.open())) if cache.is_file() and not args.train else []
+    saved = list(csv.DictReader(cache.open())) if cache.is_file() and not args.train and not planner else []
     print(f"{'Reusing' if saved else 'Flying'} the competitor's results{' from ' + cache.name if saved else ''}", flush=True)
     # Each session's rows are saved as it finishes, so a run stopped part way (the machine restarted) carries on
     # from where it was when started again with the same arguments.
@@ -715,7 +719,7 @@ def main() -> None:
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
-              args.go_around_extra) for s in sessions]
+              args.go_around_extra, planner) for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -738,6 +742,7 @@ def main() -> None:
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
                "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
                "time_weight": args.time_weight, "releases": args.releases, "go_around_extra": args.go_around_extra,
+               "planner": planner,
                "quick_copies": QUICK_COPIES,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
