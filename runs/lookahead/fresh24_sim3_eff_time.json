@@ -42,7 +42,9 @@
     "go_arounds": 0,
     "speed_instructions_per_arrival": 0.65,
     "mean_reward": 7.28,
-    "minutes_per_arrival": 24.1
+    "minutes_per_arrival": 24.1,
+    "minutes_per_arrival_all": 24.1,
+    "arrivals": 401
   },
   "rules_vector": {
     "sessions": 24,
@@ -55,7 +57,9 @@
     "go_arounds": 16,
     "speed_instructions_per_arrival": 0.0,
     "mean_reward": -8.13,
-    "minutes_per_arrival": 25.6
+    "minutes_per_arrival": 25.6,
+    "minutes_per_arrival_all": 25.7,
+    "arrivals": 401
   },
   "ai_minus_rules_vector": {
     "separation_losses": {
