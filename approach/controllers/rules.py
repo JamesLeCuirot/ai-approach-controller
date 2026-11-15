@@ -193,7 +193,12 @@ class RulesController(Controller):
         one another aircraft in the stack is cleared to. With "near", two aircraft on opposite sides of a hold, more
         than 6 NM apart, could be at one level a minute later: of the planner's 63 losses of separation on 24
         training sessions, 36 involved an aircraft holding or on its way to a stack, most just under 3 NM apart
-        within 900 ft, one of the two descending."""
+        within 900 ft, one of the two descending. Neither change helped (120 other training sessions, the planner
+        alone with height_by="time": 24.65 minutes per arrival, every aircraft counted, 1,890 landed of 1,930, 295
+        losses of separation, 147 of them at a stack, 91 go-arounds). "stack" froze the stacks behind aircraft
+        still far off: 27.84 minutes, 1,700 landed, 257 losses (115 at a stack), 83 go-arounds. "zone", the same
+        check only within STACK_ZONE_NM of the fix, took 25.15 minutes (worse in 40 sessions, better in 24), with
+        310 losses (162 at a stack) and 96 go-arounds. "near" stays the default."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
