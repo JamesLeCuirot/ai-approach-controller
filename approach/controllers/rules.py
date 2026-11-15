@@ -124,6 +124,7 @@ class Plan:
     spd_cmd: float | None = None
     retry_t: float = -1e9  # after a blocked altitude, wait before asking again
     slot_t: float = 0.0  # the landing time that keeps the gap behind the aircraft ahead
+    wait_s: float = 0.0  # inbound: how much later its slot is than the soonest it could land (none: negative)
     warned: bool = False
     ai_turn_d: float = 0.0  # base_turns="ai": the final length the AI chose by turning base (0: not yet)
     turn_now: bool = False  # ... and the turn is still to be given
@@ -135,7 +136,8 @@ class RulesController(Controller):
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
-                 descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance"):
+                 descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
+                 inbound_speed: str = "standard"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -172,7 +174,14 @@ class RulesController(Controller):
         against the time its descent takes. In a hold the ground speed now swings with the wind from leg to leg (in a
         50 kt wind, 18 NM to get down from 7,000 ft on one leg, 27 NM on the other), and on the fixed simulator
         "too high to get down in time" was in 36% of the minutes the next aircraft to land was held back too long
-        (120 training sessions, the planner alone)."""
+        (120 training sessions, the planner alone). Tried on those 120 sessions, "time" took 25.85 minutes per
+        arrival (every aircraft counted, still flying or not) against 26.19, better in 71 sessions and worse in 29,
+        with 311 losses of separation against 302, 83 go-arounds against 87, 61 gaps inside the minimum against 58.
+
+        ``inbound_speed`` (with speeds="slot") is the speed on the way to the stack: "standard" (every result before
+        15 Nov 2026), 220 kt; "keep", 250 kt while the aircraft's slot needs no waiting, 220 once it does. Real
+        arrivals are handed over at a median 270 kt and the planner slowed every one to 220 at once: real arrivals
+        that never hold fly 59.8 NM in 16.0 minutes, the planner's in the quietest hours 67.7 NM in 18.8."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -185,8 +194,11 @@ class RulesController(Controller):
             raise ValueError(f"sequence must be arrival, soonest or skip, not {sequence!r}")
         if height_by not in ("distance", "time"):
             raise ValueError(f"height_by must be distance or time, not {height_by!r}")
+        if inbound_speed not in ("standard", "keep"):
+            raise ValueError(f"inbound_speed must be standard or keep, not {inbound_speed!r}")
         self.sequence = sequence
         self.height_by = height_by
+        self.inbound_speed = inbound_speed
         self.descent = descent
         # Stage 2: with ``proposals`` the controller works out every heading, level and speed as usual but doesn't
         # send them; each plan's hdg_cmd, alt_cmd and spd_cmd is then its proposal, for the AI to keep or adjust
@@ -443,8 +455,10 @@ class RulesController(Controller):
                     p.alt_cmd = None
                     p.hdg_cmd = None
                 else:
-                    p.landing_t = max(need, t + self._eta(v, probe, D_JOIN_MIN_NM))
+                    soonest = t + self._eta(v, probe, D_JOIN_MIN_NM)
+                    p.landing_t = max(need, soonest)
                     p.slot_t = p.landing_t
+                    p.wait_s = need - soonest
                     prev_t, prev_type = p.landing_t, p.actype
                     continue
             if self.fixed_paths and p.stage != "cleared":
@@ -702,6 +716,8 @@ class RulesController(Controller):
         limits = speed.band(p.stage, v.along)
         if limits is None:
             return None
+        if p.stage == "inbound" and self.inbound_speed == "keep" and not p.holding and p.wait_s <= 0:
+            return speed.in_band(limits[1], limits)  # nothing to wait for: on to the stack at the top of the band
         early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
         if early > SLOT_DEADBAND_S:
             target = limits[0]
