@@ -406,6 +406,39 @@ Before the AI vectors, a learned model predicts where each aircraft will be over
 
 The live demo can be built alongside, with the rules controller first: adsb.lol's live feed, aircraft handed to the simulator as they cross 40 NM, the radar in a browser, the real tracks continuing in grey. The AI takes over once stage 2 works.
 
+### Where the minutes go (15 November)
+
+The look-ahead controller (forked copies of the simulator, each small change tried before it is made) is far safer than the competitor, but no quicker, and the real controllers are much quicker than both.
+
+**Three simulator bugs, fixed first.** Chasing one practice hour in which 8 of 22 aircraft never landed found:
+
+- a pilot stuck on its outbound turn in a hold: it turned in calm air, descended into a 37 kt wind, and BlueSky's autopilot crabbed to keep the track, so the heading never came within the 5 degrees the pilot waited for. It flew 85 NM out, blocking the queue behind it for 25 minutes. A turn in a hold now ends on the heading or the track.
+- two airframes broadcasting one callsign in the same hour (5 times in 76 days): the second took over the first, which flew off 139 NM. Each now has its own name.
+- no wind above about 13,400 ft, the weather model's top level, where arrivals are handed over: they flew in calm air, then met the full wind lower down. The top level's wind now holds above it, as the planner and the safety check already assumed.
+
+The first two are rare (about 1 holding aircraft in 3,000); the third touched every arrival. Minutes per arrival also counted only aircraft that landed before the session ended; a second figure now counts every aircraft to its landing or the end. Results before 15 November used the old simulator.
+
+**On the fixed simulator** (12 practice hours, every aircraft counted):
+
+| | Minutes per arrival | Landed (of 182) | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Competitor (the planner alone) | 25.9 | 176 | 30 | 8 | 8 |
+| Look-ahead | 25.7 | 182 | 2 | 1 | 1 |
+| Look-ahead releasing early from the stacks | 25.5 | 180 | 1 | 1 | 0 |
+
+Releasing early saved 3 minutes per arrival on the old simulator, but with 9 go-arounds in the same hours: aircraft released too high to get down in time. With the planner's height check on every early release, and a veto on any release whose copies show new trouble over the next 15 minutes, it makes 25 releases and turns down 164, and the saving is gone.
+
+**Against the real controllers** on the 120 test sessions (old simulator): 17.8 minutes per arrival, the competitor 24.7. The gap is there even in the quietest hours (13.5 against 18.8 with 1 to 6 arrivals) and grows with traffic (19.7 against 28.0 with 19 or more).
+
+- **Quiet traffic.** The same aircraft, holding in neither world (388 of them): the simulated one takes 1.9 minutes longer. It flies 3 NM less to reach final but 30 kt slower, and establishes 2.2 NM further out (13.1 NM against 11.0), with its final flown slower; the longer final is mostly the planner stretching it to lose height. Real arrivals that never hold fly 59.8 NM in 16.0 minutes.
+- **Holding.** 72% of the competitor's arrivals hold, 13% of the real ones. Only 3% of its holding happens with nothing on the downwind, base or final: it holds because it believes the approach is full.
+- **Busy spells.** Time between landings: the competitor's median 3.03 minutes and mean 3.76, the real controllers' 2.52 and 2.81, with a long tail (a quarter of its gaps over 4.8 minutes, against 3.2). The gap was already planned when the follower left its stack (3.43 minutes on average; it then lands 0.2 minutes later than planned). In the long gaps the follower left its stack 7.8 minutes before the leader landed, against 10.8 in the short ones.
+- **Why followers leave late.** In idle-runway spells with aircraft holding, the next to land was held back by being too high to get down in time in 36% of the minutes, by an aircraft ahead of it in the queue still holding in 30%, and by not yet being inside the RMA in 19%. Each release also waits for the stack to step down: the next aircraft may descend into a level only once the one below is 950 ft clear of it, then descend 1,000 ft itself.
+
+**What was tried on the competitor** (120 training sessions, every aircraft counted, 26.19 minutes per arrival as it is): judging "can it get down in time" by time at the planned speeds in the wind instead of by miles at the ground speed of the moment (which in a hold swings with the wind from leg to leg), 25.85, better in 71 sessions and worse in 29, safety the same; keeping 250 kt on the way to the stack when there is no wait, 26.38 (aircraft that arrive sooner hold longer). The two release orders tried on 14 November were no better either (in `RulesController`'s documentation).
+
+**What this means.** The AI adjusts the competitor's vectors, and adjusting them can't recover minutes that are lost before an aircraft leaves its stack. The time is in how the stacks are run and when aircraft leave them, which the roadmap left to stage 4 after three hand-written reworks made things worse. The next step is to bring that forward: let the look-ahead decide releases from the stacks with the time-based height check, including from above the lowest level when an aircraft can be taken off laterally clear of the one below, as real controllers do, and adopt the competitor improvements that hold up into a new competitor before the 120-session tests are re-run on the fixed simulator.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
