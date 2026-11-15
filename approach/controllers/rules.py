@@ -94,6 +94,7 @@ SPEED_HOLD = 220
 # stack: ordering the stack by height, waiting for a free level when leaving it, or 4, 8 or 10 NM all did worse.)
 VACATE_NM = 6.0  # an aircraft below and within this distance must have left a level before another descends into it
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
+STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 # descent="plan": height planning for pilots who descend at real rates
 JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, which is 3,750 ft at 11 NM)
@@ -137,7 +138,7 @@ class RulesController(Controller):
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
-                 inbound_speed: str = "standard"):
+                 inbound_speed: str = "standard", stack_check: str = "near"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -184,7 +185,15 @@ class RulesController(Controller):
         that never hold fly 59.8 NM in 16.0 minutes, the planner's in the quietest hours 67.7 NM in 18.8. Tried on
         the same 120 sessions it gained nothing: 26.38 minutes per arrival against 26.19 (better in 57 sessions,
         worse in 47), and with height_by="time" 25.72 against that one's 25.85. Arriving at the stack sooner mostly
-        means holding longer there."""
+        means holding longer there.
+
+        ``stack_check`` is which aircraft a level in a stack is checked against before one is cleared down into it:
+        "near" (every result before 16 Nov 2026), those below it within VACATE_NM; "stack", every aircraft below it
+        in its stack wherever it is in the hold (and any within STACK_ZONE_NM of the fix), and the level must not be
+        one another aircraft in the stack is cleared to. With "near", two aircraft on opposite sides of a hold, more
+        than 6 NM apart, could be at one level a minute later: of the planner's 63 losses of separation on 24
+        training sessions, 36 involved an aircraft holding or on its way to a stack, most just under 3 NM apart
+        within 900 ft, one of the two descending."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -199,6 +208,9 @@ class RulesController(Controller):
             raise ValueError(f"height_by must be distance or time, not {height_by!r}")
         if inbound_speed not in ("standard", "keep"):
             raise ValueError(f"inbound_speed must be standard or keep, not {inbound_speed!r}")
+        if stack_check not in ("near", "stack"):
+            raise ValueError(f"stack_check must be near or stack, not {stack_check!r}")
+        self.stack_check = stack_check
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -759,12 +771,31 @@ class RulesController(Controller):
         """No aircraft nearby is between this one and `level` (plus the separation above it)."""
         return all(w.alt_ft >= level + VACATED_FT for w in self._near(v, views) if w.alt_ft > v.alt_ft + 50)
 
+    def _in_stack(self, p: Plan, v, views: dict) -> list:
+        """stack_check="stack": the aircraft a level in this one's stack is checked against: those nearby, every
+        aircraft holding at or on its way to the same stack, wherever it is, and any other aircraft of that stack
+        within STACK_ZONE_NM of its fix (one that has just left it)."""
+        out = {w.cs: w for w in self._near(v, views)}
+        fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
+        for q in self.plans.values():
+            if q is p or q.cs not in views or q.hold_fix != p.hold_fix:
+                continue
+            w = views[q.cs]
+            if (q.stage == "inbound" and not q.below_stack) or distance_xy(w.x, w.y, fx, fy) < STACK_ZONE_NM:
+                out[w.cs] = w
+        return list(out.values())
+
     def _free_level(self, p: Plan, v, views: dict, want: float) -> float:
-        """The lowest level from `want` up to the aircraft's current one that every aircraft below it nearby has left."""
-        below = [w for w in self._near(v, views) if w.alt_ft < v.alt_ft - 50]
+        """The lowest level from `want` up to the aircraft's current one that every aircraft below it nearby has left
+        (stack_check="near"); with stack_check="stack", every aircraft below it in its stack, and that no aircraft in
+        its stack is cleared to."""
+        stack = self.stack_check == "stack" and p.hold_fix
+        others = self._in_stack(p, v, views) if stack else self._near(v, views)
+        below = [w for w in others if w.alt_ft < v.alt_ft - 50]
         level, top = want, max(v.target_alt, want)
         while level < top:
-            if all(w.alt_ft <= level - VACATED_FT for w in below):
+            if all(w.alt_ft <= level - VACATED_FT for w in below) and (
+                    not stack or all(abs(w.target_alt - level) >= 900 for w in others)):
                 return level
             level += 1000
         return top
