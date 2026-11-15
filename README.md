@@ -8,13 +8,15 @@ The AI will start with speed control only, then grow stage by stage to full vect
 
 ## Status, November 2026
 
-The world the AI will learn in is built and running on real Gatwick traffic. **There is no learned AI yet:** a hand-written rules controller flies the traffic, as the first yardstick.
+The world is built and running on real Gatwick traffic, and the AI is in stage 2: vectoring aircraft onto final.
 
-- **Real traffic:** every Gatwick arrival that adsb.lol's volunteer receivers saw on 60 chosen days between December 2023 and September 2026, 21,160 in all. Any real hour can be replayed into the simulator, each aircraft starting exactly where it really was. A quarter of the days are kept back for testing.
-- **Real weather:** every session flies in that hour's real winds at every height, from NOAA's GFS weather model.
+- **Real traffic:** every Gatwick arrival that adsb.lol's volunteer receivers saw on 76 chosen days between December 2023 and November 2026, 26,258 in all. Any real hour can be replayed into the simulator, each aircraft starting exactly where it really was. 30 of the days are kept back for testing.
+- **Real weather and real pilots:** every session flies in that hour's real winds at every height, from NOAA's GFS weather model, with simulated pilots who turn, descend and change speed at the rates real Gatwick arrivals do.
 - **A fixed safety check** blocks any instruction that would break separation, a minimum altitude or the edge of Gatwick's radar manoeuvring area (RMA).
-- **The real controllers are scored** on every hour of the 60 days with the same code as ours: about 18 minutes and 70 track miles per arrival from 40 NM out. On the busiest real hours the rules controller falls well behind them.
-- **Next:** stage 1a, the first learned controller, which adjusts only speeds and has to beat a speed-only rules controller on the same hours.
+- **The real controllers are scored** on the same hours with the same code: 17.8 minutes per arrival from handover on the 120 test sessions, with 4 losses of separation.
+- **Stage 1** (speed, then the turn onto base) ended level with a good rules controller: little room above a sound rule for those alone.
+- **Stage 2's controller is a look-ahead:** before giving a small change (a heading, level or speed a step off the plan, a hold at a level, an early release from a stack) it flies the change ahead in copies of the simulator with freshly drawn pilots, and makes it only if the copies come out better. On 24 practice hours it has never been tuned on, it landed all 401 arrivals with 7 losses of separation, no go-arounds and 24.1 minutes per arrival; the rules controller it adjusts had 86 losses, 29 go-arounds and 27.5 minutes. Training a network by reinforcement learning, and training one to copy the look-ahead, have not yet matched it ([diary](diary/2026-11-15-stage2-02-look-ahead/README.md)).
+- **The gap that is left** is time: real controllers are about 6 minutes per arrival quicker, mostly by keeping aircraft out of the holding stacks. That is the next step, with the full 120-session test on the fixed simulator under way.
 
 The [November 2026 status report](https://www.lecuirot.je/projects/approach-controller/) tells the story so far, and the [project diary](diary/README.md) has a replay, a video and the scores for every milestone.
 
