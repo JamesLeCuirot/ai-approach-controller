@@ -100,6 +100,7 @@ JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, 
 BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the glide path, to join it from below
 PLAN_DESCENT_FPM = 800.0  # assumed until the aircraft is seen descending (real arrivals: median 900, slowest tenth 630)
 DESCENT_MARGIN_NM = 2.0  # time to start the descent, and a little to spare
+DESCENT_MARGIN_S = 35.0  # the same, as time (height_by="time"): about 2 NM at a downwind ground speed
 
 
 @dataclass
@@ -134,7 +135,7 @@ class RulesController(Controller):
 
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
-                 descent: str = "base", proposals: bool = False, sequence: str = "arrival"):
+                 descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -163,7 +164,15 @@ class RulesController(Controller):
         high 31% (40 training sessions). On the same 40 sessions it was no better either: 25.5 minutes per arrival
         against 24.8, 606 landed against 593, 112 losses of separation against 113, but 44 go-arounds against 34,
         27 gaps inside the minimum against 21, 8 wake infringements against 4. Changing who leaves the holds by a
-        fixed rule moves the delay onto final, where this planner can't absorb a changed order."""
+        fixed rule moves the delay onto final, where this planner can't absorb a changed order.
+
+        ``height_by`` is how the planner decides an aircraft can get down in time (with descent="plan"):
+        "distance" (every result before 15 Nov 2026), the track miles to the join point against the miles its descent
+        takes at its ground speed now; "time", the time to fly to the join point at the planned speeds in the wind
+        against the time its descent takes. In a hold the ground speed now swings with the wind from leg to leg (in a
+        50 kt wind, 18 NM to get down from 7,000 ft on one leg, 27 NM on the other), and on the fixed simulator
+        "too high to get down in time" was in 36% of the minutes the next aircraft to land was held back too long
+        (120 training sessions, the planner alone)."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -174,7 +183,10 @@ class RulesController(Controller):
             raise ValueError(f"descent must be base or plan, not {descent!r}")
         if sequence not in ("arrival", "soonest", "skip"):
             raise ValueError(f"sequence must be arrival, soonest or skip, not {sequence!r}")
+        if height_by not in ("distance", "time"):
+            raise ValueError(f"height_by must be distance or time, not {height_by!r}")
         self.sequence = sequence
+        self.height_by = height_by
         self.descent = descent
         # Stage 2: with ``proposals`` the controller works out every heading, level and speed as usual but doesn't
         # send them; each plan's hdg_cmd, alt_cmd and spd_cmd is then its proposal, for the AI to keep or adjust
@@ -321,8 +333,34 @@ class RulesController(Controller):
         rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
         return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
 
+    def _descent_s(self, v, to_alt: float) -> float:
+        """Seconds needed to get down to `to_alt`: at the aircraft's own rate once it is descending, plus a margin."""
+        lose = v.alt_ft - to_alt
+        if lose <= 100:
+            return 0.0
+        rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
+        return lose / max(rate, 400.0) * 60.0 + DESCENT_MARGIN_S
+
+    def _time_to_join(self, v, p: Plan, d_join: float | None = None) -> float:
+        """Seconds from now to the join point on the planned path, at the planned speeds in the wind (as _eta)."""
+        q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
+        pts = self._points(q)
+        icpt = self._intercept_heading(q)
+        if q.stage in ("downwind", "inbound"):
+            to_d = bearing_xy(v.x, v.y, *pts["D"])
+            legs = [(distance_xy(v.x, v.y, *pts["D"]), max(v.tas_kt, 200.0), to_d),
+                    (distance_xy(*pts["D"], *pts["B"]), GS_BASE, bearing_xy(*pts["D"], *pts["B"]))]
+        elif q.stage == "base":
+            legs = [(distance_xy(v.x, v.y, *pts["B"]), GS_BASE, bearing_xy(v.x, v.y, *pts["B"]))]
+        else:
+            return 0.0
+        legs.append((INTERCEPT_LEG_NM, GS_BASE, icpt))
+        return sum(d / self._gs(v, kt, trk) * 3600.0 for d, kt, trk in legs)
+
     def _height_ok(self, v, p: Plan, d_join: float) -> bool:
         """Whether the path to a join point d_join out is long enough to get down to a little below the glide path."""
+        if self.height_by == "time":
+            return self._time_to_join(v, p, d_join) >= self._descent_s(v, self._join_alt(d_join))
         return self._track_to_join(v, p, d_join) >= self._descent_nm(v, self._join_alt(d_join))
 
     def _join_for_height(self, v, p: Plan, lo: float, hi: float) -> float:
