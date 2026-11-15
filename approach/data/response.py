@@ -41,6 +41,8 @@ TURN_MIN_RATE = 0.6  # deg/s: slower than this is not a turn
 TURN_MIN_DEG = 10.0
 DESCENT_MIN_FPM = 300.0
 DESCENT_BAND_FT = (3500.0, 11000.0)
+# The same, by height: real arrivals descend faster higher up (at higher true airspeeds, often from handover)
+DESCENT_BANDS_FT = ((3500.0, 7000.0), (7000.0, 11000.0), (11000.0, 16000.0))
 SPEED_MIN_RATE = 0.2  # kt/s
 SPEED_MIN_CHANGE = 8.0  # kt
 
@@ -148,9 +150,10 @@ def turns(s: dict[str, np.ndarray], holding: tuple[float, float] | None) -> list
     return out
 
 
-def descents(s: dict[str, np.ndarray]) -> tuple[list[float], list[float]]:
+def descents(s: dict[str, np.ndarray], by_band: dict | None = None) -> tuple[list[float], list[float]]:
     """Each descent's typical rate (ft/min, positive), and for those that end in level flight, the height
-    above the new level at which the rate had fallen to half."""
+    above the new level at which the rate had fallen to half. With ``by_band``, each descent's typical rate in each
+    of DESCENT_BANDS_FT is added to the list under that band."""
     vr = s["vr"]
     if np.isnan(vr).all():
         return [], []
@@ -162,6 +165,11 @@ def descents(s: dict[str, np.ndarray]) -> tuple[list[float], list[float]]:
         band = (s["alt"][a:b] >= DESCENT_BAND_FT[0]) & (s["alt"][a:b] <= DESCENT_BAND_FT[1])
         if band.sum() >= 4:
             rates.append(float(-np.median(vr[a:b][band])))
+        if by_band is not None:
+            for lo, hi in DESCENT_BANDS_FT:
+                inside = (s["alt"][a:b] >= lo) & (s["alt"][a:b] < hi)
+                if inside.sum() >= 4:
+                    by_band.setdefault((lo, hi), []).append(float(-np.median(vr[a:b][inside])))
         after = vr[b:b + 4]
         if len(after) == 4 and np.all(np.abs(after) < 200) and s["alt"][b] >= DESCENT_BAND_FT[0]:
             level = float(np.mean(s["alt"][b:b + 4]))
@@ -229,22 +237,25 @@ def measure(days: list[str], airport) -> dict:
     all_turns, all_speed = [], []
     descent_by_type: dict[str, list[float]] = defaultdict(list)
     flight_descent, captures = [], []
+    flight_by_band: dict[tuple, list[float]] = defaultdict(list)
     slowing_by_approach: dict[int, list[float]] = defaultdict(list)
     flights = 0
     for d in days:
         for arr in load_day(date.fromisoformat(d))["arrivals"]:
             flights += 1
             hold = tuple(arr["hold_t"]) if arr.get("hold_t") else None
-            mine = []
+            mine, mine_by_band = [], {}
             for s in _segments(arr["track"], winds, airport):
                 all_turns += turns(s, hold)
-                r, c = descents(s)
+                r, c = descents(s, mine_by_band)
                 mine += r
                 captures += c
                 all_speed += speed_changes(s, on_final(s, airport, arr["runway"]))
                 slow = final_slowing(s, airport, arr["runway"])
                 if slow is not None:
                     slowing_by_approach[wake.approach_speed(arr["type"])].append(slow)
+            for band, rates in mine_by_band.items():
+                flight_by_band[band].append(float(np.median(rates)))
             if mine:
                 flight_descent.append(float(np.median(mine)))
                 descent_by_type[arr["type"]].append(float(np.median(mine)))
@@ -285,6 +296,8 @@ def measure(days: list[str], airport) -> dict:
             "by_type": {k: {"flights": len(v), **_pct(v)} for k, v in sorted(descent_by_type.items())
                         if len(v) >= 40},
             "level_off_start_ft": _pct(captures),
+            "by_height_ft": {f"{lo:.0f}-{hi:.0f}": {"flights": len(flight_by_band[(lo, hi)]), **_pct(flight_by_band[(lo, hi)])}
+                             for lo, hi in DESCENT_BANDS_FT},
         },
         "speed": {
             "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more: above 2,000 ft, "
