@@ -209,7 +209,12 @@ class RulesController(Controller):
         it, so it can be released without holding to lose height. In quiet training hours (12 arrivals or fewer) the
         planner's aircraft that held took 22.2 minutes from handover to landing against the real flights' 16.2, those
         that didn't 16.8 against 16.2; 67% of those handed over above 12,000 ft held, against about 1 in 10 real
-        ones (120 training sessions)."""
+        ones (120 training sessions). It made no difference (120 other training sessions, height_by="time": 24.53
+        minutes per arrival against 24.65, better in 37 sessions and worse in 46, 291 losses of separation against
+        295, 88 go-arounds against 91): the aircraft that hold reach their fix at a median 10,200 ft in quiet hours,
+        still above the stack, too high whatever level they were cleared to. Real arrivals handed over above 12,000
+        ft descend faster than the simulated pilots: a median 1,024 ft/min between 7,000 and 15,500 ft and a fastest
+        tenth over 1,500, against 832 between 3,500 and 7,000."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
