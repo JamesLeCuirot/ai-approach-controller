@@ -181,7 +181,10 @@ class RulesController(Controller):
         ``inbound_speed`` (with speeds="slot") is the speed on the way to the stack: "standard" (every result before
         15 Nov 2026), 220 kt; "keep", 250 kt while the aircraft's slot needs no waiting, 220 once it does. Real
         arrivals are handed over at a median 270 kt and the planner slowed every one to 220 at once: real arrivals
-        that never hold fly 59.8 NM in 16.0 minutes, the planner's in the quietest hours 67.7 NM in 18.8."""
+        that never hold fly 59.8 NM in 16.0 minutes, the planner's in the quietest hours 67.7 NM in 18.8. Tried on
+        the same 120 sessions it gained nothing: 26.38 minutes per arrival against 26.19 (better in 57 sessions,
+        worse in 47), and with height_by="time" 25.72 against that one's 25.85. Arriving at the stack sooner mostly
+        means holding longer there."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
