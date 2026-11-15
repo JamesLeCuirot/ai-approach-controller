@@ -94,6 +94,7 @@ SPEED_HOLD = 220
 # stack: ordering the stack by height, waiting for a free level when leaving it, or 4, 8 or 10 NM all did worse.)
 VACATE_NM = 6.0  # an aircraft below and within this distance must have left a level before another descends into it
 VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 900 ft)
+EARLY_WAIT_S = 60.0  # inbound_descent="early": a wait this short or less counts as none
 STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 # descent="plan": height planning for pilots who descend at real rates
@@ -126,6 +127,7 @@ class Plan:
     retry_t: float = -1e9  # after a blocked altitude, wait before asking again
     slot_t: float = 0.0  # the landing time that keeps the gap behind the aircraft ahead
     wait_s: float = 0.0  # inbound: how much later its slot is than the soonest it could land (none: negative)
+    early: int = 0  # inbound_descent="early": the level to descend to on the way in, below the stack (0: none)
     warned: bool = False
     ai_turn_d: float = 0.0  # base_turns="ai": the final length the AI chose by turning base (0: not yet)
     turn_now: bool = False  # ... and the turn is still to be given
@@ -138,7 +140,8 @@ class RulesController(Controller):
     def __init__(self, airport: Airport, runway: str, fixed_paths: bool = False, speeds: str = "rules",
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
-                 inbound_speed: str = "standard", stack_check: str = "near"):
+                 inbound_speed: str = "standard", stack_check: str = "near",
+                 inbound_descent: str = "stack"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -198,7 +201,15 @@ class RulesController(Controller):
         losses of separation, 147 of them at a stack, 91 go-arounds). "stack" froze the stacks behind aircraft
         still far off: 27.84 minutes, 1,700 landed, 257 losses (115 at a stack), 83 go-arounds. "zone", the same
         check only within STACK_ZONE_NM of the fix, took 25.15 minutes (worse in 40 sessions, better in 24), with
-        310 losses (162 at a stack) and 96 go-arounds. "near" stays the default."""
+        310 losses (162 at a stack) and 96 go-arounds. "near" stays the default.
+
+        ``inbound_descent`` is how far an aircraft on its way to a stack descends before it is released: "stack"
+        (every result before 16 Nov 2026), to its stack level, 7,000 ft or above; "early", the first aircraft of its
+        stack whose slot needs no wait (EARLY_WAIT_S) descends below the stack to the level the downwind would give
+        it, so it can be released without holding to lose height. In quiet training hours (12 arrivals or fewer) the
+        planner's aircraft that held took 22.2 minutes from handover to landing against the real flights' 16.2, those
+        that didn't 16.8 against 16.2; 67% of those handed over above 12,000 ft held, against about 1 in 10 real
+        ones (120 training sessions)."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -216,6 +227,9 @@ class RulesController(Controller):
         if stack_check not in ("near", "stack", "zone"):
             raise ValueError(f"stack_check must be near, stack or zone, not {stack_check!r}")
         self.stack_check = stack_check
+        if inbound_descent not in ("stack", "early"):
+            raise ValueError(f"inbound_descent must be stack or early, not {inbound_descent!r}")
+        self.inbound_descent = inbound_descent
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -444,6 +458,7 @@ class RulesController(Controller):
             order = sorted((p for p in self.plans.values() if p.cs in views),
                            key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3), p.key))
         prev_t, prev_type = None, None
+        stacks_seen: set[str] = set()
         for p in order:
             v = views[p.cs]
             if p.stage == "inbound":
@@ -472,6 +487,8 @@ class RulesController(Controller):
                     p.stage, p.side, p.holding = "downwind", side, False
                     ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
                     p.level = min(6000, 4000 + 1000 * ahead)
+                    if p.early:  # already below the stack: never climb it back to the downwind level
+                        p.level = min(p.level, max(p.early, int(round(v.target_alt / 1000.0)) * 1000))
                     p.alt_cmd = None
                     p.hdg_cmd = None
                 else:
@@ -479,6 +496,15 @@ class RulesController(Controller):
                     p.landing_t = max(need, soonest)
                     p.slot_t = p.landing_t
                     p.wait_s = need - soonest
+                    if self.inbound_descent == "early":
+                        # The first of its stack, with no wait: down below the stack on the way in, to the level
+                        # the downwind would give it now, rather than hold to lose height at the stack.
+                        first = p.hold_fix not in stacks_seen
+                        if (first and not p.holding and (p.early or not p.below_stack)
+                                and p.wait_s <= EARLY_WAIT_S):
+                            ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
+                            p.early = p.early or min(6000, 4000 + 1000 * ahead)
+                        stacks_seen.add(p.hold_fix)
                     prev_t, prev_type = p.landing_t, p.actype
                     continue
             if self.fixed_paths and p.stage != "cleared":
@@ -664,6 +690,13 @@ class RulesController(Controller):
                             p.key = max(keys) + 1.0
                             self.last_plan_t = -1e9
                         self._stack_levels(views)
+                if p.early and not p.holding and t >= p.retry_t:
+                    level = self._free_level(p, v, views, p.early)
+                    if level < STACK_BASE_FT:
+                        p.below_stack = True  # out of the stack: it holds below it if it must hold after all
+                    if level < v.target_alt and level != p.alt_cmd:
+                        self._say(p, "altitude", level)
+                    continue
                 # Down into a level once the one below has left it; up to a free level only when the aircraft's own
                 # level is taken nearby.
                 if p.stack_level and not p.below_stack and t >= p.retry_t:
