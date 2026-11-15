@@ -116,7 +116,7 @@ The first run for an hour downloads about 35 MB of wind data and keeps a small c
 python -m approach.data.real_sessions 2026-05-30T12
 ```
 
-This scores the real controllers on that hour (UTC), then gives the same arrivals to our rules controller in the same winds. It writes two radar replays to `outputs/`: `real_2026-05-30T12.html`, what the real controllers did, and `rules_2026-05-30T12.html`, ours, with the real tracks in faint grey behind. Any hour of the 60 days in `data/real/egkk/days.csv` works with no ADS-B download, since their arrivals are in the repo.
+This scores the real controllers on that hour (UTC), then gives the same arrivals to our rules controller in the same winds. It writes two radar replays to `outputs/`: `real_2026-05-30T12.html`, what the real controllers did, and `rules_2026-05-30T12.html`, ours, with the real tracks in faint grey behind. Any hour of the 76 days in `data/real/egkk/days.csv` works with no ADS-B download, since their arrivals are in the repo.
 
 ### Enter your own controller
 
@@ -137,7 +137,7 @@ This runs the scenarios and saves into `diary/<date>-<name>/`: the replays, an M
 | [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and [BlueSky-Gym](https://pypi.org/project/bluesky-gym/) (MIT) | Simulator and starter training environments | Installed as dependencies |
 | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File) (GPL-3) | Fixes, vectoring areas, minimum altitudes, arrival routes, runways | No, fetched by script |
 | VATSIM UK Gatwick vMATS, UK AIP | Procedures summarised in the stage 0 spec | No, link only |
-| [adsb.lol](https://www.adsb.lol) open ADS-B data (ODbL 1.0) | Real arrivals, the real traffic replayed into the simulator, and the real-controller baseline | Yes: the 60 days' arrivals, the other traffic near Gatwick and the scores derived from them, in `data/real/` under ODbL. The full daily files are downloaded locally |
+| [adsb.lol](https://www.adsb.lol) open ADS-B data (ODbL 1.0) | Real arrivals, the real traffic replayed into the simulator, and the real-controller baseline | Yes: the 76 days' arrivals, the other traffic near Gatwick and the scores derived from them, in `data/real/` under ODbL. The full daily files are downloaded locally |
 | [NOAA GFS weather model](https://registry.opendata.aws/noaa-gfs-bdp-pds/) (public domain) | Real winds at every height, for any hour since 2021 | No, downloaded and cached locally (`data/raw/gfs/`) |
 | [Iowa State University weather report archive](https://mesonet.agron.iastate.edu/request/download.phtml) | Gatwick's hourly pressure (QNH), to correct ADS-B altitudes | Only the hourly pressure, stored with each day's arrivals |
 | [atc_app](https://github.com/SNaveenMathew/atc_app) and [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) (Naveen Mathew) | The idea, and prior work this project builds on | No code copied until they carry a licence |
