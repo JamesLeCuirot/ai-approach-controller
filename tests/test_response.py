@@ -49,6 +49,47 @@ def test_measured_pilots_descend_and_slow_down_like_real_arrivals(airport):
     assert slowed < 60 * 1.1 and slowed > 60 * 0.1  # under about 1 kt a second, not 2-3
 
 
+def test_measured_pilots_descend_faster_higher_up(airport):
+    """Real arrivals descend faster high up (approach.data.response, descent.by_height_ft); each simulated pilot
+    keeps its place in the spread at every height."""
+    from approach.sim.world import World, descent_rate_at
+
+    world = World(airport, "26L", seed=5, pilots="measured")
+    _one(world, airport, alt=14000)
+    p = world.pilots["T1"]
+    assert len(p.descent_profile) == 3 and list(p.descent_profile) == sorted(p.descent_profile)
+    world.instruct(Instruction("T1", "altitude", 4000))
+    high, low = [], []
+    for _ in range(900):
+        world.step(1)
+        v = world.views()[0]
+        if 12500 < v.alt_ft < 13500:
+            high.append((v.vs_fpm, descent_rate_at(airport.icao, p.descent_profile, v.alt_ft)))
+        if 4500 < v.alt_ft < 5500:
+            low.append((v.vs_fpm, descent_rate_at(airport.icao, p.descent_profile, v.alt_ft)))
+        if v.alt_ft < 4500:
+            break
+    assert high and low
+    for samples in (high, low):
+        vs, want = np.median([s[0] for s in samples]), np.median([s[1] for s in samples])
+        assert abs(vs + want) < 60  # the pilot's own rate for that height
+    assert -np.median([s[0] for s in high]) > -np.median([s[0] for s in low]) + 200
+
+
+def test_model_descends_faster_higher_up(airport):
+    from approach.response import ResponseModel, median_pilot, state_from_views
+    from approach.sim.world import World
+
+    world = World(airport, "26L", seed=5, pilots="measured")
+    _one(world, airport, alt=13000, cs="HI")
+    _one(world, airport, y=15.0, alt=6000, cs="LO")
+    state = state_from_views(world.views())
+    state.target_alt[:] = 3000.0
+    pred = ResponseModel(airport, "26L").predict(state, median_pilot(airport.icao))[0]
+    lost = {cs: pred[i, 0, 2] - pred[i, -1, 2] for i, cs in enumerate(v.cs for v in world.views())}
+    assert lost["HI"] > lost["LO"] * 1.3
+
+
 def test_bluesky_pilots_are_unchanged(airport):
     from approach.sim.world import World
 

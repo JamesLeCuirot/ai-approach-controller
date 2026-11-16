@@ -79,6 +79,11 @@ REAL_DIR = Path(__file__).resolve().parents[2] / "data" / "real"
 _BOUNDS = {"bank_deg": (15.0, 26.0), "descent_fpm": (400.0, 1800.0), "decel_kt_s": (0.2, 1.2),
            "decel_desc_kt_s": (0.15, 1.0), "accel_kt_s": (0.15, 1.0)}
 FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
+# Measured pilots descend at a rate that depends on height, as real arrivals do (approach.data.response,
+# descent.by_height_ft: a median 783 ft/min between 3,500 and 7,000 ft, 1,010 between 7,000 and 11,000 and 1,287
+# above, the fastest tenth near 2,000 high up). Each pilot keeps its place in the spread at every height. Before
+# 16 November 2026 a pilot descended at one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
+DESCENT_BY_HEIGHT_BOUNDS = (400.0, 2500.0)
 APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
 # turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
@@ -94,6 +99,36 @@ def response_quantiles(airport_icao: str) -> dict[str, dict[str, float]]:
     return {"bank_deg": r["turns"]["bank_deg"], "descent_fpm": r["descent"]["rate_fpm"],
             "decel_kt_s": r["speed"]["decel_level_kt_s"], "decel_desc_kt_s": r["speed"]["decel_descending_kt_s"],
             "accel_kt_s": r["speed"]["accel_kt_s"]}
+
+
+@functools.lru_cache(maxsize=None)
+def descent_by_height(airport_icao: str) -> tuple[tuple[float, dict[str, float]], ...]:
+    """The measured descent rates by height band: (the band's middle in ft, its quantiles), lowest first; empty if
+    the airport's measurements have none."""
+    r = json.loads((REAL_DIR / airport_icao.lower() / "response.json").read_text())
+    bands = []
+    for key, q in r["descent"].get("by_height_ft", {}).items():
+        lo, hi = (float(x) for x in key.split("-"))
+        bands.append(((lo + hi) / 2.0, q))
+    return tuple(sorted(bands, key=lambda b: b[0]))
+
+
+def descent_profile(airport_icao: str, u: float) -> tuple[float, ...]:
+    """A pilot's descent rate (ft/min) at the middle of each height band, at cumulative probability u in every band:
+    a pilot who descends fast high up descends fast lower down too."""
+    return tuple(draw(q, u, DESCENT_BY_HEIGHT_BOUNDS) for _, q in descent_by_height(airport_icao))
+
+
+def descent_rate_at(airport_icao: str, profile: tuple[float, ...], alt_ft: float) -> float:
+    """The rate at a height, linear between the bands' middles and level beyond them."""
+    mids = [m for m, _ in descent_by_height(airport_icao)]
+    if alt_ft <= mids[0]:
+        return profile[0]
+    for k in range(len(mids) - 1):
+        if alt_ft <= mids[k + 1]:
+            f = (alt_ft - mids[k]) / (mids[k + 1] - mids[k])
+            return profile[k] + f * (profile[k + 1] - profile[k])
+    return profile[-1]
 
 
 @functools.lru_cache(maxsize=None)
@@ -189,7 +224,8 @@ class Pilot:
     reason: str = ""
     # How this pilot flies ("measured" pilots only; "bluesky" pilots leave it to BlueSky)
     bank_deg: float = 25.0
-    descent_fpm: float = 1500.0
+    descent_fpm: float = 1500.0  # the rate now (with descent_profile, at the aircraft's height)
+    descent_profile: tuple[float, ...] = ()  # its rate at the middle of each measured height band
     decel_kt_s: float = 0.0
     decel_desc_kt_s: float = 0.0
     accel_kt_s: float = 0.0
@@ -262,7 +298,11 @@ class World:
         if self.pilot_model == "measured":
             q = response_quantiles(self.airport.icao)
             for name in _BOUNDS:
-                setattr(p, name, draw(q[name], self.pilot_rng.random(), _BOUNDS[name]))
+                u = self.pilot_rng.random()
+                setattr(p, name, draw(q[name], u, _BOUNDS[name]))
+                if name == "descent_fpm" and descent_by_height(self.airport.icao):
+                    p.descent_profile = descent_profile(self.airport.icao, u)
+                    p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
             table = final_slowing_quantiles(self.airport.icao)
             if table:
                 nearest = min(table, key=lambda k: abs(k - p.approach_speed))
@@ -378,6 +418,8 @@ class World:
                 self._speed_tick(p, v)
             if self.pilot_model == "measured":
                 self._bank_tick(p, v)
+                if p.descent_profile:
+                    self._descent_tick(p, v)
             if p.hold_fix:
                 self._hold_tick(p, v)
             elif p.direct_fix and p.direct_fix in self.airport.fixes:
@@ -394,6 +436,15 @@ class World:
             if follow.along - lead.along < MIN_FINAL_GAP_NM:
                 events += self._start_go_around(self.pilots[follow.cs], follow, "too close to the aircraft ahead")
         return events
+
+    def _descent_tick(self, p: Pilot, v: AircraftView) -> None:
+        """The pilot's descent rate for its height (the autopilot's default rate for a change of level)."""
+        rate = descent_rate_at(self.airport.icao, p.descent_profile, v.alt_ft)
+        if abs(rate - p.descent_fpm) >= 10.0:
+            p.descent_fpm = rate
+            i = self._idx(p.cs)
+            if i >= 0:
+                self.bs.traf.ap.vsdef[i] = rate * FPM_TO_MS
 
     def _bank_tick(self, p: Pilot, v: AircraftView) -> None:
         """A measured pilot's autopilot banks in proportion to the heading still to turn, up to the pilot's limit."""
