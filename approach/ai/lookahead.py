@@ -685,6 +685,7 @@ EFFICIENCY_MOVES = ("release_now", "release_above", "straight_in")  # made only 
 def _run(args: tuple) -> list[dict]:
     sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra, planner = args[:11]
     stack_moves = bool(args[11]) if len(args) > 11 else False
+    copy_workers = int(args[12]) if len(args) > 12 else 1
     env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None)
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -707,7 +708,7 @@ def _run(args: tuple) -> list[dict]:
             if policy is not None:
                 la = CopyDriver(policy, probe_seed=s["pilot_seed"])
             else:
-                la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
+                la = LookAhead(workers=copy_workers, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
                                time_weight=time_weight, releases=releases, go_around_extra=go_around_extra,
                                stack_moves=stack_moves)
             row, secs = fly_session(env, options, la)
@@ -737,6 +738,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sessions", type=int, default=120, help="the first N of the test's 120 sessions")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--copy-workers", type=int, default=1,
+                    help="copies flown at once within each session (the copies are seeded and their results kept in "
+                         "order, so the choices are the same): with --workers 1 and 4 here, each session finishes "
+                         "sooner and a machine restart loses less")
     ap.add_argument("--seed", type=int, default=2026)
     ap.add_argument("--draws", type=int, default=DRAWS)
     ap.add_argument("--min-gain", type=float, default=MIN_GAIN)
@@ -781,7 +786,7 @@ def main() -> None:
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
-              args.go_around_extra, planner, args.stack_moves) for s in sessions]
+              args.go_around_extra, planner, args.stack_moves, args.copy_workers) for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
