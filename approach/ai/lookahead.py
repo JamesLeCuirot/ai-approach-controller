@@ -53,6 +53,7 @@ from collections import Counter
 import numpy as np
 
 from approach.ai.vector import FEATURES_2, N_MAX, OFFSETS, PLANNED, VectorController, VectorEnv
+from approach.geo import distance_xy
 from approach.instructions import Instruction
 
 LOOK_EVERY_S = 30
@@ -67,6 +68,10 @@ EXTEND_NM = (1.0, 2.0)
 # later brought go-arounds (the safety veto never fired on 3 dev training sessions it was tried on).
 RELEASE_HORIZON_S = 900
 MIN_KEEP_S = 120  # "wide": a move stays in force at least this long before it can be taken back
+# stack_moves: an aircraft taken off a stack above the lowest must be at least this far from every aircraft below it
+# in that stack, and releases are judged over a longer horizon, long enough to see the released aircraft land
+RELEASE_CLEAR_NM = 4.0
+STACK_MOVES_HORIZON_S = 1200
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
 REVERTS = ("release", "set_planned")
@@ -140,29 +145,53 @@ class LookAheadController(VectorController):
             if p is not None:
                 p.alt_cmd = None
 
-    def release_now(self, cs: str, views: list) -> bool:
-        """Off its stack now, onto its downwind, though the planner would keep it holding longer: only the lowest in
-        its stack, inside the RMA, and low enough to get down in time on some path, as the planner itself releases
-        (RulesController._replan), which then plans its path and descent. Without the height check, 3 of the 5
-        go-arounds on two busy dev training sessions were aircraft released early 9 to 14 minutes before, 2 of
-        them passing the threshold too high to land."""
+    def releasable(self, cs: str, views: list, above: bool = False, inbound: bool = False) -> bool:
+        """Whether release_now can take this aircraft off now (see there)."""
+        return self._release_check(cs, {v.cs: v for v in views}, above, inbound) is not None
+
+    def _release_check(self, cs: str, by_cs: dict, above: bool, inbound: bool) -> float | None:
         rules = self.rules
-        by_cs = {v.cs: v for v in views}
         p, v = rules.plans.get(cs), by_cs.get(cs)
-        if p is None or v is None or p.stage != "inbound" or not p.holding:
-            return False
-        if (not p.below_stack and rules._anyone_below_in_stack(p, by_cs)) or not rules._inside(v.x, v.y):
-            return False
+        if p is None or v is None or p.stage != "inbound" or p.holding == inbound:
+            return None
+        below = not p.below_stack and rules._anyone_below_in_stack(p, by_cs)
+        if below and not (above or inbound) or (above and not below) or not rules._inside(v.x, v.y):
+            return None
+        if above or inbound:  # only well clear of every aircraft holding below it in its stack
+            for q in rules._stack(p.hold_fix, by_cs):
+                w = by_cs[q.cs]
+                if q is not p and q.holding and w.alt_ft < v.alt_ft - 300 and distance_xy(v.x, v.y, w.x, w.y) < RELEASE_CLEAR_NM:
+                    return None
         side = rules._side(v)
         longest = rules.max_join(side)
         if longest < 0:
-            return False
+            return None
         if rules.descent == "plan":  # the planner's own height check: it must be able to get down on some path
             from approach.controllers.rules import Plan
 
             probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
-            if not rules._height_ok(v, probe, longest):
-                return False
+            if not rules._height_ok(v, probe, longest, measured=above or inbound):
+                return None
+        return side
+
+    def release_now(self, cs: str, views: list, above: bool = False, inbound: bool = False) -> bool:
+        """Off its stack now, onto its downwind, though the planner would keep it holding longer: only the lowest in
+        its stack, inside the RMA, and low enough to get down in time on some path, as the planner itself releases
+        (RulesController._replan), which then plans its path and descent. Without the height check, 3 of the 5
+        go-arounds on two busy dev training sessions were aircraft released early 9 to 14 minutes before, 2 of
+        them passing the threshold too high to land.
+
+        ``above`` (stack_moves): an aircraft above the lowest in its stack, at least RELEASE_CLEAR_NM from every
+        aircraft below it there, as real controllers take an aircraft off a stack from any level when there is room.
+        ``inbound`` (stack_moves): an aircraft on its way to its stack, not yet holding, straight onto its downwind,
+        as real controllers bring a high arrival straight in. Both judge the height by the real descent rates for
+        each height (RulesController._descent_s, measured), as the simulated pilots descend."""
+        rules = self.rules
+        by_cs = {v.cs: v for v in views}
+        side = self._release_check(cs, by_cs, above, inbound)
+        if side is None:
+            return False
+        p = rules.plans[cs]
         p.stage, p.side, p.holding = "downwind", side, False
         ahead = sum(1 for q in rules.plans.values() if q.stage == "downwind" and q.cs in by_cs)
         p.level = min(6000, 4000 + 1000 * ahead)
@@ -231,6 +260,10 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
         ctl.extend_downwind(cs, move[2])
     elif kind == "release_now":
         ctl.release_now(cs, env.session.world.views())
+    elif kind == "release_above":
+        ctl.release_now(cs, env.session.world.views(), above=True)
+    elif kind == "straight_in":
+        ctl.release_now(cs, env.session.world.views(), inbound=True)
     return action
 
 
@@ -419,14 +452,19 @@ class LookAhead:
 
     def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
                  moves: str = "small", time_weight: float = 0.0, releases: bool = False,
-                 go_around_extra: float = 0.0):
+                 go_around_extra: float = 0.0, stack_moves: bool = False):
         """``time_weight`` (efficient look-ahead): each aircraft-minute in the sector during the copies, and each
         minute the planner still expects aircraft to need at their end, costs this much in the score (a loss of
-        separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now."""
+        separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now.
+        ``stack_moves`` (with releases): also try taking an aircraft off a stack above the lowest when it is clear
+        of those below, and bringing an aircraft on its way to a stack straight in (release_now), with every
+        release judged over STACK_MOVES_HORIZON_S."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
         self.time_weight, self.releases, self.go_around_extra = time_weight, releases, go_around_extra
+        self.stack_moves = stack_moves and releases
+        self.release_horizon_s = STACK_MOVES_HORIZON_S if self.stack_moves else RELEASE_HORIZON_S
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
@@ -479,6 +517,19 @@ class LookAhead:
                             lows.append(low)
                 if lows:
                     out.append(("release_now", min(lows, key=lambda p: p.landing_t).cs))
+            if self.stack_moves:  # off a stack above the lowest, and straight in: the one next to land of each
+                listed = list(views.values())
+                aboves = []
+                for fix in STACKS:
+                    members = sorted((p for p in rules._stack(fix, views) if p.holding and p.cs in views),
+                                     key=lambda p: views[p.cs].alt_ft)
+                    aboves += [p for p in members[1:2] if ctl.releasable(p.cs, listed, above=True)]
+                if aboves:
+                    out.append(("release_above", min(aboves, key=lambda p: p.landing_t).cs))
+                coming = [p for p in rules.plans.values() if p.stage == "inbound" and not p.holding and p.cs in views
+                          and ctl.releasable(p.cs, listed, inbound=True)]
+                if coming:
+                    out.append(("straight_in", min(coming, key=lambda p: p.landing_t).cs))
             for cs in sorted(involved):
                 v = views.get(cs)
                 if v is None or rules.stage_of(cs) != "inbound":
@@ -564,7 +615,7 @@ class LookAhead:
             return None
         best, best_gain = None, None
         for group, horizon in ((tuple(c for c in cands if c[0] not in EFFICIENCY_MOVES), self.horizon_s),
-                               (tuple(c for c in cands if c[0] in EFFICIENCY_MOVES), RELEASE_HORIZON_S)):
+                               (tuple(c for c in cands if c[0] in EFFICIENCY_MOVES), self.release_horizon_s)):
             if not group:
                 continue
             ref = base
@@ -603,7 +654,7 @@ class LookAhead:
             self.made[(best[1], best[2])] = t
         elif best[0] == "extend":
             entry["nm"] = best[2]
-        elif best[0] == "release_now":
+        elif best[0] in ("release_now", "release_above", "straight_in"):
             self.made[(best[1], "stack")] = t
         elif best[0] == "hold_level":
             entry["step_ft"] = 1000 * best[2]
@@ -627,12 +678,13 @@ def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[di
     return episode_row(info, total), time.time() - t0
 
 
-MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend", "release_now")
-EFFICIENCY_MOVES = ("release_now",)  # made only where every copy shows no new trouble (LookAhead._no_new_trouble)
+MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend", "release_now", "release_above", "straight_in")
+EFFICIENCY_MOVES = ("release_now", "release_above", "straight_in")  # made only where every copy shows no new trouble (LookAhead._no_new_trouble)
 
 
 def _run(args: tuple) -> list[dict]:
-    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra, planner = args
+    sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra, planner = args[:11]
+    stack_moves = bool(args[11]) if len(args) > 11 else False
     env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None)
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -656,7 +708,8 @@ def _run(args: tuple) -> list[dict]:
                 la = CopyDriver(policy, probe_seed=s["pilot_seed"])
             else:
                 la = LookAhead(workers=1, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
-                               time_weight=time_weight, releases=releases, go_around_extra=go_around_extra)
+                               time_weight=time_weight, releases=releases, go_around_extra=go_around_extra,
+                               stack_moves=stack_moves)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -696,6 +749,9 @@ def main() -> None:
                     help="each go-around in the copies costs this much more than the training world's 3")
     ap.add_argument("--releases", action="store_true",
                     help="also try taking the lowest aircraft of each stack off it now (the planner would wait)")
+    ap.add_argument("--stack-moves", action="store_true",
+                    help="with --releases: also try taking an aircraft off a stack above the lowest when it is clear "
+                         "of those below, and bringing an aircraft on its way to a stack straight in")
     ap.add_argument("--planner", default="",
                     help='changes to the planner (vector.PLANNER_2), as JSON, e.g. \'{"height_by": "time"}\': for the '
                          "competitor and the look-ahead alike")
@@ -725,7 +781,7 @@ def main() -> None:
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
-              args.go_around_extra, planner) for s in sessions]
+              args.go_around_extra, planner, args.stack_moves) for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -742,7 +798,7 @@ def main() -> None:
         w.writerows(rows)
     ai = [r for r in rows if r["controller"] == "ai"]
     looks = max(sum(int(r["looks"]) for r in ai), 1)
-    la = LookAhead(moves=args.moves)
+    la = LookAhead(moves=args.moves, releases=args.releases, stack_moves=args.stack_moves)
     summary = {"controller": "copy" if args.copy else "lookahead", **({"copy": args.copy} if args.copy else {}),
                "moves": args.moves, "hours": "train" if args.train else "test",
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
@@ -754,7 +810,8 @@ def main() -> None:
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},
                "copies": sum(int(r["copies"]) for r in ai), "looks": looks,
                "looks_with_a_problem": sum(int(r["looks_with_a_problem"]) for r in ai),
-               "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai), "release_horizon_s": RELEASE_HORIZON_S,
+               "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai),
+               "release_horizon_s": la.release_horizon_s, "stack_moves": la.stack_moves,
                "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),
                "minutes_per_session": round(sum(int(r["wall_s"]) for r in ai) / 60 / max(len(ai), 1), 1),
                **summarise(rows)}

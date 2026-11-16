@@ -384,11 +384,27 @@ class RulesController(Controller):
         rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
         return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
 
-    def _descent_s(self, v, to_alt: float) -> float:
-        """Seconds needed to get down to `to_alt`: at the aircraft's own rate once it is descending, plus a margin."""
+    def _descent_s(self, v, to_alt: float, measured: bool = False) -> float:
+        """Seconds needed to get down to `to_alt`: at the aircraft's own rate once it is descending, plus a margin.
+        With ``measured``, at the median real rate for each height on the way down (approach.sim.world
+        .descent_by_height), scaled by how much faster or slower than that the aircraft is descending now."""
         lose = v.alt_ft - to_alt
         if lose <= 100:
             return 0.0
+        if measured:
+            from approach.sim.world import descent_by_height, descent_rate_at
+
+            bands = descent_by_height(self.airport.icao)
+            if bands:
+                median = tuple(q["p50"] for _, q in bands)
+                at = lambda alt: descent_rate_at(self.airport.icao, median, alt)  # noqa: E731
+                scale = min(max(-v.vs_fpm / at(v.alt_ft), 0.5), 2.0) if v.vs_fpm < -300 else 1.0
+                t, alt = 0.0, v.alt_ft
+                while alt > to_alt + 1.0:
+                    step = min(250.0, alt - to_alt)
+                    t += step / max(400.0, scale * at(alt - step / 2.0)) * 60.0
+                    alt -= step
+                return t + DESCENT_MARGIN_S
         rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
         return lose / max(rate, 400.0) * 60.0 + DESCENT_MARGIN_S
 
@@ -408,10 +424,11 @@ class RulesController(Controller):
         legs.append((INTERCEPT_LEG_NM, GS_BASE, icpt))
         return sum(d / self._gs(v, kt, trk) * 3600.0 for d, kt, trk in legs)
 
-    def _height_ok(self, v, p: Plan, d_join: float) -> bool:
-        """Whether the path to a join point d_join out is long enough to get down to a little below the glide path."""
+    def _height_ok(self, v, p: Plan, d_join: float, measured: bool = False) -> bool:
+        """Whether the path to a join point d_join out is long enough to get down to a little below the glide path
+        (``measured``: at the real rates for each height, height_by="time" only)."""
         if self.height_by == "time":
-            return self._time_to_join(v, p, d_join) >= self._descent_s(v, self._join_alt(d_join))
+            return self._time_to_join(v, p, d_join) >= self._descent_s(v, self._join_alt(d_join), measured)
         return self._track_to_join(v, p, d_join) >= self._descent_nm(v, self._join_alt(d_join))
 
     def _join_for_height(self, v, p: Plan, lo: float, hi: float) -> float:

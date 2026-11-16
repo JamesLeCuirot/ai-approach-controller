@@ -367,3 +367,40 @@ def test_the_look_ahead_can_stop_a_stack_descent_and_extend_a_downwind(airport):
     ctl.touched.add("H")
     ctl._stack_order(views)
     assert (ctl.rules.plans["L"].key, ctl.rules.plans["H"].key) == (1.0, 2.0)  # the lower one leaves first
+
+
+def test_the_look_ahead_can_take_an_aircraft_off_a_stack_above_the_lowest_or_straight_in(airport):
+    """stack_moves: off a stack above the lowest only when well clear of every aircraft below it there; straight in
+    for an aircraft on its way to its stack, not yet holding, low enough to get down at the real rates."""
+    from types import SimpleNamespace
+
+    from approach.ai.lookahead import RELEASE_CLEAR_NM, LookAheadController
+    from approach.controllers.rules import Plan
+
+    ctl = LookAheadController(airport, "26L", planner={"height_by": "time"})
+    fx, fy = airport.xy(airport.holds["WILLO"].position)
+
+    def plan(cs, holding=True):
+        p = Plan(cs, "A320", 0.0, ctl.rules.south)
+        p.hold_fix, p.holding = "WILLO", holding
+        return p
+
+    def view(cs, dx, alt):
+        return SimpleNamespace(cs=cs, x=fx + dx, y=fy, alt_ft=alt, target_alt=alt, vs_fpm=0.0, gs_kt=220.0,
+                               tas_kt=240.0, wind_e_kt=0.0, wind_n_kt=0.0)
+
+    ctl.rules.plans = {"LOW": plan("LOW"), "HIGH": plan("HIGH")}
+    near = [view("LOW", 0.0, 7000.0), view("HIGH", RELEASE_CLEAR_NM - 1.0, 8000.0)]
+    clear = [view("LOW", 0.0, 7000.0), view("HIGH", RELEASE_CLEAR_NM + 1.0, 8000.0)]
+    assert not ctl.releasable("HIGH", clear)  # the lowest leaves first...
+    assert not ctl.releasable("HIGH", near, above=True)  # ...unless clear of it
+    assert ctl.releasable("HIGH", clear, above=True)
+    assert not ctl.releasable("LOW", clear, above=True)  # nothing below it: an ordinary release
+    assert ctl.release_now("HIGH", clear, above=True) and ctl.rules.plans["HIGH"].stage == "downwind"
+
+    ctl.rules.plans = {"IN": plan("IN", holding=False), "HELD": plan("HELD")}
+    views = [view("IN", 3.0, 8000.0), view("HELD", -3.0, 7000.0)]
+    assert ctl.releasable("IN", views, inbound=True)
+    assert not ctl.releasable("HELD", views, inbound=True)  # holding: release_now's, not straight in
+    views[0].alt_ft = views[0].target_alt = 15000.0
+    assert not ctl.releasable("IN", views, inbound=True)  # too high to get down in time on any path
