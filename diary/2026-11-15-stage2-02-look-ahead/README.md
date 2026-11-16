@@ -58,6 +58,17 @@ On the fresh hours the new look-ahead is 2.25 minutes per arrival quicker than t
 
 **The busy hour of 30 May** (the replays above) is one where it is slower: 26.7 minutes per arrival against the planner's 22.6, but with 1 loss of separation against 7, no go-arounds against 4, and no gaps inside the minimum against 3. The real controllers took 17.5 minutes with no losses.
 
+**The 120 test sessions** (16 November), on the fixed simulator, every aircraft counted (1,785 arrivals):
+
+| | Minutes per arrival | Landed | Losses of separation | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead with early releases, time check | **23.8** | **1,777** | 10 | **2** | 2 | 1 |
+| Planner, time check (its competitor) | 25.4 | 1,711 | 251 | 63 | 60 | 9 |
+| Planner, as it was | 25.9 | 1,713 | 258 | 65 | 64 | 9 |
+| Real controllers | 17.8 | 1,776 | 4 | 14 | 0 | 0 |
+
+Against its competitor every difference is beyond chance: 1.6 minutes per arrival quicker, 241 fewer losses of separation, 61 fewer go-arounds. Against the real controllers it has fewer go-arounds and a similar number of losses of separation (the difference is within chance), but takes 6 minutes per arrival longer. Why, and what was tried overnight, is in the [plan](../../docs/project-plan.md#the-test-on-the-fixed-simulator-and-why-high-arrivals-hold-16-november): the planner holds most aircraft handed over high, where real controllers bring them straight in with a fast descent.
+
 ## What went wrong and how it was fixed
 
 - The early releases' saving came with go-arounds; the height check on releases removed both. The time-based height check gave most of the saving back, safely.
@@ -66,7 +77,7 @@ On the fresh hours the new look-ahead is 2.25 minutes per arrival quicker than t
 
 ## Next
 
-The 120 test sessions, flown again on the fixed simulator by the planner (both checks), the real controllers and the new look-ahead. Then the remaining losses of separation at the stacks, and releases from above the lowest level of a stack when an aircraft can be taken off laterally clear of the one below, as real controllers do.
+Pilots who descend at the real rate for their height (faster higher up), measured from the real arrivals, in the simulator. Then the decisions that keep real arrivals out of the stacks, given to the look-ahead: releases from above the lowest level of a stack when an aircraft can be taken off laterally clear of the one below, and a route straight to base for a high arrival that can make its slot.
 
 ## Notes
 

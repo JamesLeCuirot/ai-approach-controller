@@ -439,6 +439,31 @@ Releasing early saved 3 minutes per arrival on the old simulator, but with 9 go-
 
 **What this means.** The AI adjusts the competitor's vectors, and adjusting them can't recover minutes that are lost before an aircraft leaves its stack. The time is in how the stacks are run and when aircraft leave them, which the roadmap left to stage 4 after three hand-written reworks made things worse. The next step is to bring that forward: let the look-ahead decide releases from the stacks with the time-based height check, including from above the lowest level when an aircraft can be taken off laterally clear of the one below, as real controllers do, and adopt the competitor improvements that hold up into a new competitor before the 120-session tests are re-run on the fixed simulator.
 
+### The test on the fixed simulator, and why high arrivals hold (16 November)
+
+**The 120 test sessions** (1,785 arrivals), every aircraft counted:
+
+| | Minutes per arrival | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead (early releases, time-based height check) | 23.8 | 1,777 | 10 (7) | 2 | 2 | 1 |
+| Its competitor (the planner with the same check) | 25.4 | 1,711 | 251 (101) | 63 | 60 | 9 |
+| The planner as it was | 25.9 | 1,713 | 258 (104) | 65 | 64 | 9 |
+| Real controllers | 17.8 | 1,776 | 4 (4) | 14 | 0 | 0 |
+
+Against its competitor every difference is beyond chance (95% intervals from resampling the sessions): 1.6 minutes per arrival quicker (0.7 to 2.6), 66 more landed, 241 fewer losses of separation, 61 fewer go-arounds, 58 fewer gaps inside the minimum, 8 fewer wake infringements. It released 323 aircraft early and turned down 1,318 early releases its copies showed trouble from. Against the real controllers it has fewer go-arounds (2 against 14, beyond chance) and a similar number of losses of separation (10 against 4, within chance), but takes 6.0 minutes per arrival longer (4.8 to 7.2), slower in 108 of the 120 sessions.
+
+**The gap is there at every level of traffic.** On these sessions: 18.6 minutes against the real controllers' 13.5 with 1 to 6 arrivals in the hour, 25.7 against 19.5 with 19 or more (the competitor 18.7 and 28.5: the look-ahead's gains are in the busy hours). On 120 training sessions, aircraft the planner did not hold took about as long as the real flights, even in quiet hours (16.8 minutes from handover to landing against 16.2); those it held took 22.2 against 16.2. What decides whether it holds is height at handover: in quiet hours 12% of the aircraft handed over below 9,000 ft held, and 67% of those above 12,000 ft, against about 1 in 10 real ones. They reach their stack still at a median 10,200 ft, and "too high to get down in time" is the first reason in two thirds of the quiet-hour holds.
+
+**How real controllers bring high arrivals in.** Real arrivals handed over above 12,000 ft in quiet hours, not held, fly a nearly direct path from handover to a base or a short final, joining at about 10 to 12 NM, at 300 kt and more over the ground at first, descending at 1,500 to 2,000 ft/min early on: 58 NM in 14.4 minutes, where the simulated ones held and took 22.4. Real descents are faster higher up: the typical rate per flight is 832 ft/min between 3,500 and 7,000 ft and 1,024 above 7,000, with the fastest quarter over 1,400 between 11,000 and 15,500. The simulated pilots fly one rate, drawn from the 3,500 to 11,000 ft measurements (median 901), at every height.
+
+**Tried on the planner** (120 training sessions, the planner alone with the time-based height check: 24.65 minutes per arrival, 295 losses of separation):
+
+- checking a stack level against the whole stack before clearing an aircraft down into it, rather than only aircraft within 6 NM (36 of 63 of the planner's losses on 24 training sessions were at a stack, most just under 3 NM apart): it froze the stacks (27.8 minutes, 190 fewer landed); within 10 NM of the fix only, 25.15 minutes and more losses at the stacks (162 against 147);
+- letting the first aircraft of a stack with no wait descend below the stack on the way in: no difference (24.53, better in 37 sessions and worse in 46), since the aircraft that hold are still above the stack when they reach it;
+- pilots who descend at the real rate for their height (each keeping its place in the spread): 24.07 minutes, better in 79 sessions and worse in 34, safety about the same; and with the planner also trusting the faster rates it sees, 24.43, no better.
+
+**What this means.** Descent rates by height are a fidelity fix worth about half a minute per arrival; they go into the simulator (measured with `approach.data.response`) before the next full test. The rest is in decisions no planner setting reached: real controllers take high arrivals straight in, release from any level of a stack when there is room, and take whichever aircraft can make the next slot. The next step is to give those decisions to the look-ahead: releases from above the lowest level when laterally clear, and a route straight to base for an aircraft that can make its slot.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
