@@ -72,6 +72,9 @@ MIN_KEEP_S = 120  # "wide": a move stays in force at least this long before it c
 # in that stack, and releases are judged over a longer horizon, long enough to see the released aircraft land
 RELEASE_CLEAR_NM = 4.0
 STACK_MOVES_HORIZON_S = 1200
+# stack_moves: a release tried and not made is not tried again for the same aircraft for this long (every release
+# is judged in copies over STACK_MOVES_HORIZON_S, and trying each at every look made a busy hour take over 2 hours)
+RELEASE_RETRY_S = 120
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
 REVERTS = ("release", "set_planned")
@@ -470,12 +473,14 @@ class LookAhead:
         self.rng = random.Random(seed)
         self.last_look = -1e9
         self.made: dict[tuple, float] = {}  # when each move in force was made: (cs, dimension or "stack") -> t
+        self.release_tried: dict[tuple, float] = {}  # stack_moves: when each release was last tried, (kind, cs) -> t
         self.stats = Counter()
         self.changes: list[dict] = []
 
     def reset(self) -> None:
         self.last_look = -1e9
         self.made = {}
+        self.release_tried = {}
 
     def score(self, copy: dict) -> float:
         time = copy.get("aircraft_minutes", 0.0) + copy.get("remaining_minutes", 0.0)
@@ -530,6 +535,9 @@ class LookAhead:
                           and ctl.releasable(p.cs, listed, inbound=True)]
                 if coming:
                     out.append(("straight_in", min(coming, key=lambda p: p.landing_t).cs))
+                now = env.session.t
+                out = [c for c in out if c[0] not in EFFICIENCY_MOVES
+                       or now - self.release_tried.get(tuple(c[:2]), -1e9) >= RELEASE_RETRY_S]
             for cs in sorted(involved):
                 v = views.get(cs)
                 if v is None or rules.stage_of(cs) != "inbound":
@@ -628,6 +636,10 @@ class LookAhead:
             else:
                 ref_all = self.last_base
             jobs = [(s, cand) for cand in group for s in seeds]
+            if self.stack_moves:
+                for cand in group:
+                    if cand[0] in EFFICIENCY_MOVES:
+                        self.release_tried[tuple(cand[:2])] = t
             res = fly_copies(env, jobs, self.workers, horizon)
             self.stats["copies"] += len(jobs)
             base_score = float(np.mean([self.score(b) for b in ref]))
