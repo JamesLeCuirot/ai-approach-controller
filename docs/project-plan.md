@@ -464,6 +464,35 @@ Against its competitor every difference is beyond chance (95% intervals from res
 
 **What this means.** Descent rates by height are a fidelity fix worth about half a minute per arrival; they go into the simulator (measured with `approach.data.response`) before the next full test. The rest is in decisions no planner setting reached: real controllers take high arrivals straight in, release from any level of a stack when there is room, and take whichever aircraft can make the next slot. The next step is to give those decisions to the look-ahead: releases from above the lowest level when laterally clear, and a route straight to base for an aircraft that can make its slot.
 
+### Descent rates by height, and the stack moves (17 November)
+
+**Pilots who descend at the real rate for their height.** Measured on the training days (16,000 flights, `approach.data.response`, `descent.by_height_ft`), the typical rate per flight is 783 ft/min between 3,500 and 7,000 ft, 1,010 between 7,000 and 11,000 and 1,287 between 11,000 and 16,000; the fastest tenth 1,118, 1,536 and 1,977. The simulated pilots now descend at the rate for their height, each keeping its place in the spread at every height, and the response model (the safety check's) and the look-ahead's redrawn pilots do the same. Before, a pilot flew one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
+
+**Two new look-ahead moves** (`--stack-moves`): taking an aircraft off a stack above the lowest when it is at least 4 NM from every aircraft below it there, and bringing an aircraft on its way to its stack straight onto its downwind. Both judge whether the aircraft can get down in time at the real rates for each height, are judged in copies over 20 minutes (long enough to see the aircraft land), are made only where every copy shows no new trouble, and wait two minutes before another try once tried and not made.
+
+| Every aircraft counted | Minutes per arrival | Landed | Losses of separation | Go-arounds |
+| --- | --- | --- | --- | --- |
+| **12 dev training sessions** (182 arrivals) | | | | |
+| Planner, earlier simulator | 25.0 | 179 | 44 | 13 |
+| Look-ahead, earlier simulator | 23.6 | 181 | 2 | 1 |
+| Planner, descents by height | 22.6 | 182 | 26 | 10 |
+| Look-ahead, descents by height | 22.4 | 181 | 1 | 1 |
+| Look-ahead with the stack moves (first version) | 21.6 | 182 | 2 | 0 |
+| **24 fresh training sessions** (401 arrivals) | | | | |
+| Planner, descents by height | 23.9 | 397 | 57 | 11 |
+| Look-ahead, descents by height | 22.8 | 401 | 1 | 0 |
+| Look-ahead with the stack moves (first version) | 23.1 | 401 | 3 | 0 |
+| Look-ahead with the stack moves (as revised) | 22.6 | 401 | 1 | 0 |
+| Real controllers | 19.9 | 401 | 0 | 4 |
+
+- Realistic descents are worth most to the planner: 2.4 minutes per arrival on the dev hours, with fewer losses of separation and go-arounds, since fewer aircraft are too high to leave their stack. The look-ahead's time advantage over it shrinks (much of what it saved was rescuing aircraft that were too high); its safety advantage stays.
+- The first version of the stack moves judged every release, the ordinary ones too, over 20 minutes and retried it only after two: it made 20 ordinary releases instead of 80 on the fresh hours and lost more than the new moves gained. As revised, ordinary releases are judged as before and the new moves only add to them: 0.21 minutes per arrival quicker (within chance: the 95% interval is -0.56 to +0.15), quicker in 7 sessions and slower in 9, the gains of 1.3 to 1.6 minutes all in four busy hours, with the same safety. It took 10 aircraft off a stack above the lowest and brought 27 straight in.
+- On these fresh hours the look-ahead is now 2.7 to 2.9 minutes per arrival behind the real controllers, against 4.2 on the earlier simulator.
+
+**Running the experiments.** The session's container restarts every few hours, and is also reclaimed when the session looks idle (a background process alone does not keep it alive); a session in progress is lost at a restart. The look-ahead now flies its copies several at once within a session (`--copy-workers`, the same choices since the copies are seeded and kept in order), so with one session at a time on four processors each finishes about three times sooner and a restart loses less.
+
+The 120 test sessions are being flown on this simulator with the stack moves.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
