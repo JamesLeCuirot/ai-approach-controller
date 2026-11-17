@@ -72,9 +72,13 @@ MIN_KEEP_S = 120  # "wide": a move stays in force at least this long before it c
 # in that stack, and releases are judged over a longer horizon, long enough to see the released aircraft land
 RELEASE_CLEAR_NM = 4.0
 STACK_MOVES_HORIZON_S = 1200
-# stack_moves: a release tried and not made is not tried again for the same aircraft for this long (every release
-# is judged in copies over STACK_MOVES_HORIZON_S, and trying each at every look made a busy hour take over 2 hours)
+# stack_moves: a new stack move tried and not made is not tried again for the same aircraft for this long (each is
+# judged in copies over STACK_MOVES_HORIZON_S, and trying each at every look made a busy hour take over 2 hours).
+# Ordinary releases (release_now) are judged as without the stack moves: over RELEASE_HORIZON_S, at every look. With
+# them judged like the new moves too, on 19 fresh training sessions the look-ahead made 14 ordinary releases instead
+# of 60 and was 0.55 minutes per arrival slower, slower in 14 sessions.
 RELEASE_RETRY_S = 120
+NEW_STACK_MOVES = ("release_above", "straight_in")
 CAN = [FEATURES_2.index(f) for f in ("can_heading", "can_level", "can_speed")]
 DIMS = ("heading", "level", "speed")
 REVERTS = ("release", "set_planned")
@@ -461,13 +465,13 @@ class LookAhead:
         separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now.
         ``stack_moves`` (with releases): also try taking an aircraft off a stack above the lowest when it is clear
         of those below, and bringing an aircraft on its way to a stack straight in (release_now), with every
-        release judged over STACK_MOVES_HORIZON_S."""
+        new move judged over STACK_MOVES_HORIZON_S."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
         self.time_weight, self.releases, self.go_around_extra = time_weight, releases, go_around_extra
         self.stack_moves = stack_moves and releases
-        self.release_horizon_s = STACK_MOVES_HORIZON_S if self.stack_moves else RELEASE_HORIZON_S
+        self.release_horizon_s = RELEASE_HORIZON_S
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
         self.rng = random.Random(seed)
@@ -536,7 +540,7 @@ class LookAhead:
                 if coming:
                     out.append(("straight_in", min(coming, key=lambda p: p.landing_t).cs))
                 now = env.session.t
-                out = [c for c in out if c[0] not in EFFICIENCY_MOVES
+                out = [c for c in out if c[0] not in NEW_STACK_MOVES
                        or now - self.release_tried.get(tuple(c[:2]), -1e9) >= RELEASE_RETRY_S]
             for cs in sorted(involved):
                 v = views.get(cs)
@@ -623,7 +627,8 @@ class LookAhead:
             return None
         best, best_gain = None, None
         for group, horizon in ((tuple(c for c in cands if c[0] not in EFFICIENCY_MOVES), self.horizon_s),
-                               (tuple(c for c in cands if c[0] in EFFICIENCY_MOVES), self.release_horizon_s)):
+                               (tuple(c for c in cands if c[0] == "release_now"), self.release_horizon_s),
+                               (tuple(c for c in cands if c[0] in NEW_STACK_MOVES), STACK_MOVES_HORIZON_S)):
             if not group:
                 continue
             ref = base
@@ -636,10 +641,9 @@ class LookAhead:
             else:
                 ref_all = self.last_base
             jobs = [(s, cand) for cand in group for s in seeds]
-            if self.stack_moves:
-                for cand in group:
-                    if cand[0] in EFFICIENCY_MOVES:
-                        self.release_tried[tuple(cand[:2])] = t
+            for cand in group:
+                if cand[0] in NEW_STACK_MOVES:
+                    self.release_tried[tuple(cand[:2])] = t
             res = fly_copies(env, jobs, self.workers, horizon)
             self.stats["copies"] += len(jobs)
             base_score = float(np.mean([self.score(b) for b in ref]))
@@ -829,6 +833,8 @@ def main() -> None:
                "looks_with_a_problem": sum(int(r["looks_with_a_problem"]) for r in ai),
                "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai),
                "release_horizon_s": la.release_horizon_s, "stack_moves": la.stack_moves,
+               **({"stack_moves_horizon_s": STACK_MOVES_HORIZON_S, "stack_moves_retry_s": RELEASE_RETRY_S}
+                  if la.stack_moves else {}),
                "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),
                "minutes_per_session": round(sum(int(r["wall_s"]) for r in ai) / 60 / max(len(ai), 1), 1),
                **summarise(rows)}
