@@ -459,18 +459,21 @@ class LookAhead:
 
     def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
                  moves: str = "small", time_weight: float = 0.0, releases: bool = False,
-                 go_around_extra: float = 0.0, stack_moves: bool = False):
+                 go_around_extra: float = 0.0, stack_moves: bool = False, careful_stacks: bool = False):
         """``time_weight`` (efficient look-ahead): each aircraft-minute in the sector during the copies, and each
         minute the planner still expects aircraft to need at their end, costs this much in the score (a loss of
         separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now.
         ``stack_moves`` (with releases): also try taking an aircraft off a stack above the lowest when it is clear
         of those below, and bringing an aircraft on its way to a stack straight in (release_now), with every
-        new move judged over STACK_MOVES_HORIZON_S."""
+        new move judged over STACK_MOVES_HORIZON_S. ``careful_stacks``: holding an aircraft at another level in its
+        stack, and taking that back, are made only where every copy shows no new trouble, as the efficiency moves
+        are (CAREFUL_STACK_MOVES)."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
         self.time_weight, self.releases, self.go_around_extra = time_weight, releases, go_around_extra
         self.stack_moves = stack_moves and releases
+        self.careful_stacks = careful_stacks
         self.release_horizon_s = RELEASE_HORIZON_S
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
@@ -653,7 +656,8 @@ class LookAhead:
                 if len(rs) < len(seeds):
                     continue
                 gain = float(np.mean([self.score(r) for r in rs])) - base_score
-                if cand[0] in EFFICIENCY_MOVES and not self._no_new_trouble(mine, ref_all):
+                if ((cand[0] in EFFICIENCY_MOVES or (self.careful_stacks and cand[0] in CAREFUL_STACK_MOVES))
+                        and not self._no_new_trouble(mine, ref_all)):
                     self.stats["vetoed"] += 1
                     continue
                 need = 0.0 if cand[0] in REVERTS else self.min_gain
@@ -696,12 +700,18 @@ def fly_session(env: VectorEnv, options: dict, la: LookAhead | None) -> tuple[di
 
 MOVE_KINDS = ("set", "set_planned", "hold_level", "release", "extend", "release_now", "release_above", "straight_in")
 EFFICIENCY_MOVES = ("release_now", "release_above", "straight_in")  # made only where every copy shows no new trouble (LookAhead._no_new_trouble)
+# careful_stacks: these too. In the 120 test sessions on the simulator with descents by height (18 November), 5 of the
+# look-ahead's 9 losses of separation at a stack came within 3 minutes of holding one of the pair at another level in
+# its stack, or taking that back: a climb or descent past an aircraft just under 3 NM away, with 800 to 900 ft between
+# them. Neither move had to pass the veto, and taking a hold back needed no gain at all.
+CAREFUL_STACK_MOVES = ("hold_level", "release")
 
 
 def _run(args: tuple) -> list[dict]:
     sessions, draws, min_gain, with_competitor, moves, copy, parts, time_weight, releases, go_around_extra, planner = args[:11]
     stack_moves = bool(args[11]) if len(args) > 11 else False
     copy_workers = int(args[12]) if len(args) > 12 else 1
+    careful_stacks = bool(args[13]) if len(args) > 13 else False
     env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None)
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
@@ -726,7 +736,7 @@ def _run(args: tuple) -> list[dict]:
             else:
                 la = LookAhead(workers=copy_workers, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
                                time_weight=time_weight, releases=releases, go_around_extra=go_around_extra,
-                               stack_moves=stack_moves)
+                               stack_moves=stack_moves, careful_stacks=careful_stacks)
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -773,6 +783,9 @@ def main() -> None:
     ap.add_argument("--stack-moves", action="store_true",
                     help="with --releases: also try taking an aircraft off a stack above the lowest when it is clear "
                          "of those below, and bringing an aircraft on its way to a stack straight in")
+    ap.add_argument("--careful-stacks", action="store_true",
+                    help="hold an aircraft at another level in its stack, or take that back, only where every copy "
+                         "shows no new trouble (as for the releases)")
     ap.add_argument("--planner", default="",
                     help='changes to the planner (vector.PLANNER_2), as JSON, e.g. \'{"height_by": "time"}\': for the '
                          "competitor and the look-ahead alike")
@@ -802,7 +815,8 @@ def main() -> None:
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
-              args.go_around_extra, planner, args.stack_moves, args.copy_workers) for s in sessions]
+              args.go_around_extra, planner, args.stack_moves, args.copy_workers, args.careful_stacks)
+             for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
     flown = {int(r["session"]) for r in rows if r["controller"] == "ai"}
@@ -819,7 +833,8 @@ def main() -> None:
         w.writerows(rows)
     ai = [r for r in rows if r["controller"] == "ai"]
     looks = max(sum(int(r["looks"]) for r in ai), 1)
-    la = LookAhead(moves=args.moves, releases=args.releases, stack_moves=args.stack_moves)
+    la = LookAhead(moves=args.moves, releases=args.releases, stack_moves=args.stack_moves,
+                   careful_stacks=args.careful_stacks)
     summary = {"controller": "copy" if args.copy else "lookahead", **({"copy": args.copy} if args.copy else {}),
                "moves": args.moves, "hours": "train" if args.train else "test",
                "sessions": len(flown), "seed": args.seed, "draws": args.draws, "min_gain": args.min_gain,
@@ -833,6 +848,7 @@ def main() -> None:
                "looks_with_a_problem": sum(int(r["looks_with_a_problem"]) for r in ai),
                "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai),
                "release_horizon_s": la.release_horizon_s, "stack_moves": la.stack_moves,
+               **({"careful_stacks": True} if la.careful_stacks else {}),
                **({"stack_moves_horizon_s": STACK_MOVES_HORIZON_S, "stack_moves_retry_s": RELEASE_RETRY_S}
                   if la.stack_moves else {}),
                "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),

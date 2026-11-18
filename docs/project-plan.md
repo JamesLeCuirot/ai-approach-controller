@@ -506,7 +506,17 @@ Against its competitor every difference is beyond chance (95% intervals from res
 - **Against its competitor** every difference is beyond chance: 2.1 minutes per arrival quicker (1.2 to 3.0), quicker in 71 sessions and slower in 32, 54 more landed, 196 fewer losses of separation, 49 fewer go-arounds, 60 fewer gaps inside the minimum, 8 fewer wake infringements.
 - **Against the real controllers** the gap is now 4.4 minutes per arrival (3.3 to 5.5), against 6.0 on 16 November. It has fewer go-arounds (2 against 14, beyond chance). It has more losses of separation, 17 against 4, and that difference is now beyond chance (3 to 24 more). Away from the stacks it is 8 against 4, within chance.
 - **Against itself on the earlier simulator** it is 1.6 minutes per arrival quicker (1.3 to 2.0). The competitor gained 1.2 from the realistic descents alone, so the stack moves add a few tenths, as on the fresh practice hours. It made 268 ordinary early releases, took 21 aircraft off a stack above the lowest and brought 117 straight in.
-- **Its losses of separation rose from 10 to 17**, within chance (2 fewer to 17 more), and the rise is at the stacks: 9 against 3. Away from the stacks it is 8 against 7. Three of the nine stack losses came in sessions where it made neither new move, so they are not all from the new moves. They are being traced.
+- **Its losses of separation rose from 10 to 17**, within chance (2 fewer to 17 more), and the rise is at the stacks: 9 against 3. Away from the stacks it is 8 against 7. Three of the nine stack losses came in sessions where it made neither new move, so they are not all from the new moves.
+
+**Tracing the losses at the stacks.** The nine test sessions with a loss at a stack were flown again exactly as in the test, for diagnosis only, and each came out the same. None of the nine stack losses involved either new move. Almost all were a climb or descent past another aircraft just under 3 NM away (2.0 to 2.9 NM), with 800 to 900 ft between them as one settled toward its level:
+
+- 5 came within 3 minutes of the look-ahead holding one of the pair at another level in its stack, or taking that back. Neither move had to pass the "no new trouble in any copy" veto that releases pass, and taking a hold back needed no gain at all;
+- 3 were an aircraft leaving a stack on its downwind and descending close to one still in or arriving at a stack (once over the other stack), with no look-ahead move on either;
+- 1 was two aircraft settling into adjacent levels of the same stack.
+
+The two losses away from the stacks in these sessions were two aircraft released from the same stack 30 seconds apart, and a base and a downwind both just adjusted by the look-ahead.
+
+**Next, on training hours (not the test):** holding at another level, and taking it back, made only where every copy shows no new trouble (`--careful-stacks`), first on the 24 fresh training sessions and then on 48 new ones with and without it.
 
 ## Tools and data
 
