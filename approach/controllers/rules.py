@@ -99,6 +99,7 @@ EARLY_WAIT_S = 60.0  # inbound_descent="early": a wait this short or less counts
 STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 RELEASE_NEAR_NM = 10.0  # release_where="near": how far outside the RMA an aircraft may be released
+EXPEDITE_MIN_FT = 6000.0  # expedite=True: asked for only above this (lower down, real arrivals descend no faster)
 # descent="plan": height planning for pilots who descend at real rates
 JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, which is 3,750 ft at 11 NM)
 BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the glide path, to join it from below
@@ -141,6 +142,8 @@ class Plan:
     ai_turn_d: float = 0.0  # base_turns="ai": the final length the AI chose by turning base (0: not yet)
     turn_now: bool = False  # ... and the turn is still to be given
     ai_owns_turn: bool = False  # the AI said "not yet" as the planner was about to turn it: the turn is the AI's
+    want_expedite: bool = False  # expedite=True: its path is planned on an expedited descent
+    expedite_said: bool = False
 
 
 class RulesController(Controller):
@@ -151,7 +154,7 @@ class RulesController(Controller):
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
                  inbound_speed: str = "standard", stack_check: str = "near",
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
-                 free_speed: str = "standard", release_where: str = "rma"):
+                 free_speed: str = "standard", release_where: str = "rma", expedite: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -256,7 +259,15 @@ class RulesController(Controller):
         the RMA it is turned only towards it (the safety check's rule). On the first live shadow hour (18 Nov 2026,
         the planner alone, re-flown) the first arrival, with nothing ahead of it, flew 5 minutes towards WILLO waiting
         to enter the RMA; across the hour, "outside the RMA" held back aircraft still on their way in for about half of
-        their minutes."""
+        their minutes.
+
+        ``expedite`` (with descent="plan" and height_by="time"): an aircraft too high to get down in time on any path
+        is told to expedite its descent, if that would get it down, rather than kept holding to lose height; and one
+        on its downwind too high for the final its slot needs is told to expedite rather than given a longer final.
+        Real arrivals short of distance descend faster than others above 7,000 ft (a median 1,664 ft/min between
+        11,000 and 16,000 ft against 1,287; approach.data.response), and the simulated pilots do so once told
+        (approach.sim.world.expedite_profile). Asked for only above EXPEDITE_MIN_FT. Off, as in every result before
+        19 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -289,6 +300,7 @@ class RulesController(Controller):
         if release_where not in ("rma", "near", "any"):
             raise ValueError(f"release_where must be rma, near or any, not {release_where!r}")
         self.release_where = release_where
+        self.expedite = expedite
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -444,6 +456,22 @@ class RulesController(Controller):
         rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
         return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
 
+    def _expedite_s(self, v, to_alt: float) -> float:
+        """Seconds to get down to `to_alt` once expediting: at the median rate real arrivals short of distance reach
+        at each height (never slower than the usual median), plus the margin."""
+        from approach.sim.world import descent_by_height, descent_rate_at, expedite_by_height
+
+        bands, short = descent_by_height(self.airport.icao), expedite_by_height(self.airport.icao)
+        if not bands or len(short) != len(bands):
+            return self._descent_s(v, to_alt, measured=True)
+        fast = tuple(max(b["p50"], e["p50"]) for (_, b), (_, e) in zip(bands, short))
+        t, alt = 0.0, v.alt_ft
+        while alt > to_alt + 1.0:
+            step = min(250.0, alt - to_alt)
+            t += step / max(400.0, descent_rate_at(self.airport.icao, fast, alt - step / 2.0)) * 60.0
+            alt -= step
+        return t + DESCENT_MARGIN_S
+
     def _descent_s(self, v, to_alt: float, measured: bool = False) -> float:
         """Seconds needed to get down to `to_alt`: at the aircraft's own rate once it is descending, plus a margin.
         With ``measured``, at the median real rate for each height on the way down (approach.sim.world
@@ -488,8 +516,25 @@ class RulesController(Controller):
         """Whether the path to a join point d_join out is long enough to get down to a little below the glide path
         (``measured``: at the real rates for each height, height_by="time" only)."""
         if self.height_by == "time":
+            if p.want_expedite or getattr(v, "expedite", False):
+                return self._time_to_join(v, p, d_join) >= self._expedite_s(v, self._join_alt(d_join))
             return self._time_to_join(v, p, d_join) >= self._descent_s(v, self._join_alt(d_join), measured)
         return self._track_to_join(v, p, d_join) >= self._descent_nm(v, self._join_alt(d_join))
+
+    def _expedite_helps(self, v, p: Plan, d_join: float) -> bool:
+        """expedite=True: whether an aircraft too high for a join point d_join out would get down in time on an
+        expedited descent (above EXPEDITE_MIN_FT, height_by="time" only)."""
+        if not self.expedite or self.height_by != "time" or p.want_expedite or v.alt_ft <= EXPEDITE_MIN_FT:
+            return False
+        return self._height_ok(v, Plan(**{**vars(p), "want_expedite": True}), d_join)
+
+    def _maybe_expedite(self, p: Plan, v) -> None:
+        """Tell an aircraft planned on an expedited descent to expedite, once, when it is cleared at least 1,000 ft
+        lower and still above EXPEDITE_MIN_FT (on its way in or on its downwind, not holding)."""
+        if (p.want_expedite and not p.expedite_said and p.stage in ("inbound", "downwind") and not p.holding
+                and v.alt_ft > EXPEDITE_MIN_FT and v.target_alt < v.alt_ft - 1000 and not getattr(v, "expedite", False)):
+            self._say(p, "expedite", None)
+            p.expedite_said = True
 
     def _join_for_height(self, v, p: Plan, lo: float, hi: float) -> float:
         """The shortest final, between lo and hi, whose path is long enough to lose the aircraft's height (a longer
@@ -561,8 +606,14 @@ class RulesController(Controller):
                 else:
                     can_go = longest >= D_JOIN_MIN_NM and self._may_release_at(v) and t + self._eta(v, probe, longest) >= need
                     height_reach = longest
+                if (self.expedite and self.descent == "plan" and not p.holding and p.wait_s <= EARLY_WAIT_S
+                        and not self._height_ok(v, probe, height_reach) and self._expedite_helps(v, probe, height_reach)):
+                    p.want_expedite = probe.want_expedite = True  # on its way in, its slot free: down sooner
                 if can_go and self.descent == "plan" and not self._height_ok(v, probe, height_reach):
-                    can_go = False  # it can't get down in time on any path inside the RMA: lower in the stack first
+                    if self._expedite_helps(v, probe, height_reach):
+                        p.want_expedite = True  # down in time on an expedited descent
+                    else:
+                        can_go = False  # it can't get down in time on any path inside the RMA: lower in the stack first
                 if can_go and self._lower_leaves_first(p, views):
                     can_go = False  # the lowest aircraft in a stack leaves first
                 if can_go:
@@ -629,6 +680,8 @@ class RulesController(Controller):
             elif p.stage == "downwind":
                 p.d_join = D_JOIN_MIN_NM
             if p.stage == "downwind" and self.descent == "plan":
+                if not self._height_ok(v, p, p.d_join) and self._expedite_helps(v, p, p.d_join):
+                    p.want_expedite = True  # rather than a longer final than its slot needs
                 p.d_join = self._join_for_height(v, p, p.d_join, max(p.d_join, self.max_join(p.side)))
             p.landing_t = t + self._eta(v, p)
             p.slot_t = p.landing_t
@@ -768,6 +821,7 @@ class RulesController(Controller):
                     p.direct_sent = True
                 if self.speeds == "rules" and p.spd_cmd is None and v.cas_kt > SPEED_HOLD + 5:
                     self._say(p, "speed", SPEED_HOLD)
+                self._maybe_expedite(p, v)
                 if not p.holding and distance_xy(v.x, v.y, fx, fy) < 3.0:
                     self._say(p, "hold", p.hold_fix)
                     p.holding = True
@@ -799,6 +853,7 @@ class RulesController(Controller):
             pts = self._points(p)
             if p.alt_cmd is None and t >= p.retry_t:
                 self._say(p, "altitude", p.level)
+            self._maybe_expedite(p, v)
             if p.stage == "downwind":
                 if self.base_turns == "ai" and (p.ai_owns_turn or p.ai_turn_d):
                     pts = self._points(Plan(**{**vars(p), "d_join": self._turn_d(p)}))  # the AI's turn, or the RMA edge
@@ -1035,6 +1090,8 @@ class RulesController(Controller):
                         p.stage = "base"
                 elif instr.kind == "speed":
                     p.spd_cmd = None
+                elif instr.kind == "expedite":
+                    p.want_expedite = False  # not asked again: its path is planned on its usual descent
         elif kind == "go_around" and cs in self.plans:
             del self.plans[cs]  # re-sequenced, first in the queue, once the pilot is back at 3,000 ft
             self.went_around.add(cs)

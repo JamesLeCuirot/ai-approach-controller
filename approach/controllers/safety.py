@@ -134,7 +134,7 @@ class SafetyCheck:
         if me is None:
             return False, "no such aircraft"
         ok, reason = self._rules(instr, me)
-        if ok and instr.kind in ("heading", "altitude"):
+        if ok and (instr.kind in ("heading", "altitude") or (instr.kind == "expedite" and self.lookahead == "model")):
             ok, reason = self._separation(instr, views)
         if not ok:
             self.blocks += 1
@@ -155,6 +155,8 @@ class SafetyCheck:
         return out
 
     def _rules(self, instr: Instruction, me) -> tuple[bool, str]:
+        if instr.kind == "expedite" and (me.loc or me.target_alt >= me.alt_ft - 300):
+            return False, "not cleared to descend"
         if instr.kind == "altitude":
             alt = float(instr.value)
             if alt < self.airport.min_assignable_altitude_ft:
@@ -245,7 +247,8 @@ class SafetyCheck:
             return None
 
         base = first(self._model.predict(state, self._pilot)[0])
-        new = first(self._model.predict(state, self._pilot, (i, instr.kind, float(instr.value)))[0])
+        value = 0.0 if instr.kind == "expedite" else float(instr.value)
+        new = first(self._model.predict(state, self._pilot, (i, instr.kind, value))[0])
         if new is None or (base is not None and base[0] <= new[0]):
             return True, ""
         k, other, h, v = new

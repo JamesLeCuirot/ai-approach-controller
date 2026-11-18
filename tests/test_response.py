@@ -404,3 +404,21 @@ def test_the_look_ahead_can_take_an_aircraft_off_a_stack_above_the_lowest_or_str
     assert not ctl.releasable("HELD", views, inbound=True)  # holding: release_now's, not straight in
     views[0].alt_ft = views[0].target_alt = 15000.0
     assert not ctl.releasable("IN", views, inbound=True)  # too high to get down in time on any path
+
+
+def test_an_expedited_aircraft_is_predicted_to_descend_faster():
+    from approach.airports import egkk
+    from approach.response import ResponseModel, State, median_pilot
+
+    airport = egkk.load()
+    one = lambda v: np.array([float(v)])  # noqa: E731
+    state = State(x=one(20), y=one(-10), alt=one(13000), cas=one(250), tas=one(305), hdg=one(270), wind_e=one(0),
+                  wind_n=one(0), target_hdg=one(270), target_alt=one(7000), target_spd=one(250), approach_kt=one(140),
+                  cleared=one(0), loc=one(0), gs=one(0), holding=one(0))
+    model, pilot = ResponseModel(airport, "26L"), median_pilot("EGKK")
+    usual = model.predict(state, pilot)[0, 0, :, 2]
+    told = model.predict(state, pilot, (0, "expedite", 0.0))[0, 0, :, 2]
+    state.expedite = np.array([True])
+    already = model.predict(state, pilot)[0, 0, :, 2]
+    assert told[6] < usual[6] - 150 and already[6] <= told[6] + 1
+    assert already.min() >= 7000 - 50  # never below its cleared level

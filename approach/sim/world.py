@@ -84,6 +84,7 @@ FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
 # above, the fastest tenth near 2,000 high up). Each pilot keeps its place in the spread at every height. Before
 # 16 November 2026 a pilot descended at one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
 DESCENT_BY_HEIGHT_BOUNDS = (400.0, 2500.0)
+EXPEDITE_DONE_FT = 200.0  # an expedited descent ends this close above the cleared level
 APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
 # turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
@@ -111,6 +112,29 @@ def descent_by_height(airport_icao: str) -> tuple[tuple[float, dict[str, float]]
         lo, hi = (float(x) for x in key.split("-"))
         bands.append(((lo + hi) / 2.0, q))
     return tuple(sorted(bands, key=lambda b: b[0]))
+
+
+@functools.lru_cache(maxsize=None)
+def expedite_by_height(airport_icao: str) -> tuple[tuple[float, dict[str, float]], ...]:
+    """How fast real arrivals descend in each height band while short of distance (approach.data.response,
+    short_by_height_ft), lowest first, in the same bands as descent_by_height; empty if not measured."""
+    r = json.loads((REAL_DIR / airport_icao.lower() / "response.json").read_text())
+    bands = []
+    for key, q in r["descent"].get("short_by_height_ft", {}).items():
+        lo, hi = (float(x) for x in key.split("-"))
+        bands.append(((lo + hi) / 2.0, q))
+    return tuple(sorted(bands, key=lambda b: b[0]))
+
+
+def expedite_profile(airport_icao: str, u: float) -> tuple[float, ...]:
+    """A pilot's rate in each height band once told to expedite its descent: at the same cumulative probability u
+    as its usual rate, from the rates real arrivals reach when short of distance, and never slower than its usual
+    rate (low down, where they are slowing down too, real arrivals short of distance descend no faster)."""
+    usual = descent_profile(airport_icao, u)
+    short = expedite_by_height(airport_icao)
+    if len(short) != len(usual):
+        return usual
+    return tuple(max(a, draw(q, u, DESCENT_BY_HEIGHT_BOUNDS)) for a, (_, q) in zip(usual, short))
 
 
 def descent_profile(airport_icao: str, u: float) -> tuple[float, ...]:
@@ -200,6 +224,7 @@ class AircraftView:
     target_spd: float
     loc: bool
     gs: bool
+    expedite: bool = False  # told to expedite its descent, until it reaches its cleared level
 
 
 @dataclass
@@ -226,6 +251,10 @@ class Pilot:
     bank_deg: float = 25.0
     descent_fpm: float = 1500.0  # the rate now (with descent_profile, at the aircraft's height)
     descent_profile: tuple[float, ...] = ()  # its rate at the middle of each measured height band
+    descent_u: float = 0.5  # where its usual rate lies in the measured spread (its expedited rate lies there too)
+    expedite_profile: tuple[float, ...] = ()  # its rate in each band once told to expedite
+    expedite: bool = False  # expediting its descent now
+    expedite_told: bool = False  # told to expedite (controllers plan with it at once, as with a new level)
     decel_kt_s: float = 0.0
     decel_desc_kt_s: float = 0.0
     accel_kt_s: float = 0.0
@@ -301,7 +330,9 @@ class World:
                 u = self.pilot_rng.random()
                 setattr(p, name, draw(q[name], u, _BOUNDS[name]))
                 if name == "descent_fpm" and descent_by_height(self.airport.icao):
+                    p.descent_u = u
                     p.descent_profile = descent_profile(self.airport.icao, u)
+                    p.expedite_profile = expedite_profile(self.airport.icao, u)
                     p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
             table = final_slowing_quantiles(self.airport.icao)
             if table:
@@ -335,6 +366,8 @@ class World:
             pilot.target_alt = float(instr.value)
         elif instr.kind == "speed":
             pilot.target_spd = float(instr.value)
+        elif instr.kind == "expedite":
+            pilot.expedite_told = True
 
     # ---- state -------------------------------------------------------------------
     def _idx(self, cs: str) -> int:
@@ -360,6 +393,7 @@ class World:
                 phase="holding" if p.hold_fix and p.hold_state != "to_fix" else p.phase,
                 cleared=p.cleared, along=along, lateral=lateral, released_t=p.released_t,
                 target_hdg=p.target_hdg, target_alt=p.target_alt, target_spd=p.target_spd, loc=p.loc, gs=p.gs,
+                expedite=p.expedite_told,
             ))
         return out
 
@@ -402,6 +436,8 @@ class World:
             p.hold_fix, p.hold_state = str(instr.value), "to_fix"
         elif instr.kind == "cleared_ils":
             p.cleared = str(instr.value)
+        elif instr.kind == "expedite" and p.expedite_profile:
+            p.expedite = True  # measured pilots only: "bluesky" pilots descend at BlueSky's own rates
 
     def _pilots_tick(self) -> list[dict]:
         events: list[dict] = []
@@ -438,8 +474,12 @@ class World:
         return events
 
     def _descent_tick(self, p: Pilot, v: AircraftView) -> None:
-        """The pilot's descent rate for its height (the autopilot's default rate for a change of level)."""
-        rate = descent_rate_at(self.airport.icao, p.descent_profile, v.alt_ft)
+        """The pilot's descent rate for its height (the autopilot's default rate for a change of level); faster
+        while expediting, which lasts until it reaches the level it is cleared to."""
+        if p.expedite_told and v.alt_ft <= p.target_alt + EXPEDITE_DONE_FT:
+            p.expedite = p.expedite_told = False
+        profile = p.expedite_profile if p.expedite and p.expedite_profile else p.descent_profile
+        rate = descent_rate_at(self.airport.icao, profile, v.alt_ft)
         if abs(rate - p.descent_fpm) >= 10.0:
             p.descent_fpm = rate
             i = self._idx(p.cs)

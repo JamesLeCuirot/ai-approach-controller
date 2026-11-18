@@ -277,6 +277,7 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
 def redraw_pilots(world, seed: int) -> None:
     """Draw every pilot again from the measured spread, and new response delays: how a copy's crews fly."""
     from approach.sim.world import (_BOUNDS, FINAL_SLOWING_BOUNDS, FPM_TO_MS, descent_by_height, descent_profile,
+                                    expedite_profile,
                                     descent_rate_at, draw, final_slowing_quantiles, response_quantiles)
 
     world.rng = random.Random(seed)
@@ -292,8 +293,11 @@ def redraw_pilots(world, seed: int) -> None:
             u = world.pilot_rng.random()
             setattr(p, name, draw(q[name], u, _BOUNDS[name]))
             if name == "descent_fpm" and by_height and cs in alts:
+                p.descent_u = u
                 p.descent_profile = descent_profile(world.airport.icao, u)
-                p.descent_fpm = descent_rate_at(world.airport.icao, p.descent_profile, alts[cs])
+                p.expedite_profile = expedite_profile(world.airport.icao, u)
+                p.descent_fpm = descent_rate_at(world.airport.icao,
+                                                p.expedite_profile if p.expedite else p.descent_profile, alts[cs])
         if table:
             nearest = min(table, key=lambda k: abs(k - p.approach_speed))
             p.final_slowing_kt_s = draw(table[nearest], world.pilot_rng.random(), FINAL_SLOWING_BOUNDS)

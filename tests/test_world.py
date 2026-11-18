@@ -182,3 +182,26 @@ def test_wind_above_the_weather_models_top_level(airport):
     winds = {v.cs: v.wind_e_kt for v in world.views()}
     assert winds["LOW"] == pytest.approx(30.0, abs=1.0)
     assert winds["HIGH"] == pytest.approx(50.0, abs=1.0)
+
+
+def test_expedite_descent_is_faster_until_the_cleared_level(airport):
+    from approach.sim.world import World, expedite_profile, descent_profile
+
+    assert all(e >= d for e, d in zip(expedite_profile("EGKK", 0.3), descent_profile("EGKK", 0.3)))
+    lost = {}
+    for expedite in (False, True):
+        world = World(airport, "26L", seed=3, pilots="measured")
+        hold = airport.holds["WILLO"]
+        world.spawn("TEST1", "A320", hold.position.lat, hold.position.lon,
+                    airport.magnetic_to_true(hold.inbound_course_mag), 14000, 250)
+        world.instruct(Instruction("TEST1", "altitude", 7000))
+        if expedite:
+            world.instruct(Instruction("TEST1", "expedite"))
+            assert world.views()[0].expedite  # controllers plan with it at once
+        world.step(90)
+        lost[expedite] = 14000 - world.views()[0].alt_ft
+        world.step(600)
+        v = world.views()[0]
+        assert v.alt_ft == pytest.approx(7000, abs=100) and not v.expedite  # over once it reaches its level
+    assert lost[True] > lost[False] * 1.15
+    assert Instruction("TEST1", "expedite").phrase() == "TEST1, expedite descent"

@@ -225,7 +225,7 @@ class VectorController(Controller):
     def on_event(self, event: dict) -> None:
         if event.get("kind") == "blocked":
             instr = event["instruction"]
-            if (instr.callsign, instr.kind, float(instr.value)) in self.ai_said:
+            if instr.kind in INSTRUCTION_DIM and (instr.callsign, instr.kind, float(instr.value)) in self.ai_said:
                 self.ai_blocked += 1
                 b = INSTRUCTION_DIM.get(instr.kind)
                 if self.hold and b is not None and instr.callsign in self.offsets:  # blocked: back to as planned

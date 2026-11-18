@@ -9,7 +9,7 @@ from typing import Any
 @dataclass
 class Instruction:
     callsign: str
-    kind: str  # "heading", "altitude", "speed", "cleared_ils", "direct", "hold", "resume_speed"
+    kind: str  # "heading", "altitude", "speed", "cleared_ils", "direct", "hold", "resume_speed", "expedite"
     value: Any = None  # true heading (deg), altitude (ft), speed (kt), runway or fix name
 
     def phrase(self, current_heading: float | None = None, current_alt: float | None = None,
@@ -38,4 +38,6 @@ class Instruction:
             return f"{cs}, proceed direct {self.value}"
         if self.kind == "hold":
             return f"{cs}, hold at {self.value}"
+        if self.kind == "expedite":
+            return f"{cs}, expedite descent"
         return f"{cs}, {self.kind} {self.value}"

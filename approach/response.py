@@ -30,7 +30,7 @@ from approach import wake
 from approach.airports.model import Airport
 from approach.data.response import G_KT_DEG, tas_from_cas
 from approach.sim.world import (_BOUNDS, BANK_PER_DEG, MAX_CAPTURE_TRACK_DEG, MIN_BANK_DEG, descent_by_height,
-                                descent_profile, draw, response_quantiles)
+                                descent_profile, draw, expedite_by_height, expedite_profile, response_quantiles)
 
 HORIZON_S = 120
 OUT_STEP_S = 5
@@ -59,6 +59,7 @@ class State:
     loc: np.ndarray  # on the localiser
     gs: np.ndarray  # on the glide path
     holding: np.ndarray
+    expedite: np.ndarray | None = None  # told to expedite its descent (None: none is)
 
     def __len__(self) -> int:
         return len(self.x)
@@ -73,6 +74,7 @@ def state_from_views(views) -> State:
         target_spd=f("target_spd"), approach_kt=np.array([float(wake.approach_speed(v.actype)) for v in views]),
         cleared=np.array([bool(v.cleared) for v in views]), loc=np.array([bool(v.loc) for v in views]),
         gs=np.array([bool(v.gs) for v in views]), holding=np.array([v.phase == "holding" for v in views]),
+        expedite=np.array([bool(getattr(v, "expedite", False)) for v in views]),
     )
 
 
@@ -95,6 +97,8 @@ class Pilots:
     # descend (approach.sim.world.descent_by_height); None: descent_fpm at every height
     descent_profile: np.ndarray | None = None
     descent_mids: tuple[float, ...] = ()
+    # The same once told to expedite (approach.sim.world.expedite_profile); None: as descent_profile
+    expedite_profile: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.delay_s)
@@ -124,18 +128,22 @@ def draw_pilots(n: int, airport_icao: str, rng: random.Random | None = None,
     gauss = lambda sd: np.array([rng.gauss(0.0, sd) for _ in range(n)]) if sd > 0 else None  # noqa: E731
     bands = descent_by_height(airport_icao)
     profile = np.array([descent_profile(airport_icao, u) for u in descent_us]) if bands else None
+    expedite = np.array([expedite_profile(airport_icao, u) for u in descent_us]) if bands else None
     return Pilots(delay_s=np.array([delay_s[0] + u * (delay_s[1] - delay_s[0]) for u in spread_us()]), **values,
                   wind_e_err=gauss(wind_sd_kt), wind_n_err=gauss(wind_sd_kt), speed_err=gauss(speed_sd_kt),
-                  descent_profile=profile, descent_mids=tuple(m for m, _ in bands))
+                  descent_profile=profile, descent_mids=tuple(m for m, _ in bands), expedite_profile=expedite)
 
 
 def median_pilot(airport_icao: str, delay_s: float = sum(PILOT_DELAY_S) / 2) -> Pilots:
     """The typical pilot: every quantity at its median. One draw, for a single best guess."""
     q = response_quantiles(airport_icao)
     bands = descent_by_height(airport_icao)
+    short = expedite_by_height(airport_icao)
+    expedite = (np.array([[max(b["p50"], e["p50"]) for (_, b), (_, e) in zip(bands, short)]])
+                if bands and len(short) == len(bands) else None)
     return Pilots(delay_s=np.array([delay_s]), **{name: np.array([q[name]["p50"]]) for name in _BOUNDS},
                   descent_profile=np.array([[b["p50"] for _, b in bands]]) if bands else None,
-                  descent_mids=tuple(m for m, _ in bands))
+                  descent_mids=tuple(m for m, _ in bands), expedite_profile=expedite)
 
 
 def _rate_by_height(mids: tuple[float, ...], profile: np.ndarray, alt: np.ndarray) -> np.ndarray:
@@ -175,7 +183,8 @@ class ResponseModel:
     def predict(self, s: State, pilots: Pilots, new: tuple[int, str, float] | None = None) -> np.ndarray:
         """Positions every out_step_s over the horizon: an array (draws, aircraft, steps, 3) of x, y (NM) and
         altitude (ft). ``new`` is an instruction just given, (aircraft index, "heading" | "altitude" | "speed",
-        value): each draw's pilot acts on it after its own delay; until then the aircraft flies its clearance."""
+        value), or (aircraft index, "expedite", 0): each draw's pilot acts on it after its own delay; until then the
+        aircraft flies its clearance."""
         D, M, dt = len(pilots), len(s), self.dt
         full = lambda a: np.broadcast_to(np.asarray(a, dtype=float), (D, M)).copy()  # noqa: E731
         x, y, alt, cas, hdg = full(s.x), full(s.y), full(s.alt), full(s.cas), full(s.hdg)
@@ -183,6 +192,8 @@ class ResponseModel:
         speed_err = 0.0 if pilots.speed_err is None else pilots.speed_err[:, None]
         loc, gsp = full(s.loc) > 0.5, full(s.gs) > 0.5
         cleared, hold = full(s.cleared) > 0.5, full(s.holding) > 0.5
+        expedite = full(s.expedite if s.expedite is not None else np.zeros(M)) > 0.5
+        exp_profile = pilots.expedite_profile if pilots.expedite_profile is not None else pilots.descent_profile
         we, wn, appr = full(s.wind_e), full(s.wind_n), full(s.approach_kt)
         if pilots.wind_e_err is not None:
             we, wn = we + pilots.wind_e_err[:, None], wn + pilots.wind_n_err[:, None]
@@ -204,8 +215,11 @@ class ResponseModel:
                     now = ~applied & (t >= pilots.delay_s)
                     if now.any():
                         i, kind, value = new
-                        target = {"heading": thdg, "altitude": talt, "speed": tspd}[kind]
-                        target[now, i] = float(value)
+                        if kind == "expedite":
+                            expedite[now, i] = True
+                        else:
+                            target = {"heading": thdg, "altitude": talt, "speed": tspd}[kind]
+                            target[now, i] = float(value)
                         applied |= now
                 along, lateral = self._frame(x, y)
                 # Speed: towards the assigned speed at the pilot's own rate (slower while descending).
@@ -235,6 +249,10 @@ class ResponseModel:
                 # once on it.
                 if by_height:
                     desc = _rate_by_height(pilots.descent_mids, pilots.descent_profile, alt) / 60.0
+                    if expedite.any():
+                        expedite &= alt > talt + 200.0  # until it reaches its cleared level
+                        fast = _rate_by_height(pilots.descent_mids, exp_profile, alt) / 60.0
+                        desc = np.where(expedite, fast, desc)
                 alt = np.where(moving, alt + np.clip(talt - alt, -desc * dt, desc * dt), alt)
                 along, lateral = self._frame(x, y)
                 gp = self.gp0 + np.maximum(along, 0.0) * self.slope_ft_per_nm

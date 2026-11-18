@@ -379,6 +379,33 @@
     "p75": 1621.491,
     "p90": 1976.897
    }
+  },
+  "short_note": "by height while short of distance: higher above the airfield than 300 ft for every NM of track it went on to fly to touchdown (a 3 degree path is 318 ft/NM), how fast arrivals descend when they must (expedite descent)",
+  "short_by_height_ft": {
+   "3500-7000": {
+    "flights": 8530,
+    "p10": 466.476,
+    "p25": 571.736,
+    "p50": 734.221,
+    "p75": 911.211,
+    "p90": 1087.694
+   },
+   "7000-11000": {
+    "flights": 2500,
+    "p10": 837.052,
+    "p25": 1041.631,
+    "p50": 1285.768,
+    "p75": 1556.383,
+    "p90": 1936.032
+   },
+   "11000-16000": {
+    "flights": 1754,
+    "p10": 1028.825,
+    "p25": 1374.043,
+    "p50": 1664.187,
+    "p75": 1993.275,
+    "p90": 2544.826
+   }
   }
  },
  "speed": {
