@@ -103,6 +103,12 @@ BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the gli
 PLAN_DESCENT_FPM = 800.0  # assumed until the aircraft is seen descending (real arrivals: median 900, slowest tenth 630)
 DESCENT_MARGIN_NM = 2.0  # time to start the descent, and a little to spare
 DESCENT_MARGIN_S = 35.0  # the same, as time (height_by="time"): about 2 NM at a downwind ground speed
+# release_check="path": the way out of a stack, flown ahead before an aircraft is released
+EXIT_PROBE_S = 240.0
+EXIT_STEP_S = 10.0
+EXIT_H_NM = 3.5  # a little over the 3 NM minimum: aircraft in a hold are taken to stay where they are
+EXIT_V_FT = 1000.0
+EXIT_CLIMB_FPM = 1500.0
 
 
 @dataclass
@@ -141,7 +147,7 @@ class RulesController(Controller):
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
                  inbound_speed: str = "standard", stack_check: str = "near",
-                 inbound_descent: str = "stack"):
+                 inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -214,7 +220,21 @@ class RulesController(Controller):
         295, 88 go-arounds against 91): the aircraft that hold reach their fix at a median 10,200 ft in quiet hours,
         still above the stack, too high whatever level they were cleared to. Real arrivals handed over above 12,000
         ft descend faster than the simulated pilots: a median 1,024 ft/min between 7,000 and 15,500 ft and a fastest
-        tenth over 1,500, against 832 between 3,500 and 7,000."""
+        tenth over 1,500, against 832 between 3,500 and 7,000.
+
+        ``lowest_first`` is which aircraft the rule "the lowest aircraft in a stack leaves first" holds back:
+        "holding" (every result before 18 Nov 2026), only those already holding; "zone", also those on their way to
+        the stack within STACK_ZONE_NM of its fix; "all", those on their way wherever they are. With "holding", an
+        aircraft that had not yet started holding could be released above one holding below it in its stack, and
+        descend through it: 2 of the planner's first 12 losses of separation on the 24 fresh training sessions, and 1
+        of the look-ahead's 9 at a stack on the 120 test sessions (traced for diagnosis only).
+
+        ``release_check`` is whether the way out of a stack is checked before an aircraft is released: "none" (every
+        result before 18 Nov 2026), or "path": flown EXIT_PROBE_S ahead, straight towards its downwind point and
+        descending to its downwind level, it must not come within EXIT_H_NM and EXIT_V_FT of another aircraft sooner
+        than it would by staying where it is; if it would, it waits. Of the planner's first 23 losses of separation on
+        the 24 fresh training sessions, 6 were an aircraft leaving a stack and descending slowly past another at or
+        into the level it had left, or the one below."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -235,6 +255,12 @@ class RulesController(Controller):
         if inbound_descent not in ("stack", "early"):
             raise ValueError(f"inbound_descent must be stack or early, not {inbound_descent!r}")
         self.inbound_descent = inbound_descent
+        if lowest_first not in ("holding", "zone", "all"):
+            raise ValueError(f"lowest_first must be holding, zone or all, not {lowest_first!r}")
+        self.lowest_first = lowest_first
+        if release_check not in ("none", "path"):
+            raise ValueError(f"release_check must be none or path, not {release_check!r}")
+        self.release_check = release_check
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -461,7 +487,7 @@ class RulesController(Controller):
         probe = Plan(**{**vars(p), "side": side, "stage": "downwind"})
         shortest = D_JOIN_FIXED_NM if self.fixed_paths else D_JOIN_MIN_NM
         earliest = t + self._eta(v, probe, shortest)
-        blocked = p.holding and not p.below_stack and self._anyone_below_in_stack(p, views)
+        blocked = self._lower_leaves_first(p, views)
         if self.descent == "plan" and not blocked:
             longest = self.max_join(side)
             blocked = longest < 0 or not self._height_ok(v, probe, max(longest, shortest))
@@ -503,14 +529,18 @@ class RulesController(Controller):
                     height_reach = longest
                 if can_go and self.descent == "plan" and not self._height_ok(v, probe, height_reach):
                     can_go = False  # it can't get down in time on any path inside the RMA: lower in the stack first
-                if can_go and p.holding and not p.below_stack and self._anyone_below_in_stack(p, views):
+                if can_go and self._lower_leaves_first(p, views):
                     can_go = False  # the lowest aircraft in a stack leaves first
                 if can_go:
-                    p.stage, p.side, p.holding = "downwind", side, False
                     ahead = sum(1 for q in self.plans.values() if q.stage == "downwind" and q.cs in views)
-                    p.level = min(6000, 4000 + 1000 * ahead)
+                    level = min(6000, 4000 + 1000 * ahead)
                     if p.early:  # already below the stack: never climb it back to the downwind level
-                        p.level = min(p.level, max(p.early, int(round(v.target_alt / 1000.0)) * 1000))
+                        level = min(level, max(p.early, int(round(v.target_alt / 1000.0)) * 1000))
+                    if self.release_check == "path" and self._exit_conflict(p, v, views, level, max(longest, D_JOIN_MIN_NM)):
+                        can_go = False  # its way out passes too close to another aircraft: it waits
+                if can_go:
+                    p.stage, p.side, p.holding = "downwind", side, False
+                    p.level = level
                     p.alt_cmd = None
                     p.hdg_cmd = None
                 else:
@@ -815,6 +845,67 @@ class RulesController(Controller):
             ordered = [p for p in members if p.holding] + [p for p in members if not p.holding]
             for k, p in enumerate(ordered):
                 p.stack_level = STACK_BASE_FT + 1000 * k
+
+    def _exit_conflict(self, p: Plan, v, views: dict, level: float, d_join: float) -> bool:
+        """release_check="path": would releasing this aircraft now (straight towards its downwind point at its ground
+        speed, descending to `level` at PLAN_DESCENT_FPM) bring it within EXIT_H_NM and EXIT_V_FT of another aircraft,
+        over the next EXIT_PROBE_S, sooner than staying where it is would? Aircraft holding stay where they are, the
+        others fly on along their track at their ground speed, each climbing or descending to its cleared level."""
+        dx, dy = self._points(Plan(**{**vars(p), "stage": "downwind", "side": self._side(v), "d_join": d_join}))["D"]
+        out_brg, out_nm = math.radians(bearing_xy(v.x, v.y, dx, dy)), distance_xy(v.x, v.y, dx, dy)
+        gs = max(v.gs_kt, 150.0)
+
+        def alt_at(a0: float, target: float, s: float) -> float:
+            if target < a0:
+                return max(target, a0 - PLAN_DESCENT_FPM * s / 60.0)
+            return min(target, a0 + EXIT_CLIMB_FPM * s / 60.0)
+
+        def moving(w, s: float) -> tuple[float, float]:
+            d, b = w.gs_kt * s / 3600.0, math.radians(w.trk)
+            return w.x + d * math.sin(b), w.y + d * math.cos(b)
+
+        others = []
+        for w in views.values():
+            if w.cs == v.cs or w.loc:
+                continue
+            q = self.plans.get(w.cs)
+            others.append((w, q is not None and q.holding))
+
+        def first(release: bool) -> float | None:
+            for k in range(1, int(EXIT_PROBE_S / EXIT_STEP_S) + 1):
+                s = k * EXIT_STEP_S
+                if release:
+                    d = min(gs * s / 3600.0, out_nm)
+                    x, y = v.x + d * math.sin(out_brg), v.y + d * math.cos(out_brg)
+                    a = alt_at(v.alt_ft, min(level, v.target_alt), s)
+                else:
+                    x, y = (v.x, v.y) if p.holding else moving(v, s)
+                    a = alt_at(v.alt_ft, v.target_alt, s)
+                for w, still in others:
+                    wx, wy = (w.x, w.y) if still else moving(w, s)
+                    if distance_xy(x, y, wx, wy) < EXIT_H_NM and abs(alt_at(w.alt_ft, w.target_alt, s) - a) < EXIT_V_FT:
+                        return s
+            return None
+
+        new = first(True)
+        if new is None:
+            return False
+        base = first(False)
+        return base is None or new < base
+
+    def _lower_leaves_first(self, p: Plan, views: dict) -> bool:
+        """An aircraft lower in this one's stack, holding, must leave first (lowest_first)."""
+        if p.below_stack:
+            return False
+        if not p.holding:
+            if self.lowest_first == "holding":
+                return False
+            if self.lowest_first == "zone":
+                v = views[p.cs]
+                fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
+                if distance_xy(v.x, v.y, fx, fy) >= STACK_ZONE_NM:
+                    return False
+        return self._anyone_below_in_stack(p, views)
 
     def _anyone_below_in_stack(self, p: Plan, views: dict) -> bool:
         v = views[p.cs]
