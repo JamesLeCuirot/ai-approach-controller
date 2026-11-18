@@ -491,7 +491,22 @@ Against its competitor every difference is beyond chance (95% intervals from res
 
 **Running the experiments.** The session's container restarts every few hours, and is also reclaimed when the session looks idle (a background process alone does not keep it alive); a session in progress is lost at a restart. The look-ahead now flies its copies several at once within a session (`--copy-workers`, the same choices since the copies are seeded and kept in order), so with one session at a time on four processors each finishes about three times sooner and a restart loses less.
 
-The 120 test sessions are being flown on this simulator with the stack moves.
+### The test on the updated simulator (18 November)
+
+**The 120 test sessions** (1,785 arrivals) on the simulator with descents by height, the look-ahead with the stack moves, every aircraft counted:
+
+| | Minutes per arrival | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead with the stack moves | **22.1** | **1,781** | 17 (8) | **2** | 2 | **0** |
+| Its competitor (the planner, time-based height check) | 24.2 | 1,727 | 213 (85) | 51 | 62 | 8 |
+| Real controllers | 17.8 | 1,776 | 4 (4) | 14 | 0 | 0 |
+| *16 November, earlier simulator:* look-ahead | 23.8 | 1,777 | 10 (7) | 2 | 2 | 1 |
+| *16 November, earlier simulator:* competitor | 25.4 | 1,711 | 251 (101) | 63 | 60 | 9 |
+
+- **Against its competitor** every difference is beyond chance: 2.1 minutes per arrival quicker (1.2 to 3.0), quicker in 71 sessions and slower in 32, 54 more landed, 196 fewer losses of separation, 49 fewer go-arounds, 60 fewer gaps inside the minimum, 8 fewer wake infringements.
+- **Against the real controllers** the gap is now 4.4 minutes per arrival (3.3 to 5.5), against 6.0 on 16 November. It has fewer go-arounds (2 against 14, beyond chance). It has more losses of separation, 17 against 4, and that difference is now beyond chance (3 to 24 more). Away from the stacks it is 8 against 4, within chance.
+- **Against itself on the earlier simulator** it is 1.6 minutes per arrival quicker (1.3 to 2.0). The competitor gained 1.2 from the realistic descents alone, so the stack moves add a few tenths, as on the fresh practice hours. It made 268 ordinary early releases, took 21 aircraft off a stack above the lowest and brought 117 straight in.
+- **Its losses of separation rose from 10 to 17**, within chance (2 fewer to 17 more), and the rise is at the stacks: 9 against 3. Away from the stacks it is 8 against 7. Three of the nine stack losses came in sessions where it made neither new move, so they are not all from the new moves. They are being traced.
 
 ## Tools and data
 

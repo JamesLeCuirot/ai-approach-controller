@@ -69,6 +69,16 @@ On the fresh hours the new look-ahead is 2.25 minutes per arrival quicker than t
 
 Against its competitor every difference is beyond chance: 1.6 minutes per arrival quicker, 241 fewer losses of separation, 61 fewer go-arounds. Against the real controllers it has fewer go-arounds and a similar number of losses of separation (the difference is within chance), but takes 6 minutes per arrival longer. Why, and what was tried overnight, is in the [plan](../../docs/project-plan.md#the-test-on-the-fixed-simulator-and-why-high-arrivals-hold-16-november): the planner holds most aircraft handed over high, where real controllers bring them straight in with a fast descent.
 
+**The 120 test sessions on the updated simulator** (18 November). Pilots now descend at the real rate for their height (faster higher up), and the look-ahead has two more moves: taking an aircraft off a stack above the lowest level when it is at least 4 NM from the aircraft below, and bringing an aircraft straight onto its downwind before it reaches its stack:
+
+| | Minutes per arrival | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead with the stack moves | **22.1** | **1,781** | 17 (8) | **2** | 2 | **0** |
+| Planner, time check (its competitor) | 24.2 | 1,727 | 213 (85) | 51 | 62 | 8 |
+| Real controllers | 17.8 | 1,776 | 4 (4) | 14 | 0 | 0 |
+
+The gap to the real controllers is down from 6.0 to 4.4 minutes per arrival, and against its competitor every difference is still beyond chance. Its losses of separation rose from 10 to 17, all of the rise at the stacks (9 against 3), and against the real controllers' 4 the difference is now beyond chance; away from the stacks it is 8 against 4, within chance. More in the [plan](../../docs/project-plan.md#the-test-on-the-updated-simulator-18-november).
+
 ## What went wrong and how it was fixed
 
 - The early releases' saving came with go-arounds; the height check on releases removed both. The time-based height check gave most of the saving back, safely.
@@ -77,7 +87,7 @@ Against its competitor every difference is beyond chance: 1.6 minutes per arriva
 
 ## Next
 
-Pilots who descend at the real rate for their height (faster higher up), measured from the real arrivals, in the simulator. Then the decisions that keep real arrivals out of the stacks, given to the look-ahead: releases from above the lowest level of a stack when an aircraft can be taken off laterally clear of the one below, and a route straight to base for a high arrival that can make its slot.
+Done since: pilots who descend at the real rate for their height, and the look-ahead's two stack moves (above). Next: trace the extra losses of separation at the stacks, then the rest of the time gap, where real controllers still hold far fewer aircraft and keep their speed up longer.
 
 ## Notes
 
