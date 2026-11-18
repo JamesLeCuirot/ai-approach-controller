@@ -7,7 +7,9 @@ are what the simulated pilots and the model of how aircraft respond need (stage 
 * Turns: the rate of turn through the air (the heading, worked out from the track and the GFS
   wind), and the bank angle it implies at that true airspeed, for every turn of 10 degrees or more.
 * Descents: the rate while descending between 11,000 and 3,500 ft, and how far above its new
-  level an aircraft starts to level off.
+  level an aircraft starts to level off; by height, and by height while short of distance (higher than a
+  3 degree path to touchdown along the track it went on to fly), which is how fast arrivals descend when they
+  must: the "expedite descent" rates.
 * Speed changes: how fast the indicated airspeed (from the ground speed, the wind and the
   altitude) falls or rises, level and descending.
 
@@ -43,6 +45,10 @@ DESCENT_MIN_FPM = 300.0
 DESCENT_BAND_FT = (3500.0, 11000.0)
 # The same, by height: real arrivals descend faster higher up (at higher true airspeeds, often from handover)
 DESCENT_BANDS_FT = ((3500.0, 7000.0), (7000.0, 11000.0), (11000.0, 16000.0))
+# Short of distance: higher above the airfield than this many ft for every NM still to fly to touchdown (a 3 degree
+# path is 318 ft/NM), so the aircraft must descend faster than usual: what an "expedite descent" gets
+SHORT_FT_PER_NM = 300.0
+FIELD_FT = 200.0
 SPEED_MIN_RATE = 0.2  # kt/s
 SPEED_MIN_CHANGE = 8.0  # kt
 
@@ -74,10 +80,21 @@ class Winds:
         return self._hours[key]
 
 
+def _to_go(track: list[list]) -> tuple[np.ndarray, np.ndarray]:
+    """Times and the track miles still to fly from each point to the last (touchdown)."""
+    pts = [p for p in track if p[1] is not None]
+    t = np.array([p[0] for p in pts], dtype=float)
+    lat = np.radians([p[1] for p in pts])
+    lon = np.radians([p[2] for p in pts])
+    step = np.hypot(np.diff(lon) * np.cos(lat[:-1]), np.diff(lat)) * (180.0 / math.pi) * 60.0
+    return t, np.r_[np.cumsum(step[::-1])[::-1], 0.0] if len(pts) else np.array([])
+
+
 def _segments(track: list[list], winds: Winds, airport) -> list[dict[str, np.ndarray]]:
     """The track on an even 5 s grid, split at gaps, with the air vector worked out from the wind."""
     pts = [p for p in track if p[1] is not None and p[3] not in (None, "ground") and p[4] is not None
            and p[5] is not None]
+    to_go = _to_go(track)
     out, cur = [], []
     for p in pts:
         if cur and p[0] - cur[-1][0] > MAX_GAP_S:
@@ -111,7 +128,8 @@ def _segments(track: list[list], winds: Winds, airport) -> list[dict[str, np.nda
         hdg = np.degrees(np.unwrap(np.arctan2(ve, vn)))
         xy = np.array([airport.grid.to_xy(la, lo) for la, lo in zip(lat, lon)])
         segs.append({"t": t, "x": xy[:, 0], "y": xy[:, 1], "alt": alt, "gs": gs, "trk": trk_t, "vr": vr,
-                     "tas": tas, "hdg": hdg, "cas": cas_from_tas(tas, alt)})
+                     "tas": tas, "hdg": hdg, "cas": cas_from_tas(tas, alt),
+                     "to_go_nm": np.interp(t, to_go[0], to_go[1]) if len(to_go[0]) >= 2 else np.full_like(t, np.nan)})
     return segs
 
 
@@ -150,10 +168,12 @@ def turns(s: dict[str, np.ndarray], holding: tuple[float, float] | None) -> list
     return out
 
 
-def descents(s: dict[str, np.ndarray], by_band: dict | None = None) -> tuple[list[float], list[float]]:
+def descents(s: dict[str, np.ndarray], by_band: dict | None = None,
+             short_by_band: dict | None = None) -> tuple[list[float], list[float]]:
     """Each descent's typical rate (ft/min, positive), and for those that end in level flight, the height
     above the new level at which the rate had fallen to half. With ``by_band``, each descent's typical rate in each
-    of DESCENT_BANDS_FT is added to the list under that band."""
+    of DESCENT_BANDS_FT is added to the list under that band; with ``short_by_band``, its typical rate there while
+    short of distance (SHORT_FT_PER_NM)."""
     vr = s["vr"]
     if np.isnan(vr).all():
         return [], []
@@ -170,6 +190,11 @@ def descents(s: dict[str, np.ndarray], by_band: dict | None = None) -> tuple[lis
                 inside = (s["alt"][a:b] >= lo) & (s["alt"][a:b] < hi)
                 if inside.sum() >= 4:
                     by_band.setdefault((lo, hi), []).append(float(-np.median(vr[a:b][inside])))
+                if short_by_band is not None:
+                    go = np.maximum(s["to_go_nm"][a:b], 1.0)
+                    short = inside & ((s["alt"][a:b] - FIELD_FT) / go >= SHORT_FT_PER_NM)
+                    if short.sum() >= 4:
+                        short_by_band.setdefault((lo, hi), []).append(float(-np.median(vr[a:b][short])))
         after = vr[b:b + 4]
         if len(after) == 4 and np.all(np.abs(after) < 200) and s["alt"][b] >= DESCENT_BAND_FT[0]:
             level = float(np.mean(s["alt"][b:b + 4]))
@@ -238,16 +263,17 @@ def measure(days: list[str], airport) -> dict:
     descent_by_type: dict[str, list[float]] = defaultdict(list)
     flight_descent, captures = [], []
     flight_by_band: dict[tuple, list[float]] = defaultdict(list)
+    short_by_band: dict[tuple, list[float]] = defaultdict(list)
     slowing_by_approach: dict[int, list[float]] = defaultdict(list)
     flights = 0
     for d in days:
         for arr in load_day(date.fromisoformat(d))["arrivals"]:
             flights += 1
             hold = tuple(arr["hold_t"]) if arr.get("hold_t") else None
-            mine, mine_by_band = [], {}
+            mine, mine_by_band, mine_short = [], {}, {}
             for s in _segments(arr["track"], winds, airport):
                 all_turns += turns(s, hold)
-                r, c = descents(s, mine_by_band)
+                r, c = descents(s, mine_by_band, mine_short)
                 mine += r
                 captures += c
                 all_speed += speed_changes(s, on_final(s, airport, arr["runway"]))
@@ -256,6 +282,8 @@ def measure(days: list[str], airport) -> dict:
                     slowing_by_approach[wake.approach_speed(arr["type"])].append(slow)
             for band, rates in mine_by_band.items():
                 flight_by_band[band].append(float(np.median(rates)))
+            for band, rates in mine_short.items():
+                short_by_band[band].append(float(np.median(rates)))
             if mine:
                 flight_descent.append(float(np.median(mine)))
                 descent_by_type[arr["type"]].append(float(np.median(mine)))
@@ -298,6 +326,12 @@ def measure(days: list[str], airport) -> dict:
             "level_off_start_ft": _pct(captures),
             "by_height_ft": {f"{lo:.0f}-{hi:.0f}": {"flights": len(flight_by_band[(lo, hi)]), **_pct(flight_by_band[(lo, hi)])}
                              for lo, hi in DESCENT_BANDS_FT},
+            "short_note": f"by height while short of distance: higher above the airfield than {SHORT_FT_PER_NM:.0f} ft "
+                          "for every NM of track it went on to fly to touchdown (a 3 degree path is 318 ft/NM), "
+                          "how fast arrivals descend when they must (expedite descent)",
+            "short_by_height_ft": {f"{lo:.0f}-{hi:.0f}": {"flights": len(short_by_band[(lo, hi)]),
+                                                          **_pct(short_by_band[(lo, hi)])}
+                                   for lo, hi in DESCENT_BANDS_FT},
         },
         "speed": {
             "note": "Rates of change of indicated airspeed (kt/s) in speed changes of 8 kt or more: above 2,000 ft, "

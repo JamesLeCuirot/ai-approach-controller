@@ -98,6 +98,7 @@ VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 9
 EARLY_WAIT_S = 60.0  # inbound_descent="early": a wait this short or less counts as none
 STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
+RELEASE_NEAR_NM = 10.0  # release_where="near": how far outside the RMA an aircraft may be released
 # descent="plan": height planning for pilots who descend at real rates
 JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, which is 3,750 ft at 11 NM)
 BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the glide path, to join it from below
@@ -150,7 +151,7 @@ class RulesController(Controller):
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
                  inbound_speed: str = "standard", stack_check: str = "near",
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
-                 free_speed: str = "standard"):
+                 free_speed: str = "standard", release_where: str = "rma"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -247,7 +248,15 @@ class RulesController(Controller):
         shortened in proportion to the faster airspeed). The slot
         speeds only ever slowed an aircraft down, so in quiet traffic every arrival flew the standard speeds: the
         planner's arrivals that hold in neither world took 1.9 minutes longer than the same real ones, 30 kt slower
-        (120 test sessions on the old simulator)."""
+        (120 test sessions on the old simulator).
+
+        ``release_where`` is where an aircraft on its way to its stack may be released towards its downwind: "rma"
+        (every result before 19 Nov 2026), only once inside the RMA; "near", also within RELEASE_NEAR_NM outside it;
+        "any", wherever it is, as Terminal Control does when it takes an arrival off its arrival route early. Outside
+        the RMA it is turned only towards it (the safety check's rule). On the first live shadow hour (18 Nov 2026,
+        the planner alone, re-flown) the first arrival, with nothing ahead of it, flew 5 minutes towards WILLO waiting
+        to enter the RMA; across the hour, "outside the RMA" held back aircraft still on their way in for about half of
+        their minutes."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -277,6 +286,9 @@ class RulesController(Controller):
         if free_speed not in ("standard", "fast", "downwind", "fast_safe"):
             raise ValueError(f"free_speed must be standard, fast, downwind or fast_safe, not {free_speed!r}")
         self.free_speed = free_speed
+        if release_where not in ("rma", "near", "any"):
+            raise ValueError(f"release_where must be rma, near or any, not {release_where!r}")
+        self.release_where = release_where
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -309,6 +321,12 @@ class RulesController(Controller):
         if self.rma is None:
             return True
         return self.rma.contains(x, y) and (margin == 0.0 or self.rma.polygon.exterior.distance(Point(x, y)) >= margin)
+
+    def _may_release_at(self, v) -> bool:
+        """Whether an aircraft on its way to its stack is somewhere it may be released (release_where)."""
+        if self.release_where == "any" or self._inside(v.x, v.y):
+            return True
+        return self.release_where == "near" and self.rma.distance_nm(v.x, v.y) <= RELEASE_NEAR_NM
 
     def max_join(self, side: float) -> float:
         """The longest final (join point distance) whose downwind and base stay inside the RMA on that side."""
@@ -537,11 +555,11 @@ class RulesController(Controller):
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
                     reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
-                    can_go = (longest >= D_JOIN_FIXED_NM and self._inside(v.x, v.y)
+                    can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v)
                               and t + self._eta(v, probe, reach) + SPEED_ABSORB_S >= need)
                     height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
-                    can_go = longest >= D_JOIN_MIN_NM and self._inside(v.x, v.y) and t + self._eta(v, probe, longest) >= need
+                    can_go = longest >= D_JOIN_MIN_NM and self._may_release_at(v) and t + self._eta(v, probe, longest) >= need
                     height_reach = longest
                 if can_go and self.descent == "plan" and not self._height_ok(v, probe, height_reach):
                     can_go = False  # it can't get down in time on any path inside the RMA: lower in the stack first
