@@ -259,7 +259,10 @@ class RulesController(Controller):
         the RMA it is turned only towards it (the safety check's rule). On the first live shadow hour (18 Nov 2026,
         the planner alone, re-flown) the first arrival, with nothing ahead of it, flew 5 minutes towards WILLO waiting
         to enter the RMA; across the hour, "outside the RMA" held back aircraft still on their way in for about half of
-        their minutes.
+        their minutes. But releasing them earlier made things worse: those released far out took the first landing
+        slots, and the aircraft nearer the runway, handed over just after, held behind them. On 96 training sessions
+        (the planner alone, height_by="time"), "near" took 26.45 minutes per arrival against 26.02 (within chance)
+        and "any" 27.54 (beyond chance), with no fewer losses of separation either way. "rma" stays the default.
 
         ``expedite`` (with descent="plan" and height_by="time"): an aircraft too high to get down in time on any path
         is told to expedite its descent, if that would get it down, rather than kept holding to lose height; and one
@@ -267,7 +270,9 @@ class RulesController(Controller):
         Real arrivals short of distance descend faster than others above 7,000 ft (a median 1,664 ft/min between
         11,000 and 16,000 ft against 1,287; approach.data.response), and the simulated pilots do so once told
         (approach.sim.world.expedite_profile). Asked for only above EXPEDITE_MIN_FT. Off, as in every result before
-        19 Nov 2026."""
+        19 Nov 2026. On 96 training sessions (the planner alone, height_by="time") it took 25.00 minutes per arrival
+        against 26.02, quicker in 66 sessions and slower in 19, with 219 losses of separation against 260 and 66
+        go-arounds against 99, all three beyond chance."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):

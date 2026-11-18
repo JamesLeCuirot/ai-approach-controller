@@ -577,6 +577,37 @@ The end goal is an AI that controls real arrivals as they happen. The first step
 - **Where the 5.5 minutes went.** About 2.2 minutes per arrival were holds: the real controllers held nobody, and the AI sent 8 of the 14 to the WILLO and TIMBA stacks. About 1.1 minutes were a longer final: the AI joined it 16 NM out against 15, and spent 6.7 minutes on it against 5.6. The rest was a longer way round before final. Even the first arrival, with nothing ahead of it, took 17.9 minutes against 15.6.
 - **What it means.** The gap is the same kind as on the benchmark's test sessions: 4.4 minutes there, in busier hours, with the copies seeing the aircraft due next. So the next job is the same: find out why the planner holds aircraft that the real controllers brought straight in, on an hour this quiet.
 
+### Why the live hour's aircraft were held: expedite descent (18 November)
+
+The live hour was re-flown offline from the arrivals the shadow run handed over, as fast as the computer goes. The planner alone (no look-ahead, and nothing seen before handover in either case) held 7 aircraft and took 21.5 minutes per arrival, so the holds come from the planner, not from the look-ahead's missing foresight. Tracing its release conditions every 30 seconds found three causes:
+
+- **Not yet inside the RMA.** An aircraft on its way to its stack is released only once inside the RMA, so the first arrival, with nothing ahead of it, flew 5 minutes towards WILLO first.
+- **Too high.** Aircraft reached their stack too high to get down in time on any path inside the RMA, and held to lose height. EZY86ZG, handed over at 15,000 ft, descended at about 750 ft/min in the simulator and about 1,300 in reality, and reached WILLO at 11,000 ft.
+- **Overtaken while holding.** While one held to lose height, a lower aircraft behind it was released first, so it waited longer still. Each such hold left a gap in the landings that every later arrival inherited: the AI's first landing came 2.4 minutes after the real one, and its last 7 minutes after.
+
+Releasing aircraft before they enter the RMA made things worse (`release_where`): those released far out took the first landing slots, and the aircraft nearer the runway, handed over just after, held behind them. On 96 training sessions (the planner alone), releasing within 10 NM of the RMA took 26.45 minutes per arrival against 26.02 (within chance), and anywhere 27.54 (beyond chance).
+
+**Real arrivals descend faster when they must.** The simulated pilots each descend at one rate for each height, drawn from the spread of real rates, whatever their distance to go. Real arrivals don't. On the 16 training days measured, their rate rises with the height they have to lose for every mile still to fly:
+
+| Height to lose per NM still to fly (ft) | Real descents | Median rate (ft/min) | Fastest tenth (ft/min) |
+| --- | --- | --- | --- |
+| Under 150 | 25,049 | 556 | 1,120 |
+| 150 to 200 | 75,368 | 823 | 1,379 |
+| 200 to 250 | 57,429 | 1,115 | 1,692 |
+| 250 to 300 | 14,297 | 1,481 | 2,175 |
+| 300 to 350 | 991 | 1,935 | 2,600 |
+
+Per flight, on all 46 training days, arrivals higher than a 3 degree path to touchdown descended at a median 1,664 ft/min between 11,000 and 16,000 ft (against 1,287 for every descent there) and 1,286 between 7,000 and 11,000 (against 1,010). Below 7,000 ft, where they are slowing down too, they descended no faster. As an upper bound, with every simulated pilot drawn from the fastest quarter of real rates, the planner alone took 24.27 minutes per arrival against 26.02 on the 96 training sessions, with 167 losses of separation against 260.
+
+Controllers get this with an instruction, so the simulator now has one: **"expedite descent"**. A measured pilot told to expedite descends at the rate real arrivals short of distance reach, at the same place in that spread as its usual rate and never slower, until it reaches the level it is cleared to. The look-ahead's copies redraw it with the pilot, the model of how aircraft respond predicts an expedited aircraft at those rates, and the safety check vets the instruction for separation like a new level. The planner (`expedite`) tells an aircraft to expedite when it is too high to get down in time on any path and expediting would get it down: on its way in with its slot free, or as it is released, instead of holding it to lose height. It is asked for only above 6,000 ft.
+
+| Planner alone, 96 training sessions | Minutes per arrival | Landed | Losses of separation (at the stacks) | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| As it is | 26.02 | 1,507 | 260 (129) | 99 | 65 |
+| With expedite descent | **25.00** | 1,508 | **219** (113) | **66** | 67 |
+
+It is better on all three counts, each beyond chance: 1.0 minutes per arrival quicker (0.6 to 1.5), quicker in 66 sessions and slower in 19; 41 fewer losses of separation (3 to 79); 33 fewer go-arounds (15 to 52). On the live hour, re-flown with three sets of pilots, the planner alone took 19.8 minutes per arrival with expedite against 21.0 without, and 17.9 with expedite and `free_speed="fast"` together, with 0 to 2 losses of separation; the real controllers took 15.0. Expedite and fast together are being tried on the 96 training sessions, then with the look-ahead, before both go into the bundle for the next 120-session test.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
