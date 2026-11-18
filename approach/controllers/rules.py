@@ -64,6 +64,7 @@ D_JOIN_MAX_NM = 30.0
 D_JOIN_FIXED_NM = 11.0  # stage 1a: every arrival joins final here
 SPEED_ABSORB_S = 90.0  # stage 1a: delay speed alone is expected to absorb, so leave the hold no earlier than this
 SLOT_DEADBAND_S = 15.0  # the speed-only competitor leaves a speed alone within this of the slot
+FREE_SPARE_S = 60.0  # free_speed="fast": an aircraft this far ahead of the gap behind the one before it is free
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
@@ -132,6 +133,7 @@ class Plan:
     spd_cmd: float | None = None
     retry_t: float = -1e9  # after a blocked altitude, wait before asking again
     slot_t: float = 0.0  # the landing time that keeps the gap behind the aircraft ahead
+    spare_s: float = 0.0  # how much later than the gap behind the aircraft ahead it would land (none ahead: 1e9)
     wait_s: float = 0.0  # inbound: how much later its slot is than the soonest it could land (none: negative)
     early: int = 0  # inbound_descent="early": the level to descend to on the way in, below the stack (0: none)
     warned: bool = False
@@ -147,7 +149,8 @@ class RulesController(Controller):
                  wind_aware: bool = False, stretch: bool = False, release: str = "careful", base_turns: str = "rule",
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
                  inbound_speed: str = "standard", stack_check: str = "near",
-                 inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none"):
+                 inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
+                 free_speed: str = "standard"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -234,7 +237,14 @@ class RulesController(Controller):
         descending to its downwind level, it must not come within EXIT_H_NM and EXIT_V_FT of another aircraft sooner
         than it would by staying where it is; if it would, it waits. Of the planner's first 23 losses of separation on
         the 24 fresh training sessions, 6 were an aircraft leaving a stack and descending slowly past another at or
-        into the level it had left, or the one below."""
+        into the level it had left, or the one below.
+
+        ``free_speed`` (with speeds="slot") is the speed of an aircraft on its downwind or final whose landing is at
+        least FREE_SPARE_S later than the gap behind the aircraft ahead needs: "standard" (every result before 18 Nov
+        2026), the standard speed for its stage; "fast", the top of its band (250 kt on the downwind). The slot
+        speeds only ever slowed an aircraft down, so in quiet traffic every arrival flew the standard speeds: the
+        planner's arrivals that hold in neither world took 1.9 minutes longer than the same real ones, 30 kt slower
+        (120 test sessions on the old simulator)."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -261,6 +271,9 @@ class RulesController(Controller):
         if release_check not in ("none", "path"):
             raise ValueError(f"release_check must be none or path, not {release_check!r}")
         self.release_check = release_check
+        if free_speed not in ("standard", "fast"):
+            raise ValueError(f"free_speed must be standard or fast, not {free_speed!r}")
+        self.free_speed = free_speed
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -568,9 +581,11 @@ class RulesController(Controller):
                         p.d_join = self._join_for_height(v, p, p.d_join, max(p.d_join, self.max_join(p.side)))
                 p.landing_t = t + self._eta(v, p)
                 p.slot_t = p.landing_t
+                p.spare_s = 1e9
                 if prev_t is not None:
                     gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
                     p.slot_t = max(p.landing_t, prev_t + gap_nm / self._final_gs(v) * 3600.0)
+                    p.spare_s = p.landing_t - (prev_t + gap_nm / self._final_gs(v) * 3600.0)
                 prev_t, prev_type = p.slot_t, p.actype
                 continue
             if p.stage == "downwind" and prev_t is not None:
@@ -823,6 +838,8 @@ class RulesController(Controller):
             return None
         if p.stage == "inbound" and self.inbound_speed == "keep" and not p.holding and p.wait_s <= 0:
             return speed.in_band(limits[1], limits)  # nothing to wait for: on to the stack at the top of the band
+        if self.free_speed == "fast" and p.stage in ("downwind", "cleared") and p.spare_s > FREE_SPARE_S:
+            return speed.in_band(limits[1], limits)  # nothing ahead to wait for: as fast as its band allows
         early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
         if early > SLOT_DEADBAND_S:
             target = limits[0]
