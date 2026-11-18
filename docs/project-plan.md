@@ -540,7 +540,14 @@ Neither helped. Holding back aircraft not yet in the stack changed only about 10
 | ... on the downwind only (`downwind`) | 24.03 | 1,546 | 305 (122) | 112 | 74 |
 | ... on the downwind only while it could still get down in time at that speed (`fast_safe`) | 23.90 | 1,539 | 297 (135) | 96 | 72 |
 
-The time saved is large and beyond chance: 1.4 minutes per arrival (0.9 to 2.0), quicker in 81 sessions and slower in 13, and 28 more landed. But the planner alone can't fly the faster traffic safely: 54 more losses of separation (beyond chance, 6 to 108), almost all away from the stacks, and 25 more go-arounds (within chance). Neither keeping final at the standard speed nor the height check helped. Away from the stacks is where the look-ahead's copies do best, so `fast` is now being tried with the look-ahead on the 24 fresh training sessions.
+The time saved is large and beyond chance: 1.4 minutes per arrival (0.9 to 2.0), quicker in 81 sessions and slower in 13, and 28 more landed. But the planner alone can't fly the faster traffic safely: 54 more losses of separation (beyond chance, 6 to 108), almost all away from the stacks, and 25 more go-arounds (within chance). Neither keeping final at the standard speed nor the height check helped. Away from the stacks is where the look-ahead's copies do best, so `fast` was then tried with the look-ahead on the 24 fresh training sessions (23 with traffic, 401 arrivals), against the same look-ahead at standard speeds ([`runs/lookahead/fresh24_sim4_fast.json`](../runs/lookahead/fresh24_sim4_fast.json)):
+
+| Look-ahead | Minutes per arrival | Landed | Losses of separation (at the stacks) | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Standard speeds | 22.58 | 401 | 1 (1) | 0 | 0 |
+| Top of the band when nothing ahead waits (`fast`) | **21.70** | 401 | 3 (2) | 0 | 0 |
+
+With the look-ahead flying it, `fast` keeps most of the time it saves: 0.9 minutes per arrival quicker (beyond chance, 0.1 to 1.7), quicker in 18 sessions and slower in 5. Its 2 extra losses of separation are within chance (0 to 5), with no go-arounds or gaps inside the minimum either way; the planner it adjusts, alone, had 63 losses against 57. It goes into the bundle of fixes for the next 120-session test, with its extra losses watched there.
 
 ### Shadow mode on the live feed (18 November)
 
