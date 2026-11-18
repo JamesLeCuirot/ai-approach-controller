@@ -553,6 +553,23 @@ The end goal is an AI that controls real arrivals as they happen. The first step
 
 **A first 6-minute trial** (18:00 UTC, runway 26L): both real arrivals in the window were spotted, none was missed and nothing else was handed over. The AI flew both with no losses of separation, never more than 10 seconds behind the clock; the Emirates 777 took 14.7 minutes from handover to landing against 12.0 in reality, and the easyJet A320, held at WILLO, was on short final when the trial ended.
 
+**The first full hour** (18:22 to 19:22 UTC, runway 26L, in the GFS forecast for 18:00; [`runs/shadow/2026-11-18T1822`](../runs/shadow/2026-11-18T1822/)):
+
+| | AI | Real controllers |
+| --- | --- | --- |
+| Arrivals handed over in the hour | 14 | 14 |
+| Landed | 14 | 14 |
+| Losses of separation | 0 | 0 |
+| Go-arounds | 0 | 0 |
+| Minutes per arrival, handover to landing | 20.5 | 15.0 |
+| Track miles per arrival | 72 | 57 |
+| Aircraft held in a stack | 8 | 0 |
+
+- **Spotting.** Of the 145 aircraft that entered the handover region in the hour, the spotter called 14 Gatwick arrivals, each at least 92% sure. All 14 were real arrivals, and no real arrival was missed.
+- **Keeping up.** The AI was never more than 52 seconds behind the clock.
+- **Where the 5.5 minutes went.** About 2.2 minutes per arrival were holds: the real controllers held nobody, and the AI sent 8 of the 14 to the WILLO and TIMBA stacks. About 1.1 minutes were a longer final: the AI joined it 16 NM out against 15, and spent 6.7 minutes on it against 5.6. The rest was a longer way round before final. Even the first arrival, with nothing ahead of it, took 17.9 minutes against 15.6.
+- **What it means.** The gap is the same kind as on the benchmark's test sessions: 4.4 minutes there, in busier hours, with the copies seeing the aircraft due next. So the next job is the same: find out why the planner holds aircraft that the real controllers brought straight in, on an hour this quiet.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
