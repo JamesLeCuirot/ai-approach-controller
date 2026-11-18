@@ -26,7 +26,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BUCKET = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
@@ -63,8 +63,8 @@ def _get(url: str, byte_range: tuple[int, int] | None = None) -> bytes:
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as r:
                 return r.read()
-        except (http.client.IncompleteRead, urllib.error.URLError, ConnectionError, TimeoutError):
-            if attempt == 4:
+        except (http.client.IncompleteRead, urllib.error.URLError, ConnectionError, TimeoutError) as e:
+            if attempt == 4 or (isinstance(e, urllib.error.HTTPError) and e.code in (403, 404)):  # not there
                 raise
             time.sleep(5 * 2 ** attempt)
     raise RuntimeError("unreachable")
@@ -123,8 +123,10 @@ class WindProfile:
 
 
 def fetch(valid: datetime, lat: float, lon: float, half_lat: float = 1.5, half_lon: float = 2.0,
-          cache_dir: Path = CACHE_DIR, airport: str = "") -> WindProfile:
-    """The GFS winds for one hour in a box around (lat, lon), from the cache or NOAA."""
+          cache_dir: Path = CACHE_DIR, airport: str = "", earlier_runs: int = 0) -> WindProfile:
+    """The GFS winds for one hour in a box around (lat, lon), from the cache or NOAA. ``earlier_runs``: for an
+    hour so recent that its run isn't published yet (they appear about 4 hours after they start), fall back to
+    up to this many earlier runs, 6 hours apart, and their longer forecasts."""
     valid = valid.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
     tag = f"{airport.lower()}_" if airport else f"{lat:.2f}_{lon:.2f}_"
     path = cache_dir / f"{tag}{valid.strftime('%Y%m%d%H')}.json"
@@ -134,11 +136,15 @@ def fetch(valid: datetime, lat: float, lon: float, half_lat: float = 1.5, half_l
     import pygrib  # only needed when downloading
 
     run, fhr = _cycle(valid)
-    url = _url(run, fhr)
-    try:
-        lines = _get(url + ".idx").decode().splitlines()
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(f"No GFS data for {valid:%Y-%m-%d %H}Z at {url} ({e}). NOAA's AWS store starts in 2021.") from e
+    for back in range(earlier_runs + 1):
+        url = _url(run, fhr)
+        try:
+            lines = _get(url + ".idx").decode().splitlines()
+            break
+        except Exception as e:  # noqa: BLE001
+            if back == earlier_runs:
+                raise RuntimeError(f"No GFS data for {valid:%Y-%m-%d %H}Z at {url} ({e}). NOAA's AWS store starts in 2021.") from e
+            run, fhr = run - timedelta(hours=6), fhr + 6
     rows = [ln.split(":") for ln in lines]
     offsets = [int(r[1]) for r in rows]
     wanted = {("UGRD", "10 m above ground"), ("VGRD", "10 m above ground"), ("HGT", "surface")}
@@ -198,8 +204,8 @@ def fetch(valid: datetime, lat: float, lon: float, half_lat: float = 1.5, half_l
     return prof
 
 
-def fetch_for_airport(valid: datetime, airport) -> WindProfile:
-    return fetch(valid, airport.reference.lat, airport.reference.lon, airport=airport.icao)
+def fetch_for_airport(valid: datetime, airport, earlier_runs: int = 0) -> WindProfile:
+    return fetch(valid, airport.reference.lat, airport.reference.lon, airport=airport.icao, earlier_runs=earlier_runs)
 
 
 def _prefetch_one(hour: str) -> str:
