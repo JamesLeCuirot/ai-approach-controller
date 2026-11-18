@@ -531,6 +531,17 @@ On the 24 fresh training sessions (401 arrivals) it made no difference: 22.6 min
 
 Neither helped. Holding back aircraft not yet in the stack changed only about 10 of the 96 sessions, and within 10 NM it added 6 go-arounds (beyond chance). Checking the way out changed 46 sessions but moved the losses rather than removing them: 14 fewer in all and 9 more at the stacks, both within chance, and 0.3 minutes per arrival slower (within chance). Both stay as options (`lowest_first`, `release_check`), off. Like the three stack reworks before them, rules written by hand for the stacks move trouble around; the look-ahead's copies remain the way the stacks are made safer.
 
+**Faster when nothing ahead is waiting.** The planner's slot speeds only ever slowed an aircraft down: with nothing ahead it flew the standard 220 kt on its downwind and 170 on final, where 250 and 180 are allowed. With `free_speed`, an aircraft whose landing is at least a minute later than the gap behind the one ahead needs flies the top of its band. On the same 96 training sessions, the planner alone:
+
+| Planner alone | Minutes per arrival | Landed | Losses of separation (at the stacks) | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| As it is | 25.08 | 1,517 | 243 (119) | 72 | 58 |
+| Top of the band on the downwind and final (`fast`) | **23.65** | **1,545** | 297 (125) | 97 | 77 |
+| ... on the downwind only (`downwind`) | 24.03 | 1,546 | 305 (122) | 112 | 74 |
+| ... on the downwind only while it could still get down in time at that speed (`fast_safe`) | 23.90 | 1,539 | 297 (135) | 96 | 72 |
+
+The time saved is large and beyond chance: 1.4 minutes per arrival (0.9 to 2.0), quicker in 81 sessions and slower in 13, and 28 more landed. But the planner alone can't fly the faster traffic safely: 54 more losses of separation (beyond chance, 6 to 108), almost all away from the stacks, and 25 more go-arounds (within chance). Neither keeping final at the standard speed nor the height check helped. Away from the stacks is where the look-ahead's copies do best, so `fast` is now being tried with the look-ahead on the 24 fresh training sessions.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
