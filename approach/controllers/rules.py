@@ -241,7 +241,8 @@ class RulesController(Controller):
 
         ``free_speed`` (with speeds="slot") is the speed of an aircraft on its downwind or final whose landing is at
         least FREE_SPARE_S later than the gap behind the aircraft ahead needs: "standard" (every result before 18 Nov
-        2026), the standard speed for its stage; "fast", the top of its band (250 kt on the downwind). The slot
+        2026), the standard speed for its stage; "fast", the top of its band (250 kt on the downwind, 180 on final);
+        "downwind", the top of its band on the downwind only. The slot
         speeds only ever slowed an aircraft down, so in quiet traffic every arrival flew the standard speeds: the
         planner's arrivals that hold in neither world took 1.9 minutes longer than the same real ones, 30 kt slower
         (120 test sessions on the old simulator)."""
@@ -271,8 +272,8 @@ class RulesController(Controller):
         if release_check not in ("none", "path"):
             raise ValueError(f"release_check must be none or path, not {release_check!r}")
         self.release_check = release_check
-        if free_speed not in ("standard", "fast"):
-            raise ValueError(f"free_speed must be standard or fast, not {free_speed!r}")
+        if free_speed not in ("standard", "fast", "downwind"):
+            raise ValueError(f"free_speed must be standard, fast or downwind, not {free_speed!r}")
         self.free_speed = free_speed
         self.sequence = sequence
         self.height_by = height_by
@@ -838,7 +839,8 @@ class RulesController(Controller):
             return None
         if p.stage == "inbound" and self.inbound_speed == "keep" and not p.holding and p.wait_s <= 0:
             return speed.in_band(limits[1], limits)  # nothing to wait for: on to the stack at the top of the band
-        if self.free_speed == "fast" and p.stage in ("downwind", "cleared") and p.spare_s > FREE_SPARE_S:
+        free_stages = {"fast": ("downwind", "cleared"), "downwind": ("downwind",)}.get(self.free_speed, ())
+        if p.stage in free_stages and p.spare_s > FREE_SPARE_S:
             return speed.in_band(limits[1], limits)  # nothing ahead to wait for: as fast as its band allows
         early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
         if early > SLOT_DEADBAND_S:
