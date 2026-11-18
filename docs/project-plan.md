@@ -520,6 +520,17 @@ The two losses away from the stacks in these sessions were two aircraft released
 
 On the 24 fresh training sessions (401 arrivals) it made no difference: 22.6 minutes per arrival both ways (within chance, 0.15 quicker to 0.12 slower), all 401 landed, 2 losses of separation against 1 (1 at a stack both ways), no go-arounds. It vetoed about twice as many moves (1,105 against 572) but still held at another level about as often (183 against 174): those moves are mostly made when the copies already see trouble, and they rarely add new trouble in a copy. These hours have too few losses to show an effect either way; the 48 new sessions, flown with and without it, will.
 
+**Two changes to how the planner lets aircraft leave a stack**, tried on the planner alone, where losses are common enough to show an effect quickly (96 other training sessions, 1,587 arrivals, every aircraft counted). On the 24 fresh sessions, the planner alone had 57 losses of separation: about a third inside the stacks as aircraft settle into levels, a fifth an aircraft leaving a stack, a fifth aircraft merging on the downwind, the rest on base and final.
+
+| Planner alone | Minutes per arrival | Landed | Losses of separation (at the stacks) | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| As it is | 25.08 | 1,517 | 243 (119) | 72 | 58 |
+| Lowest leaves first, also for aircraft on their way to the stack within 10 NM of it | 25.22 | 1,517 | 250 (123) | 78 | 61 |
+| ... wherever they are | 25.18 | 1,520 | 251 (122) | 79 | 61 |
+| The way out flown 4 minutes ahead before a release; it waits if it would pass too close to another aircraft | 25.37 | 1,514 | 229 (128) | 72 | 65 |
+
+Neither helped. Holding back aircraft not yet in the stack changed only about 10 of the 96 sessions, and within 10 NM it added 6 go-arounds (beyond chance). Checking the way out changed 46 sessions but moved the losses rather than removing them: 14 fewer in all and 9 more at the stacks, both within chance, and 0.3 minutes per arrival slower (within chance). Both stay as options (`lowest_first`, `release_check`), off. Like the three stack reworks before them, rules written by hand for the stacks move trouble around; the look-ahead's copies remain the way the stacks are made safer.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
