@@ -54,6 +54,7 @@ Real Gatwick arrivals are replayed from ADS-B data until each is within 40 NM of
 | `approach/ai/` | The learned controller, from stage 1 (empty so far) |
 | `approach/data/` | Pipelines for real traffic (adsb.lol ADS-B), real winds (NOAA GFS), weather reports, real arrivals and the real-controller scores |
 | `data/real/` | Every real Gatwick arrival on the chosen days, the other traffic near Gatwick, and the real controllers' scores, from adsb.lol (ODbL) |
+| `approach/live/` | Shadow mode: adsb.lol's live feed, picking out Gatwick arrivals as they come, and the AI flying them in real time |
 | `approach/radar/` | The radar screen and session replays |
 | `scripts/` | Helper scripts, such as fetching the sector file |
 | `docs/` | Plan and specs |
@@ -119,6 +120,22 @@ python -m approach.data.real_sessions 2026-05-30T12
 
 This scores the real controllers on that hour (UTC), then gives the same arrivals to our rules controller in the same winds. It writes two radar replays to `outputs/`: `real_2026-05-30T12.html`, what the real controllers did, and `rules_2026-05-30T12.html`, ours, with the real tracks in faint grey behind. Any hour of the 76 days in `data/real/egkk/days.csv` works with no ADS-B download, since their arrivals are in the repo.
 
+### Shadow mode: the AI on live traffic
+
+```bash
+python -m approach.live.feed --out data/raw/live/egkk/today.jsonl --minutes 110
+```
+
+```bash
+python -m approach.live.shadow run --feed data/raw/live/egkk/today.jsonl --minutes 60 --out runs/shadow/today
+```
+
+```bash
+python -m approach.live.shadow compare --feed data/raw/live/egkk/today.jsonl --out runs/shadow/today
+```
+
+Run the first two side by side. The recorder polls [adsb.lol](https://www.adsb.lol)'s live feed around Gatwick every 5 seconds. The shadow run picks out each Gatwick arrival as it enters the handover region and hands it to the simulator where it really is, in the hour's forecast winds, for the look-ahead controller to fly in real time; arrivals are handed over for `--minutes`, then it carries on until they have landed. When the recorder has finished, `compare` finds the real arrivals in the recording, scores the real controllers on them with the same code, and writes `compare.json` (aircraft by aircraft) and `replay.html` (the AI's aircraft, with the real tracks in faint grey behind).
+
 ### Enter your own controller
 
 A controller is a class with a `decide(t, views)` method that is called every few seconds with what it can see and returns instructions (`approach/controllers/base.py`). Give it a name in `make_controller` (`approach/sim/session_runner.py`) and pass that name with `--controller`. Everything it says goes through the same safety check, and its sessions are scored by the same code as everyone else's (`approach/scoring.py`). `approach/controllers/rules.py` is a worked example.
@@ -138,7 +155,7 @@ This runs the scenarios and saves into `diary/<date>-<name>/`: the replays, an M
 | [BlueSky](https://github.com/TUDelft-CNS-ATM/bluesky) and [BlueSky-Gym](https://pypi.org/project/bluesky-gym/) (MIT) | Simulator and starter training environments | Installed as dependencies |
 | [VATSIM UK sector file](https://github.com/VATSIM-UK/UK-Sector-File) (GPL-3) | Fixes, vectoring areas, minimum altitudes, arrival routes, runways | No, fetched by script |
 | VATSIM UK Gatwick vMATS, UK AIP | Procedures summarised in the stage 0 spec | No, link only |
-| [adsb.lol](https://www.adsb.lol) open ADS-B data (ODbL 1.0) | Real arrivals, the real traffic replayed into the simulator, and the real-controller baseline | Yes: the 76 days' arrivals, the other traffic near Gatwick and the scores derived from them, in `data/real/` under ODbL. The full daily files are downloaded locally |
+| [adsb.lol](https://www.adsb.lol) open ADS-B data and live feed (ODbL 1.0) | Real arrivals, the real traffic replayed into the simulator, the real-controller baseline, and shadow mode on live traffic | Yes: the 76 days' arrivals, the other traffic near Gatwick, the scores derived from them, and the table shadow mode uses to pick out arrivals, in `data/real/` under ODbL. The full daily files, and recordings of the live feed, are kept locally |
 | [NOAA GFS weather model](https://registry.opendata.aws/noaa-gfs-bdp-pds/) (public domain) | Real winds at every height, for any hour since 2021 | No, downloaded and cached locally (`data/raw/gfs/`) |
 | [Iowa State University weather report archive](https://mesonet.agron.iastate.edu/request/download.phtml) | Gatwick's hourly pressure (QNH), to correct ADS-B altitudes | Only the hourly pressure, stored with each day's arrivals |
 | [atc_app](https://github.com/SNaveenMathew/atc_app) and [FlightPathAnalysis](https://github.com/SNaveenMathew/FlightPathAnalysis) (Naveen Mathew) | The idea, and prior work this project builds on | No code copied until they carry a licence |

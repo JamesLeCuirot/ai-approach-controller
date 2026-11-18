@@ -542,6 +542,17 @@ Neither helped. Holding back aircraft not yet in the stack changed only about 10
 
 The time saved is large and beyond chance: 1.4 minutes per arrival (0.9 to 2.0), quicker in 81 sessions and slower in 13, and 28 more landed. But the planner alone can't fly the faster traffic safely: 54 more losses of separation (beyond chance, 6 to 108), almost all away from the stacks, and 25 more go-arounds (within chance). Neither keeping final at the standard speed nor the height check helped. Away from the stacks is where the look-ahead's copies do best, so `fast` is now being tried with the look-ahead on the 24 fresh training sessions.
 
+### Shadow mode on the live feed (18 November)
+
+The end goal is an AI that controls real arrivals as they happen. The first step is shadow mode: the AI controls today's real Gatwick arrivals in the simulator, in real time, while the real controllers control the real ones, and the two are compared afterwards.
+
+- **The live feed.** adsb.lol serves every aircraft its receivers can see now, free and without a key. A recorder (`approach.live.feed`) polls it every 5 seconds and keeps every aircraft within 50 NM below 20,000 ft, in the same form as an archived day, so the real arrivals are found in a recording exactly as in the 76 days.
+- **Which aircraft are Gatwick arrivals.** The feed doesn't say where an aircraft is going, and most aircraft entering the handover region (40 NM, 15,000 ft) are not Gatwick arrivals: Heathrow arrivals and departures, Gatwick departures, aircraft passing through. As each one enters, the spotter (`approach.live.spotter`) compares its position, height, ground speed, track and vertical rate with every aircraft that entered the region on the training days, and calls it an arrival if most of the 25 most like it landed at Gatwick. Judged on the 14 recent days (none in its table), it found 98.7% of the 4,409 arrivals as they entered, and 2% of the aircraft it called arrivals were not; waiting up to 5 minutes before deciding found 99.5%. For live use the table holds the training and recent days (191,065 entries, 20,399 arrivals).
+- **The AI in real time.** Each arrival spotted is handed to the simulator where it really is, at its real height, speed and track, as in the benchmark's sessions, in the hour's GFS forecast winds, and the look-ahead flies it with the settings of the latest 120-session test, keeping pace with the clock (`approach.live.shadow`). Unlike the benchmark, its copies see only aircraft already handed over, not those due in the next few minutes, and the runway is the one in use when it starts.
+- **The comparison.** Afterwards the real arrivals are found in the recording, the real controllers are scored on them with the same code, and each aircraft's minutes from handover to landing are set side by side, with a radar replay of the AI's hour and the real tracks behind it.
+
+**A first 6-minute trial** (18:00 UTC, runway 26L): both real arrivals in the window were spotted, none was missed and nothing else was handed over. The AI flew both with no losses of separation, never more than 10 seconds behind the clock; the Emirates 777 took 14.7 minutes from handover to landing against 12.0 in reality, and the easyJet A320, held at WILLO, was on short final when the trial ended.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
