@@ -159,3 +159,26 @@ def test_released_order_puts_a_released_aircraft_behind_those_already_released()
     views = {"FIRST": SimpleNamespace(), "LATE": SimpleNamespace()}
     c.behind_released(late, views)
     assert late.key > first.key
+
+
+def test_slow_room_slows_a_fast_downwind_in_time():
+    """With slow_room, a downwind speed is no faster than one the aircraft can still slow from to 180 kt by its join
+    point at a slow pilot's rate: 250 kt far out, less as the join point nears, and never below the band."""
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", slow_room=True)
+    p = Plan("DW", "A320", 0.0, c.south, stage="downwind", d_join=11.0)
+    view = lambda along, lat: SimpleNamespace(  # noqa: E731
+        *(), **dict(zip(("x", "y"), ap.centreline_point("26L", along, lat))), gs_kt=270.0, cas_kt=250.0)
+    limits = (180, 250)
+    far, near, corner = view(40.0, c.south * 6.0), view(20.0, c.south * 6.0), view(14.6, c.south * 6.0)
+    assert c._room_to_slow(far, p, 250, limits) == 250
+    assert 220 < c._room_to_slow(near, p, 250, limits) < 250
+    assert c._room_to_slow(corner, p, 250, limits) <= 220  # at its base turn: about 8 NM left to slow to 180
+    assert c._room_to_slow(corner, p, 200, limits) == 200
+    assert c._room_to_slow(near, Plan("B", "A320", 0.0, c.south, stage="base"), 180, (160, 180)) == 180
+    assert RulesController(ap, "26L", fixed_paths=True, speeds="slot")._room_to_slow(near, p, 250, limits) == 250

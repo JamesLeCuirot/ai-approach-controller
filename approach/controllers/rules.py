@@ -65,6 +65,9 @@ D_JOIN_FIXED_NM = 11.0  # stage 1a: every arrival joins final here
 SPEED_ABSORB_S = 90.0  # stage 1a: delay speed alone is expected to absorb, so leave the hold no earlier than this
 SLOT_DEADBAND_S = 15.0  # the speed-only competitor leaves a speed alone within this of the slot
 FREE_SPARE_S = 60.0  # free_speed="fast": an aircraft this far ahead of the gap behind the one before it is free
+SLOW_ROOM_KT_S = 0.32  # slow_room: a slow pilot's slowing while descending (real arrivals' 10th percentile, 0.324 kt/s)
+SLOW_ROOM_TO_KT = 180  # slow_room: the speed to be down to by the join point (the top of the base and final bands)
+SLOW_ROOM_MARGIN_NM = 1.0
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
@@ -162,7 +165,7 @@ class RulesController(Controller):
                  inbound_speed: str = "standard", stack_check: str = "near",
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
-                 straight_in: bool = False, released_order: bool = False):
+                 straight_in: bool = False, released_order: bool = False, slow_room: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -309,7 +312,15 @@ class RulesController(Controller):
         free_speed="fast") it took 22.72 minutes per arrival against 23.74 (quicker in 56 sessions, slower in 12),
         with 159 losses of separation against 274, 36 go-arounds against 98, 19 gaps inside the minimum against 71
         and 5 wake infringements against 14, all beyond chance: most of the planner's losses away from the stacks
-        and its go-arounds came from this. Off, as in every result before 19 Nov 2026."""
+        and its go-arounds came from this. Off, as in every result before 19 Nov 2026.
+
+        ``slow_room`` (with speeds="slot"): a speed on the downwind no faster than one the aircraft could still slow
+        from to SLOW_ROOM_TO_KT by its join point, at a slow pilot's rate (SLOW_ROOM_KT_S) over the track miles left
+        (_track_to_join), less SLOW_ROOM_MARGIN_NM. From 250 kt that takes about 14 NM. With free_speed="fast", an
+        aircraft with nothing ahead flew its whole downwind at 250 kt and was told 180 only at its base turn; a pilot
+        who slows down slowly was then still too fast at 1,000 ft and went around: on 48 training sessions (the
+        look-ahead with all four changes of 18 and 19 November) 13 go-arounds against 4 without them, the single
+        arrival of session 47 among them, 167 kt at 1,000 ft. Off, as in every result before 19 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -345,6 +356,7 @@ class RulesController(Controller):
         self.expedite = expedite
         self.straight_in = straight_in
         self.released_order = released_order
+        self.slow_room = slow_room
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -1045,7 +1057,7 @@ class RulesController(Controller):
         if p.stage in free_stages and p.spare_s > FREE_SPARE_S and (
                 self.free_speed != "fast_safe" or p.stage != "downwind" or self.descent != "plan"
                 or self._time_to_join(v, p) * min(1.0, v.cas_kt / limits[1]) >= self._descent_s(v, self._join_alt(p.d_join))):
-            return speed.in_band(limits[1], limits)  # nothing ahead to wait for: as fast as its band allows
+            return self._room_to_slow(v, p, speed.in_band(limits[1], limits), limits)  # nothing ahead: top of band
         early = p.slot_t - p.landing_t  # seconds it must lose (positive) or gain (negative)
         if early > SLOT_DEADBAND_S:
             target = limits[0]
@@ -1053,7 +1065,22 @@ class RulesController(Controller):
             target = limits[1]
         else:
             target = speed.STANDARD_KT[p.stage]
-        return speed.in_band(target, limits)
+        return self._room_to_slow(v, p, speed.in_band(target, limits), limits)
+
+    def _room_to_slow(self, v, p: Plan, target: int, limits: tuple[int, int]) -> int:
+        """slow_room: the speed brought down to the fastest on the downwind the aircraft could still slow from to
+        SLOW_ROOM_TO_KT by its join point at SLOW_ROOM_KT_S."""
+        if not self.slow_room or p.stage != "downwind" or target <= SLOW_ROOM_TO_KT:
+            return target
+        room = self._track_to_join(v, p) - SLOW_ROOM_MARGIN_NM
+        ground = min(max(v.gs_kt / max(v.cas_kt, 100.0), 0.8), 1.5)  # miles over the ground per mile flown
+        s = target
+        while s > max(limits[0], SLOW_ROOM_TO_KT):
+            need = (s - SLOW_ROOM_TO_KT) / SLOW_ROOM_KT_S * (s + SLOW_ROOM_TO_KT) / 2.0 * ground / 3600.0
+            if need <= room:
+                break
+            s -= 10
+        return speed.in_band(s, limits)
 
     def _stack(self, fix: str, views: dict) -> list[Plan]:
         """The aircraft in a stack or on their way to it (not those kept below it), in queue order."""
