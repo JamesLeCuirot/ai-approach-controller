@@ -1,0 +1,64 @@
+{
+ "t0_epoch": 1795084086.0,
+ "start_utc": "2026-11-19 10:28:06",
+ "minutes": 60.0,
+ "runway": "26L",
+ "winds": "NOAA GFS 0.25 degree, run 2026-11-19 06Z + 4 h",
+ "handed_over": 12,
+ "judged": 219,
+ "counts": {
+  "landed": 12,
+  "go_arounds": 0,
+  "separation_losses": 0,
+  "losses_at_stack": 0,
+  "losses_out_of_reach": 0,
+  "wake_infringements": 0,
+  "instructions": 0,
+  "blocked": 0,
+  "decisions": 424,
+  "base_turns": 0,
+  "turns_held": 0
+ },
+ "scores": {
+  "arrivals": 12,
+  "landed": 12,
+  "separation_losses": 0,
+  "wake_violations": 0,
+  "min_spacing_nm": 4.2,
+  "mean_spacing_nm": 5.5,
+  "track_miles_per_arrival": 58.4,
+  "minutes_per_arrival": 16.3,
+  "minutes_per_arrival_all": 16.3,
+  "instructions": 194,
+  "instructions_per_arrival": 16.2,
+  "safety_blocks": 16,
+  "go_arounds": 0,
+  "stable_at_1000ft_pct": 100,
+  "left_rma": 0,
+  "minutes_outside_rma": 0.0,
+  "below_minimum_altitude": 0
+ },
+ "lookahead": {
+  "nothing_to_adjust": 25,
+  "looks": 117,
+  "copies": 459,
+  "look_seconds": 140.16921019554138,
+  "straight_in": 1,
+  "changes": 1,
+  "vetoed": 3
+ },
+ "most_behind_clock_s": 16,
+ "planner": {
+  "height_by": "time",
+  "free_speed": "fast",
+  "expedite": true,
+  "straight_in": true,
+  "released_order": true
+ },
+ "lookahead_settings": {
+  "moves": "wide",
+  "time_weight": 0.1,
+  "releases": true,
+  "stack_moves": true
+ }
+}
