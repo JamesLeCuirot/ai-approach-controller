@@ -292,16 +292,24 @@ class RulesController(Controller):
         controllers bring such arrivals straight in: 3.4% of the 26L arrivals on the training days were handed over
         within 8 NM of the centreline more than 25 NM out, landing a median 12.1 minutes later, 2% of them held. On
         the first live shadow hour two of them were sent to TIMBA, 15 NM south of the final, one of them held
-        there, and joined final 8.5 and 15.3 minutes after handover, against the real 2.1 and 4.2. Off, as in every
-        result before 19 Nov 2026.
+        there, and joined final 8.5 and 15.3 minutes after handover, against the real 2.1 and 4.2; with straight_in
+        and released_order they took 11.5 to 13.0 minutes from handover to landing (5 sets of pilots), against the
+        real 11.7 and 12.0. On 96 training sessions (the planner alone, with expedite, free_speed="fast" and
+        released_order) it changed 22 sessions, by little: 22.66 minutes per arrival against 22.72, 153 losses of
+        separation against 159, 38 go-arounds against 36, all within chance (few arrivals are handed over on the
+        final line). Off, as in every result before 19 Nov 2026.
 
         ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
         already released, rather than in the order of the landing times first estimated for each (``key``). Without
         it, an aircraft that held while one with a later first estimate was released from the other stack is put
         back ahead of it once released, and if that one is already on its base or final by then, it can't fall in
         behind: on the first live shadow hour (re-flown with straight_in) EJU78WM, released from TIMBA after RYR49FR
-        from WILLO, was planned ahead of it, joined final 41 seconds behind it and went around after a loss of
-        separation, in 4 of 5 sets of pilots. Off, as in every result before 19 Nov 2026."""
+        from WILLO, was planned ahead of it, came within 1.3 NM of it on final and went around, in 4 of 5 sets of
+        pilots. On 96 training sessions (the planner alone, with expedite and
+        free_speed="fast") it took 22.72 minutes per arrival against 23.74 (quicker in 56 sessions, slower in 12),
+        with 159 losses of separation against 274, 36 go-arounds against 98, 19 gaps inside the minimum against 71
+        and 5 wake infringements against 14, all beyond chance: most of the planner's losses away from the stacks
+        and its go-arounds came from this. Off, as in every result before 19 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
