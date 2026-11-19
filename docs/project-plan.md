@@ -651,6 +651,26 @@ On the live hour, with both, the planner alone took 17.35 minutes per arrival (f
 
 **Next:** the look-ahead with all four changes (expedite descent, `fast`, straight in, landing in release order) on the 24 fresh training sessions and on 48 new ones, before they go into the next 120-session test and into shadow mode.
 
+### The second live hour (19 November)
+
+The look-ahead with all four changes flew the real Gatwick arrivals of a second hour, 10:28 to 11:28 UTC, on runway 26L in the GFS forecast for 10:00 ([`runs/shadow/2026-11-19T1024`](../runs/shadow/2026-11-19T1024/)). The look-ahead practice runs were paused for the hour so it kept pace with the clock; it was never more than 16 seconds behind.
+
+| | AI | Real controllers |
+| --- | --- | --- |
+| Arrivals handed over in the hour | 12 (one not an arrival) | 11 |
+| Landed | 12 | 11 |
+| Losses of separation | 0 | 0 |
+| Go-arounds | 0 | 0 |
+| Minutes per arrival, handover to landing (the 11 arrivals) | 16.25 | 13.49 |
+| Track miles per arrival | 58 | 51 |
+| Aircraft held in a stack | 3 | 0 |
+
+The gap is 2.8 minutes per arrival, against 5.5 on the first live hour (20.5 against 15.0, before the four changes).
+
+- **Spotting.** Of the 219 aircraft that entered the handover region, the spotter called 12 Gatwick arrivals. All 11 real arrivals were among them; the twelfth, KQA109, a Kenya Airways 787, was departing Gatwick: the feed saw it take off from 26L, and as it levelled at 15,000 ft it crossed the top of the region and was called an arrival (88% sure). The AI flew it in and landed it, taking a slot the real arrivals behind it didn't have to give up. Now the spotter never judges an aircraft the feed has seen on the ground at Gatwick, or climbing away within 3 NM of it, on that visit: on the 14 recent days this skips 4,588 of 44,147 entries and changes nothing else (still 98.7% of arrivals found, and the same 87 called arrivals that were not), and on both live recordings it drops only KQA109. Re-flown without it (the planner alone, five sets of pilots), the hour took 17.26 minutes per arrival against 17.34: it cost the aircraft behind it about 2.5 minutes, the hour about 0.1.
+- **Where the 2.8 minutes went.** Most of it follows from one aircraft. EZY58UG, handed over at 13,600 ft 31 NM south-east with nothing ahead, was held at TIMBA as too high and landed 18.6 minutes after handover against 11.6. Its real crew, already descending at 2,000 ft/min at handover, came down from 13,500 to 5,200 ft in 5 minutes (about 1,650 ft/min) at 260 to 300 kt over the ground, on a nearly direct line to a base and a 9 NM final. The simulated pilot (in the planner-alone re-flight traced, at about 770 ft/min while slowing to 220 kt) was still at 11,700 ft on entering the RMA near TIMBA; even expediting it could not have got down on the planner's longest final from the south, so it held. The runway then stood empty for 7 minutes, where the real controllers landed EZY58UG; the AI landed THY6YE next, at about its real time, and every arrival after it 1.5 to 5.7 minutes later than in reality, two of them (PGT75UJ and NSZ62Q) after holding for their slots. The same thing happened to EZY71HM on the first live hour.
+- **The simulated pilots' descent rates.** A simulated pilot's rate is drawn at random from the measured spread, whatever the aircraft was doing when handed over. But on the 46 training days, of the 11,016 arrivals handed over above 11,000 ft and not held, those descending at more than 2,000 ft/min at handover came down to 7,000 ft at a median 1,221 ft/min, and those level or under 500 ft/min at 764 (rank correlation 0.44; 0.59 over the first 3 minutes). Drawing each pilot's place in the spread partly from its rate at handover (a normal copula with correlation 0.5), re-flown with the planner alone, made this hour quicker (16.42 minutes per arrival against 17.26; EZY58UG 13.9 against 16.7) but the first live hour slower (17.85 against 17.35): EZY71HM was handed over descending at only 960 ft/min, and its real crew later came down at 1,300 to 3,000. It would change the simulator every result has been measured in, so it needs the training hours, not two live ones, to decide it; it is an open question for now.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.

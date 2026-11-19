@@ -12,7 +12,9 @@ the aircraft. Waiting up to 5 minutes before deciding barely helps (99.5% found)
 
 An aircraft the feed has seen leave Gatwick (on the ground within DEPARTED_NM of it, or climbing away below
 DEPARTED_BELOW_FT there) is never judged again on that visit: on the second live hour a Kenya Airways 787 departing
-Gatwick, level at 15,000 ft, flickered across the top of the region and was called an arrival (88% sure).
+Gatwick, level at 15,000 ft, flickered across the top of the region and was called an arrival (88% sure). On the
+14 recent days this skips 4,588 of the 44,147 entries and changes nothing else: the same 98.7% of arrivals found and
+the same 87 aircraft called arrivals that were not.
 
 The table (data/real/egkk/entry_states.npz) is built from adsb.lol's open data, so it is under the same licence
 (ODbL 1.0) and credits adsb.lol.
