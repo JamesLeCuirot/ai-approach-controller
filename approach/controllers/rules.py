@@ -102,6 +102,7 @@ EARLY_WAIT_S = 60.0  # inbound_descent="early": a wait this short or less counts
 STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 RELEASE_NEAR_NM = 10.0  # release_where="near": how far outside the RMA an aircraft may be released
+EXPEDITE_SETTLE_S = 30.0  # after this long expediting, a descent slower or faster than the median scales the estimate
 EXPEDITE_MIN_FT = 6000.0  # expedite=True: asked for only above this (lower down, real arrivals descend no faster)
 # straight_in=True: an arrival on the final approach side of the airport, near the extended centreline, is brought
 # straight in: direct to a short leg along the course on its own side of the centreline, then the intercept
@@ -154,6 +155,7 @@ class Plan:
     want_expedite: bool = False  # expedite=True: its path is planned on an expedited descent
     expedite_said: bool = False
     straight: bool = False  # straight_in=True: brought straight in, not by way of its stack
+    expedite_t: float = -1e9  # when last told to expedite
 
 
 class RulesController(Controller):
@@ -316,7 +318,8 @@ class RulesController(Controller):
 
         ``slow_room`` (with speeds="slot"): a speed on the downwind no faster than one the aircraft could still slow
         from to SLOW_ROOM_TO_KT by its join point, at a slow pilot's rate (SLOW_ROOM_KT_S) over the track miles left
-        (_track_to_join), less SLOW_ROOM_MARGIN_NM. From 250 kt that takes about 14 NM. With free_speed="fast", an
+        (_track_to_join), less SLOW_ROOM_MARGIN_NM, and faster than the standard speed only while it could still get
+        down in time at that speed (as free_speed="fast_safe"). From 250 kt that takes about 14 NM. With free_speed="fast", an
         aircraft with nothing ahead flew its whole downwind at 250 kt and was told 180 only at its base turn; a pilot
         who slows down slowly was then still too fast at 1,000 ft and went around: on 48 training sessions (the
         look-ahead with all four changes of 18 and 19 November) 13 go-arounds against 4 without them, the single
@@ -382,6 +385,7 @@ class RulesController(Controller):
         self.rma = airport.rma(runway)
         self._max_join: dict[float, float] = {}
         self.went_around: set[str] = set()
+        self.now = 0.0
         self.south = self._south_side()
 
     # ---- the RMA ---------------------------------------------------------------
@@ -555,19 +559,26 @@ class RulesController(Controller):
         rate = min(-v.vs_fpm, 1100.0) if v.vs_fpm < -300 else PLAN_DESCENT_FPM
         return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
 
-    def _expedite_s(self, v, to_alt: float) -> float:
+    def _expedite_s(self, v, to_alt: float, p: Plan | None = None) -> float:
         """Seconds to get down to `to_alt` once expediting: at the median rate real arrivals short of distance reach
-        at each height (never slower than the usual median), plus the margin."""
+        at each height (never slower than the usual median), plus the margin. Once the aircraft has been expediting
+        for EXPEDITE_SETTLE_S (told by this planner), scaled by how much faster or slower than that it is seen
+        descending, as _descent_s does: planned on the median, a pilot who expedites slowly was released from FL130
+        and could not get down in time (19 Nov 2026)."""
         from approach.sim.world import descent_by_height, descent_rate_at, expedite_by_height
 
         bands, short = descent_by_height(self.airport.icao), expedite_by_height(self.airport.icao)
         if not bands or len(short) != len(bands):
             return self._descent_s(v, to_alt, measured=True)
         fast = tuple(max(b["p50"], e["p50"]) for (_, b), (_, e) in zip(bands, short))
+        scale = 1.0
+        if (p is not None and getattr(v, "expedite", False) and v.vs_fpm < -300
+                and self.now - p.expedite_t >= EXPEDITE_SETTLE_S):
+            scale = min(max(-v.vs_fpm / descent_rate_at(self.airport.icao, fast, v.alt_ft), 0.5), 2.0)
         t, alt = 0.0, v.alt_ft
         while alt > to_alt + 1.0:
             step = min(250.0, alt - to_alt)
-            t += step / max(400.0, descent_rate_at(self.airport.icao, fast, alt - step / 2.0)) * 60.0
+            t += step / max(400.0, scale * descent_rate_at(self.airport.icao, fast, alt - step / 2.0)) * 60.0
             alt -= step
         return t + DESCENT_MARGIN_S
 
@@ -616,7 +627,7 @@ class RulesController(Controller):
         (``measured``: at the real rates for each height, height_by="time" only)."""
         if self.height_by == "time":
             if p.want_expedite or getattr(v, "expedite", False):
-                return self._time_to_join(v, p, d_join) >= self._expedite_s(v, self._join_alt(d_join))
+                return self._time_to_join(v, p, d_join) >= self._expedite_s(v, self._join_alt(d_join), p)
             return self._time_to_join(v, p, d_join) >= self._descent_s(v, self._join_alt(d_join), measured)
         return self._track_to_join(v, p, d_join) >= self._descent_nm(v, self._join_alt(d_join))
 
@@ -639,7 +650,7 @@ class RulesController(Controller):
         if (p.want_expedite and p.stage in ("inbound", "downwind") and not p.holding
                 and v.alt_ft > EXPEDITE_MIN_FT and v.target_alt < v.alt_ft - 1000 and not getattr(v, "expedite", False)):
             self._say(p, "expedite", None)
-            p.expedite_said = True
+            p.expedite_said, p.expedite_t = True, self.now
 
     def _join_for_height(self, v, p: Plan, lo: float, hi: float) -> float:
         """The shortest final, between lo and hi, whose path is long enough to lose the aircraft's height (a longer
@@ -930,6 +941,7 @@ class RulesController(Controller):
 
     def decide(self, t: float, views_list: list) -> list[Instruction]:
         self.out = []
+        self.now = t
         views = {v.cs: v for v in views_list}
         # New arrivals (and go-arounds back under control) get a plan.
         for v in views_list:
@@ -1086,6 +1098,14 @@ class RulesController(Controller):
             if need <= room:
                 break
             s -= 10
+        standard = speed.STANDARD_KT["downwind"]
+        if self.descent == "plan" and s > standard and v.cas_kt > 0:
+            to = self._join_alt(p.d_join)
+            expediting = p.want_expedite or getattr(v, "expedite", False)
+            down_s = self._expedite_s(v, to, p) if expediting else self._descent_s(v, to, measured=True)
+            join_s = self._time_to_join(v, p)
+            while s > standard and join_s * min(1.0, v.cas_kt / s) < down_s:
+                s -= 10  # faster only while it would still get down in time at that speed
         return speed.in_band(s, limits)
 
     def _stack(self, fix: str, views: dict) -> list[Plan]:
