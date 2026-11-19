@@ -628,9 +628,15 @@ class RulesController(Controller):
         return self._height_ok(v, Plan(**{**vars(p), "want_expedite": True}), d_join)
 
     def _maybe_expedite(self, p: Plan, v) -> None:
-        """Tell an aircraft planned on an expedited descent to expedite, once, when it is cleared at least 1,000 ft
-        lower and still above EXPEDITE_MIN_FT (on its way in or on its downwind, not holding)."""
-        if (p.want_expedite and not p.expedite_said and p.stage in ("inbound", "downwind") and not p.holding
+        """Tell an aircraft planned on an expedited descent to expedite when it is cleared at least 1,000 ft lower,
+        still above EXPEDITE_MIN_FT and not expediting already (on its way in or on its downwind, not holding).
+
+        Again whenever that holds: an expedite ends once the aircraft reaches its cleared level, and the plan still
+        counts on it. Said only once (before 19 Nov 2026 evening), an arrival told to expedite, then kept higher in its
+        stack by the look-ahead (a climb, which ended the expedite) and released onto its downwind from FL130 to
+        FL140, was planned on an expedited descent but came down at its usual rate, too high to land: 3 of the 13
+        go-arounds on 48 training sessions with all four planner changes."""
+        if (p.want_expedite and p.stage in ("inbound", "downwind") and not p.holding
                 and v.alt_ft > EXPEDITE_MIN_FT and v.target_alt < v.alt_ft - 1000 and not getattr(v, "expedite", False)):
             self._say(p, "expedite", None)
             p.expedite_said = True

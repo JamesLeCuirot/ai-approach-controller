@@ -80,6 +80,12 @@ TYPE_CATEGORY = {
     }),
 }
 APPROACH_SPEED_KT = {"J": 150, "H": 150, "U": 145, "M": 140, "S": 125, "L": 90}
+# Business jets light enough for the UK Light category approach far faster than its 90 kt (a light piston or
+# turboprop's): about 110 to 130 kt. At 90 kt the simulated pilot of a Citation Latitude (C68A) was still at 138 kt
+# at 1,000 ft against the 115 kt allowed, and went around four times in one training session (19 Nov 2026). 17 of
+# the 26,258 real Gatwick arrivals are these types.
+LIGHT_JET_TYPES = frozenset("C56X C650 C68A C750 E55P H25C LJ45 LJ60".split())
+LIGHT_JET_APPROACH_KT = 120
 
 
 def use_scheme(name: str) -> None:
@@ -121,4 +127,6 @@ def separation_nm(leader_type: str, follower_type: str, scheme: str | None = Non
 
 
 def approach_speed(actype: str) -> int:
+    if actype.upper() in LIGHT_JET_TYPES:
+        return LIGHT_JET_APPROACH_KT
     return APPROACH_SPEED_KT[category(actype)]
