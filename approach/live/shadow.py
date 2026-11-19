@@ -134,8 +134,11 @@ class Tail:
 
 
 def run(feed: Path, out: Path, minutes: float, copy_workers: int = 2, seed: int = 1, runway: str | None = None,
-        settle_min: float = SETTLE_MIN, log=print) -> dict:
+        settle_min: float = SETTLE_MIN, log=print, planner: dict | None = None) -> dict:
+    """``planner``: the planner's settings, PLANNER (those of the latest 120-session test) if not given."""
     from approach.data.gfs import fetch_for_airport
+
+    planner = PLANNER if planner is None else planner
 
     env_module.MAX_SKIP = 0  # keep to the clock: never skip ahead through a quiet spell
     airport = egkk.load()
@@ -162,11 +165,11 @@ def run(feed: Path, out: Path, minutes: float, copy_workers: int = 2, seed: int 
     day = now_utc.date().isoformat()
     window_end = t0 + minutes * 60
     title = f"Shadow mode: the AI on live Gatwick arrivals, {now_utc:%Y-%m-%d %H:%M} UTC"
-    env = ShadowEnv(planner=PLANNER)
+    env = ShadowEnv(planner=planner)
     obs = env.start(runway, wind, wind.source, day, (minutes + settle_min) * 60, seed, title)
     la = LookAhead(workers=copy_workers, seed=seed, **LOOKAHEAD)
     la.reset()
-    log(f"{title}; runway {runway}; winds {wind.source}")
+    log(f"{title}; runway {runway}; winds {wind.source}; planner {json.dumps(planner)}")
 
     judged: list[dict] = []
     names: dict[str, int] = {}
@@ -211,7 +214,7 @@ def run(feed: Path, out: Path, minutes: float, copy_workers: int = 2, seed: int 
     summary = {"t0_epoch": t0, "start_utc": f"{now_utc:%Y-%m-%d %H:%M:%S}", "minutes": minutes, "runway": runway,
                "winds": wind.source, "handed_over": sum(r["handed_over"] for r in judged), "judged": len(judged),
                "counts": env.counts, "scores": sim_log.scores, "lookahead": {k: v for k, v in la.stats.items()},
-               "most_behind_clock_s": round(behind_max)}
+               "most_behind_clock_s": round(behind_max), "planner": planner, "lookahead_settings": LOOKAHEAD}
     (out / "judged.json").write_text(json.dumps(judged, indent=1))
     (out / "run.json").write_text(json.dumps(summary, indent=1, default=float))
     log(f"done: {summary['handed_over']} handed over, {env.counts['landed']} landed, "
@@ -303,9 +306,11 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--runway", default=None)
     ap.add_argument("--settle", type=float, default=SETTLE_MIN, help="minutes to keep going after the last handover")
+    ap.add_argument("--planner", default=None, help="the planner's settings as JSON (default: PLANNER)")
     args = ap.parse_args()
     if args.what == "run":
-        run(Path(args.feed), Path(args.out), args.minutes, args.copy_workers, args.seed, args.runway, args.settle)
+        run(Path(args.feed), Path(args.out), args.minutes, args.copy_workers, args.seed, args.runway, args.settle,
+            planner=json.loads(args.planner) if args.planner else None)
     else:
         compare(Path(args.feed), Path(args.out))
 
