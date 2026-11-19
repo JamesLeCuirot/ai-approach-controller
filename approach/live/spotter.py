@@ -10,6 +10,10 @@ Judged on the 14 most recent days (none of them in its table), it found 98.7% of
 region, and about 2% of the aircraft it called arrivals were not; it was at least 90% sure either way of 99.3% of
 the aircraft. Waiting up to 5 minutes before deciding barely helps (99.5% found).
 
+An aircraft the feed has seen leave Gatwick (on the ground within DEPARTED_NM of it, or climbing away below
+DEPARTED_BELOW_FT there) is never judged again on that visit: on the second live hour a Kenya Airways 787 departing
+Gatwick, level at 15,000 ft, flickered across the top of the region and was called an arrival (88% sure).
+
 The table (data/real/egkk/entry_states.npz) is built from adsb.lol's open data, so it is under the same licence
 (ODbL 1.0) and credits adsb.lol.
 
@@ -32,6 +36,9 @@ from approach.data.arrivals import HANDOVER_CEILING_FT, HANDOVER_RADIUS_NM, REAL
 K = 25
 DECIDE_WITHIN_S = 60.0  # an aircraft that enters without a speed or track is decided at its first point with them
 VISIT_GAP_S = 30 * 60
+DEPARTED_NM = 3.0  # on the ground, or climbing away low, this close to the airport: a departure, not an arrival
+DEPARTED_BELOW_FT = 2000.0
+DEPARTED_CLIMB_FPM = 300.0
 ARRIVAL_P = 0.5
 TABLE = REAL_DIR / "egkk" / "entry_states.npz"
 RAW = Path(__file__).resolve().parents[2] / "data" / "raw" / "adsblol" / "egkk"
@@ -49,8 +56,9 @@ def scaled(s: np.ndarray) -> np.ndarray:
 class Entries:
     """Follows aircraft point by point and says when one has entered the handover region and can be judged."""
 
-    def __init__(self, airport):
+    def __init__(self, airport, skip_departures: bool = True):
         self.ref = airport.reference
+        self.skip_departures = skip_departures
         self.coslat = math.cos(math.radians(self.ref.lat))
         self.state: dict[str, dict] = {}
 
@@ -60,18 +68,24 @@ class Entries:
     def add(self, hexid: str, p: list) -> tuple[float, list[float]] | None:
         """A point (t, lat, lon, alt, gs, track, vrate, ...). Returns (entry time, state) when the aircraft can be
         judged: at its entry, or at its first point with a speed and track within DECIDE_WITHIN_S of it."""
-        st = self.state.setdefault(hexid, {"inside": False, "last_t": -1e18, "entered": None})
+        st = self.state.setdefault(hexid, {"inside": False, "last_t": -1e18, "entered": None, "departed": False})
         if p[0] - st["last_t"] > VISIT_GAP_S:
-            st["inside"], st["entered"] = False, None
+            st["inside"], st["entered"], st["departed"] = False, None, False
         st["last_t"] = p[0]
         alt = p[3]
         if alt is None:
             return None
         x, y = self.xy(p[1], p[2])
-        inside = alt != "ground" and alt <= HANDOVER_CEILING_FT and math.hypot(x, y) <= HANDOVER_RADIUS_NM
+        r = math.hypot(x, y)
+        if self.skip_departures and r <= DEPARTED_NM and (
+                alt == "ground" or (alt <= DEPARTED_BELOW_FT and (p[6] or 0.0) > DEPARTED_CLIMB_FPM)):
+            st["departed"] = True  # seen leaving the airport: not an arrival on this visit
+        inside = alt != "ground" and alt <= HANDOVER_CEILING_FT and r <= HANDOVER_RADIUS_NM
         if inside and not st["inside"]:
             st["entered"] = p[0]
         st["inside"] = inside
+        if st["departed"]:
+            st["entered"] = None
         if st["entered"] is None:
             return None
         if p[0] - st["entered"] > DECIDE_WITHIN_S or alt == "ground":
@@ -104,7 +118,7 @@ class Spotter:
         return out
 
 
-def day_states(day: str, airport) -> tuple[list[list[float]], list[int]]:
+def day_states(day: str, airport, skip_departures: bool = True) -> tuple[list[list[float]], list[int]]:
     """Every entry into the handover region on one archived day, judged as Entries would judge it live, and
     whether it was a Gatwick arrival handed over there."""
     with gzip.open(RAW / f"{day}.json.gz", "rt") as f:
@@ -115,7 +129,7 @@ def day_states(day: str, airport) -> tuple[list[list[float]], list[int]]:
             handovers.setdefault(a["hex"], []).append(a["handover"]["t"])
     states, labels = [], []
     for ac in area["aircraft"]:
-        ent = Entries(airport)
+        ent = Entries(airport, skip_departures)
         for p in sorted((p for p in ac["points"] if p[1] is not None), key=lambda p: p[0]):
             got = ent.add(ac["hex"], p)
             if got:
@@ -124,7 +138,7 @@ def day_states(day: str, airport) -> tuple[list[list[float]], list[int]]:
     return states, labels
 
 
-def build(splits: tuple[str, ...], airport, log=print) -> tuple[np.ndarray, np.ndarray]:
+def build(splits: tuple[str, ...], airport, log=print, skip_departures: bool = True) -> tuple[np.ndarray, np.ndarray]:
     days = [ln.split(",")[0] for ln in (REAL_DIR / "egkk" / "days.csv").read_text().splitlines()[1:]
             if ln.split(",")[2] in splits]
     states, labels = [], []
@@ -132,7 +146,7 @@ def build(splits: tuple[str, ...], airport, log=print) -> tuple[np.ndarray, np.n
         if not (RAW / f"{d}.json.gz").exists():
             log(f"{d}: not downloaded, skipped")
             continue
-        s, lab = day_states(d, airport)
+        s, lab = day_states(d, airport, skip_departures)
         states += s
         labels += lab
         log(f"{d}: {len(s)} entries, {sum(lab)} arrivals")
@@ -142,18 +156,21 @@ def build(splits: tuple[str, ...], airport, log=print) -> tuple[np.ndarray, np.n
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", choices=("build", "check"))
+    ap.add_argument("--keep-departures", action="store_true",
+                    help="judge aircraft seen leaving Gatwick too (as before 19 November)")
     args = ap.parse_args()
+    skip = not args.keep_departures
     from approach.airports import egkk
 
     airport = egkk.load()
     if args.what == "build":
-        states, labels = build(("train", "recent"), airport)
+        states, labels = build(("train", "recent"), airport, skip_departures=skip)
         np.savez_compressed(TABLE, states=states, labels=labels,
                             source=np.array("adsb.lol (https://www.adsb.lol), ODbL 1.0"))
         print(f"{len(states)} entries, {int(labels.sum())} arrivals -> {TABLE}")
         return
-    s_tr, y_tr = build(("train",), airport, log=lambda *_: None)
-    s_te, y_te = build(("recent",), airport, log=lambda *_: None)
+    s_tr, y_tr = build(("train",), airport, log=lambda *_: None, skip_departures=skip)
+    s_te, y_te = build(("recent",), airport, log=lambda *_: None, skip_departures=skip)
     p = Spotter(states=s_tr, labels=y_tr).chance(s_te)
     called, arr = p >= ARRIVAL_P, y_te == 1
     sure = (p >= 0.9) | (p <= 0.1)

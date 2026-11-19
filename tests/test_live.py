@@ -59,6 +59,23 @@ def test_entries_judge_an_aircraft_once_as_it_enters(airport):
     assert ent.add("h", pt(20, 0.63, 14600)) is None  # once only
 
 
+def test_entries_skip_an_aircraft_seen_leaving_the_airport(airport):
+    from approach.live.spotter import Entries
+
+    ref = airport.reference
+    pt = lambda t, dlat, alt, vs=0: [t, ref.lat + dlat, ref.lon, alt, 340.0, 120.0, vs, "X", 0, None]  # noqa: E731
+    for skip, judged in ((True, False), (False, True)):
+        ent = Entries(airport, skip_departures=skip)
+        ent.add("d", pt(0, 0.0, "ground"))  # on the ground at the airport
+        ent.add("d", pt(60, 0.02, 1500, vs=2000))  # climbing away
+        ent.add("d", pt(600, -0.45, 15100, vs=100))  # just above the region, level
+        got = ent.add("d", pt(605, -0.46, 15000, vs=0))  # back across its top: an entry, but a departure
+        assert (got is not None) == judged
+    ent = Entries(airport)
+    ent.add("d", pt(0, 0.0, "ground"))
+    assert ent.add("d", pt(4000, -0.46, 15000)) is not None  # a new visit after a long gap is judged again
+
+
 def test_spotter_votes_with_its_nearest_neighbours():
     from approach.live.spotter import Spotter
 

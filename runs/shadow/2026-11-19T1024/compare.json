@@ -1,0 +1,2255 @@
+{
+ "start_utc": "2026-11-19 10:28:06",
+ "minutes": 60.0,
+ "runway": "26L",
+ "real_arrivals": 11,
+ "handed_over": 12,
+ "handed_over_real_arrivals": 11,
+ "handed_over_not_arrivals": [
+  "KQA109"
+ ],
+ "real_arrivals_missed": [],
+ "both_landed": 11,
+ "ai_minutes_per_arrival": 16.25,
+ "real_minutes_per_arrival": 13.49,
+ "ai": {
+  "arrivals": 12,
+  "landed": 12,
+  "separation_losses": 0,
+  "go_arounds": 0,
+  "wake_violations": 0,
+  "minutes_per_arrival_all": 16.3
+ },
+ "real": {
+  "arrivals": 11,
+  "landed": 11,
+  "separation_losses": 0,
+  "go_arounds": 0,
+  "wake_violations": 0,
+  "minutes_per_arrival_all": 13.5
+ },
+ "ai_counts": {
+  "landed": 12,
+  "go_arounds": 0,
+  "separation_losses": 0,
+  "losses_at_stack": 0,
+  "losses_out_of_reach": 0,
+  "wake_infringements": 0,
+  "instructions": 0,
+  "blocked": 0,
+  "decisions": 424,
+  "base_turns": 0,
+  "turns_held": 0
+ },
+ "aircraft": [
+  {
+   "callsign": "GCJIT",
+   "type": "C42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCLLR",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EFW7HF",
+   "type": "A320",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 16.1,
+   "ai_minutes": 17.5,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "EZY62JL",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW9151",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EXS45E",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW283",
+   "type": "B77W",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GWARX",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCNDF",
+   "type": null,
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "REV901",
+   "type": "BE20",
+   "chance": 0.04,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TOM036",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SVW33IO",
+   "type": "GLEX",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GBOLO",
+   "type": "B06",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GJJAN",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GPKHA",
+   "type": "PC12",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL103",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GNUKA",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GEFTA",
+   "type": "DA42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR24NY",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW931",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "FIN7LP",
+   "type": "A359",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE27PM",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCNDF",
+   "type": null,
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "N445ML",
+   "type": "S22T",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW727G",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW32T",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW342N",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "DGJ567",
+   "type": "C25A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW961",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EIX84T",
+   "type": "PC24",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SAS41C",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "PDG57",
+   "type": "AS50",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW8NG",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TOM020",
+   "type": "B788",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW462V",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GBJUD",
+   "type": "DR40",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCMWC",
+   "type": "PIAT",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "N392MA",
+   "type": "P46T",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW69WL",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "FFC001",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE603",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "UAL924",
+   "type": "B764",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW594",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY95AE",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GVCRM",
+   "type": "RF6",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "ORT535A",
+   "type": "LJ75",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCDEF",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "HLE55",
+   "type": "A169",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SAS804",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VAGABN19",
+   "type": "LYNX",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GBOLO",
+   "type": "B06",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "WUK2175",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VIR317",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW490",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE33T",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "495297",
+   "type": "E195",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "MAS3",
+   "type": "A359",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL729",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "FFC048",
+   "type": "C152",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GMICI",
+   "type": "C182",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GISMC",
+   "type": "C152",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GMPSC",
+   "type": "EC45",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW709",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "UAL959",
+   "type": "B763",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CES202",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VIR8Y",
+   "type": "A35K",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GSRXX",
+   "type": "SR20",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GZEVS",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW7RL",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "N917R",
+   "type": "GLEX",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW978",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TOM9HV",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GWARY",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL134",
+   "type": "B77W",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "ITY203",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "ACA860",
+   "type": "B77W",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW778F",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "MEA201",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "401282",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY25UE",
+   "type": "A319",
+   "chance": 0.96,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 11.0,
+   "ai_minutes": 11.7,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "GCMNS",
+   "type": "PIVI",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TAP1354",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EIN381",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY38VR",
+   "type": "A20N",
+   "chance": 0.04,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "UAL930",
+   "type": null,
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR8LB",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW34N",
+   "type": "A388",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SIA317",
+   "type": "A388",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "FJO649",
+   "type": "GLF6",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CCA848",
+   "type": "A359",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "4011DC",
+   "type": "RV7",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GWARX",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW23T",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SWR8PZ",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY58UG",
+   "type": "A320",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 11.6,
+   "ai_minutes": 18.6,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "BAW181",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NJE589D",
+   "type": "C68A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NSZ2767",
+   "type": "B38M",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW75X",
+   "type": "B78X",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AUR604A",
+   "type": "AT76",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 16.3,
+   "ai_minutes": 19.5,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "FJO53F",
+   "type": "E55P",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW252N",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EXM49",
+   "type": "DA42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "HHN948",
+   "type": null,
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "KQA109",
+   "type": "B788",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VJT408",
+   "type": "CL35",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "DAL51",
+   "type": "A332",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCEGU",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "THY6YE",
+   "type": "B38M",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 12.3,
+   "ai_minutes": 12.6,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "EIN15C",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY52WC",
+   "type": null,
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 19.0,
+   "ai_minutes": 20.4,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "BAW853S",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW480N",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "LOT282",
+   "type": "B38M",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "DLY667C",
+   "type": "CL60",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "N542AP",
+   "type": "GA5C",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BCS6717",
+   "type": "A306",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW8KC",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW932",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GROOK",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GNWFB",
+   "type": "C152",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW6AC",
+   "type": "B78X",
+   "chance": 0.36,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GZOLA",
+   "type": "DA42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TAP1335",
+   "type": "E195",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EIN91W",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "PGT75UJ",
+   "type": "A21N",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 12.6,
+   "ai_minutes": 18.2,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "VIR94",
+   "type": "A35K",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE801",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "MLDYS",
+   "type": "EC45",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VIR103M",
+   "type": "A333",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "401A93",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFG3NP",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VJT409",
+   "type": "CL35",
+   "chance": 0.04,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GDOSC",
+   "type": "DA42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SHT7T",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EFW42CT",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "WUK59RS",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "06A1CD",
+   "type": "GLF6",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL56",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW874",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GHUKA",
+   "type": "H500",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "KQA109",
+   "type": "B788",
+   "chance": 0.88,
+   "handed_over": true,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": 16.4,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW424",
+   "type": "A21N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NOZ15U",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NSZ62Q",
+   "type": "B38M",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 12.2,
+   "ai_minutes": 17.3,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "SHT15A",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GSRXX",
+   "type": "SR20",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "40818A",
+   "type": "G2CA",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "HVN50",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAN121",
+   "type": "E55P",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GTBEZ",
+   "type": "G2CA",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TAR793",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL9601",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "WZZ919",
+   "type": "A321",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "488912",
+   "type": "C525",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GXCUB",
+   "type": "PA18",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "VIR7B",
+   "type": "A35K",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GBSDP",
+   "type": "C152",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GHLOB",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "DAL36",
+   "type": "B764",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW305",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SFU55",
+   "type": "C42",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW678",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY16EZ",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW19LX",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SHT18V",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GOTRT",
+   "type": "R44",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "LRQ539J",
+   "type": "LJ45",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "INV08",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GBRDF",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCDCW",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SIA305",
+   "type": "A359",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW17PA",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AEE6LW",
+   "type": "A21N",
+   "chance": 0.96,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 11.3,
+   "ai_minutes": 12.9,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "BAW755",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW185",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BRO30",
+   "type": "BE20",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NJU704U",
+   "type": "C56X",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW457V",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE93PN",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TOM8JN",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SHT12N",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "UAL904",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AIC13V",
+   "type": "B788",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR5VT",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCEGU",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BEL6VA",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GATYS",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "MELON",
+   "type": "E55P",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EJU94BJ",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "ACA855",
+   "type": "A333",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GUFCP",
+   "type": null,
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY85XF",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY46FM",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "405014",
+   "type": "DR40",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR49FR",
+   "type": "B38M",
+   "chance": 0.96,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 12.7,
+   "ai_minutes": 15.3,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "EZY46TV",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW770",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR8HM",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "TYJ535",
+   "type": "GLF6",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "LGL4593",
+   "type": "DH8D",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "CFE89W",
+   "type": "E190",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GCEGU",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "ELY312",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "IBE07FG",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EZY809B",
+   "type": "A320",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW2X",
+   "type": "A388",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AIC95H",
+   "type": "B77W",
+   "chance": 1.0,
+   "handed_over": true,
+   "real_arrival": true,
+   "real_minutes": 13.3,
+   "ai_minutes": 14.8,
+   "real_held_min": 0.0
+  },
+  {
+   "callsign": "RYR3E",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "UBT783",
+   "type": "B789",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "BAW945",
+   "type": "A20N",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "AAL57",
+   "type": "B772",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "RYR42CL",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GSRXX",
+   "type": "SR20",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "EAI4HS",
+   "type": "AT76",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "FFC001",
+   "type": "P28A",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "SHT8Y",
+   "type": "A319",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "NSZ3513",
+   "type": "B738",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  },
+  {
+   "callsign": "GWACW",
+   "type": "C172",
+   "chance": 0.0,
+   "handed_over": false,
+   "real_arrival": false,
+   "real_minutes": null,
+   "ai_minutes": null,
+   "real_held_min": null
+  }
+ ],
+ "labels": {
+  "arrivals": "Arrivals",
+  "landed": "Landed",
+  "separation_losses": "Separation losses",
+  "wake_violations": "Wake spacing below minimum",
+  "min_spacing_nm": "Closest spacing at runway (NM)",
+  "mean_spacing_nm": "Average spacing at runway (NM)",
+  "track_miles_per_arrival": "Track miles per arrival",
+  "minutes_per_arrival": "Minutes from release to landing",
+  "minutes_per_arrival_all": "Minutes from release to landing, or to the end for those still flying",
+  "instructions": "Instructions",
+  "instructions_per_arrival": "Instructions per arrival",
+  "safety_blocks": "Blocked by safety check",
+  "go_arounds": "Go-arounds",
+  "left_rma": "Aircraft that left the RMA",
+  "minutes_outside_rma": "Minutes outside the RMA after entering it",
+  "below_minimum_altitude": "Aircraft below the minimum altitude",
+  "stable_at_1000ft_pct": "Stable at 1,000 ft (%)"
+ }
+}
