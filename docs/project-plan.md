@@ -608,6 +608,16 @@ Controllers get this with an instruction, so the simulator now has one: **"exped
 
 It is better on all three counts, each beyond chance: 1.0 minutes per arrival quicker (0.6 to 1.5), quicker in 66 sessions and slower in 19; 41 fewer losses of separation (3 to 79); 33 fewer go-arounds (15 to 52). On the live hour, re-flown with three sets of pilots, the planner alone took 19.8 minutes per arrival with expedite against 21.0 without, and 17.9 with expedite and `free_speed="fast"` together, with 0 to 2 losses of separation; the real controllers took 15.0. On the 96 training sessions, expedite and `fast` together took 23.74 minutes per arrival, 2.3 quicker than the planner as it is (beyond chance, 1.7 to 2.9; quicker in 86 sessions, slower in 8) and 1.3 quicker than with expedite alone, landing 23 more; but as before, the planner alone can't fly the faster traffic safely: 274 losses of separation and 98 go-arounds, against expedite alone's 219 and 66 (both beyond chance), and about as many as the planner as it is (260 and 99). With the look-ahead, `fast` kept most of its time at little cost in losses, so expedite and `fast` together are now being tried with the look-ahead on the 24 fresh training sessions, before both go into the bundle for the next 120-session test.
 
+With the look-ahead flying them, on the 24 fresh training sessions (23 with traffic, 401 arrivals; [`runs/lookahead/fresh24_sim4_expfast.json`](../runs/lookahead/fresh24_sim4_expfast.json)):
+
+| Look-ahead | Minutes per arrival | Landed | Losses of separation (at the stacks) | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Standard speeds | 22.58 | 401 | 1 (1) | 0 | 0 |
+| `fast` | 21.70 | 401 | 3 (2) | 0 | 0 |
+| Expedite descent and `fast` | **20.51** | 401 | 1 (0) | 1 | 1 |
+
+Expedite on top of `fast` is 1.2 minutes per arrival quicker (beyond chance, 0.6 to 1.8), quicker in 18 sessions and slower in 3, with 2 fewer losses of separation and 1 more go-around (both within chance). Against the look-ahead at standard speeds without expedite it is 2.1 minutes quicker (1.3 to 2.9), quicker in 20 sessions and slower in 2, with as many losses. So both keep their time with the look-ahead, without the extra losses the planner alone has with them.
+
 ### Landing in release order, and straight in (19 November)
 
 **Seeing arrivals before handover makes no difference.** Live, the look-ahead's copies see only aircraft already handed over; in the benchmark they also see the arrivals due in the next few minutes. Re-flown with expedite descent and `free_speed="fast"`, the live hour took 19.15 and 18.35 minutes per arrival with the copies seeing only handed-over aircraft (two sets of pilots), and 18.84 and 18.59 with them seeing every arrival due, with no losses of separation either way. So predicting arrivals before handover from the live feed isn't worth building yet. On this quiet hour the look-ahead was slower than the planner it adjusts: 18.75 minutes against 18.0, which had 0 to 2 losses of separation in each of five sets of pilots against the look-ahead's none.
