@@ -100,6 +100,12 @@ STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
 RELEASE_NEAR_NM = 10.0  # release_where="near": how far outside the RMA an aircraft may be released
 EXPEDITE_MIN_FT = 6000.0  # expedite=True: asked for only above this (lower down, real arrivals descend no faster)
+# straight_in=True: an arrival on the final approach side of the airport, near the extended centreline, is brought
+# straight in: direct to a short leg along the course on its own side of the centreline, then the intercept
+STRAIGHT_LAT_NM = 8.0  # at most this far either side of the extended centreline
+STRAIGHT_LEG_NM = 2.0  # the leg along the course before the intercept (its "downwind")
+STRAIGHT_MAX_DEG = 30.0  # the track to the start of that leg at most this far off the final course
+STRAIGHT_MAX_OFF_DEG = 90.0  # and the aircraft heading no further than this from the final course
 # descent="plan": height planning for pilots who descend at real rates
 JOIN_ALT_FT = 3000  # the level given for the join (below the glide path there, which is 3,750 ft at 11 NM)
 BELOW_GLIDE_PATH_FT = 300  # plan to reach the join point this far below the glide path, to join it from below
@@ -144,6 +150,7 @@ class Plan:
     ai_owns_turn: bool = False  # the AI said "not yet" as the planner was about to turn it: the turn is the AI's
     want_expedite: bool = False  # expedite=True: its path is planned on an expedited descent
     expedite_said: bool = False
+    straight: bool = False  # straight_in=True: brought straight in, not by way of its stack
 
 
 class RulesController(Controller):
@@ -154,7 +161,8 @@ class RulesController(Controller):
                  descent: str = "base", proposals: bool = False, sequence: str = "arrival", height_by: str = "distance",
                  inbound_speed: str = "standard", stack_check: str = "near",
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
-                 free_speed: str = "standard", release_where: str = "rma", expedite: bool = False):
+                 free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
+                 straight_in: bool = False, released_order: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -272,7 +280,28 @@ class RulesController(Controller):
         (approach.sim.world.expedite_profile). Asked for only above EXPEDITE_MIN_FT. Off, as in every result before
         19 Nov 2026. On 96 training sessions (the planner alone, height_by="time") it took 25.00 minutes per arrival
         against 26.02, quicker in 66 sessions and slower in 19, with 219 losses of separation against 260 and 66
-        go-arounds against 99, all three beyond chance."""
+        go-arounds against 99, all three beyond chance.
+
+        ``straight_in`` (with fixed_paths): an arrival on the final approach side of the airport, within
+        STRAIGHT_LAT_NM of the extended centreline and heading roughly the way of the final, is brought straight in
+        when its slot is free (no more than speed can absorb), it can get down in time (on an expedited descent if
+        need be) and its intercept is inside the RMA: direct to a short leg along the course on its own side of the
+        centreline (which may start outside the RMA: it is flying towards it, as on its way to its stack), then the
+        intercept, joining at the shortest final that lets it get down.
+        Otherwise it goes on to its stack as before, and is tried again at every replan until it reaches it. Real
+        controllers bring such arrivals straight in: 3.4% of the 26L arrivals on the training days were handed over
+        within 8 NM of the centreline more than 25 NM out, landing a median 12.1 minutes later, 2% of them held. On
+        the first live shadow hour two of them were sent to TIMBA, 15 NM south of the final, one of them held
+        there, and joined final 8.5 and 15.3 minutes after handover, against the real 2.1 and 4.2. Off, as in every
+        result before 19 Nov 2026.
+
+        ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
+        already released, rather than in the order of the landing times first estimated for each (``key``). Without
+        it, an aircraft that held while one with a later first estimate was released from the other stack is put
+        back ahead of it once released, and if that one is already on its base or final by then, it can't fall in
+        behind: on the first live shadow hour (re-flown with straight_in) EJU78WM, released from TIMBA after RYR49FR
+        from WILLO, was planned ahead of it, joined final 41 seconds behind it and went around after a loss of
+        separation, in 4 of 5 sets of pilots. Off, as in every result before 19 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -306,6 +335,8 @@ class RulesController(Controller):
             raise ValueError(f"release_where must be rma, near or any, not {release_where!r}")
         self.release_where = release_where
         self.expedite = expedite
+        self.straight_in = straight_in
+        self.released_order = released_order
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -378,7 +409,8 @@ class RulesController(Controller):
         pts = {
             "J": (p.d_join, 0.0),
             "B": (p.d_join + lead, p.side * off),
-            "D": (p.d_join + lead + 1.0, p.side * DOWNWIND_OFFSET_NM),
+            "D": ((p.d_join + lead + STRAIGHT_LEG_NM, p.side * off) if p.straight
+                  else (p.d_join + lead + 1.0, p.side * DOWNWIND_OFFSET_NM)),
         }
         return {k: self.airport.centreline_point(self.rwy, a, l) for k, (a, l) in pts.items()}
 
@@ -446,6 +478,48 @@ class RulesController(Controller):
         if q.stage == "base":
             return distance_xy(v.x, v.y, *pts["B"]) + INTERCEPT_LEG_NM
         return 0.0
+
+    def _join_level(self, p: Plan) -> int:
+        """The level given for the join: JOIN_ALT_FT, or for one brought straight in to a longer final, the highest
+        thousand feet below the height it must reach there."""
+        if not p.straight:
+            return JOIN_ALT_FT
+        return max(JOIN_ALT_FT, int(self._join_alt(p.d_join) // 1000) * 1000)
+
+    def _straight_plan(self, t: float, v, p: Plan, need: float) -> Plan | None:
+        """straight_in: the plan that brings an aircraft on its way in straight in, or None where it can't be."""
+        if v.along <= 0 or abs(v.lateral) > STRAIGHT_LAT_NM:
+            return None
+        if abs(heading_difference(v.hdg, self.runway.course_true)) > STRAIGHT_MAX_OFF_DEG:
+            return None
+        side = self.south if abs(v.lateral) < 0.1 else math.copysign(1.0, v.lateral)
+        probe = Plan(**{**vars(p), "side": side, "stage": "downwind", "straight": True, "holding": False})
+        lead = INTERCEPT_LEG_NM * math.cos(math.radians(INTERCEPT_DEG))
+        off = INTERCEPT_LEG_NM * math.sin(math.radians(INTERCEPT_DEG))
+        # the furthest join whose leg along the course starts at most STRAIGHT_MAX_DEG off the final course from here
+        d_max = (v.along - lead - STRAIGHT_LEG_NM
+                 - abs(v.lateral - side * off) / math.tan(math.radians(STRAIGHT_MAX_DEG)))
+        ok = []
+        d = D_JOIN_FIXED_NM
+        while d <= min(d_max, D_JOIN_MAX_NM) + 1e-9:
+            pts = self._points(Plan(**{**vars(probe), "d_join": d}))
+            if all(self._inside(*pts[k], margin=RMA_MARGIN_NM.get(k, 0.0)) for k in ("B", "J")):
+                ok.append(d)  # its intercept inside the RMA (before it, it flies along the final, towards it)
+            d += 0.5
+        if not ok:
+            return None
+        lo, hi = min(ok), max(ok)
+        probe.d_join = lo
+        if self.descent == "plan":
+            probe.d_join = self._join_for_height(v, probe, lo, hi)
+            if not self._height_ok(v, probe, probe.d_join):
+                if not self._expedite_helps(v, probe, probe.d_join):
+                    return None
+                probe.want_expedite = True
+        if t + self._eta(v, probe) + SPEED_ABSORB_S < need:
+            return None  # its slot is later than speed alone could make it: on to its stack
+        probe.level = self._join_level(probe)
+        return probe
 
     def _join_alt(self, d_join: float) -> float:
         """The height to reach the join point at: a little below the glide path there, and no lower than the level
@@ -579,7 +653,44 @@ class RulesController(Controller):
             return (blocked, p.key)
         return (blocked, earliest - SOONEST_FAIRNESS * max(earliest - p.key, 0.0))
 
+    def behind_released(self, p: Plan, views: dict) -> None:
+        """Order an aircraft just released behind every aircraft already released (released_order, and always for one
+        brought straight in)."""
+        keys = [q.key for q in self.plans.values() if q is not p and q.cs in views and q.stage != "inbound"]
+        if keys:
+            p.key = max(p.key, max(keys) + 1.0)
+
+    def _straight_pass(self, t: float, views: dict) -> None:
+        """straight_in: bring straight in each aircraft on its way in (not holding) that can be, in the order they were
+        first planned. One brought straight in lands behind every aircraft already released and ahead of every one
+        still on its way in or holding, which wait one slot more, as when a real controller brings one straight in."""
+        rank = {"cleared": 0, "base": 1, "downwind": 2}
+        released = sorted((q for q in self.plans.values() if q.cs in views and q.stage != "inbound"),
+                          key=lambda q: (rank.get(q.stage, 3), q.key))
+        last = released[-1] if released else None
+        for p in sorted((q for q in self.plans.values() if q.cs in views and q.stage == "inbound" and not q.holding),
+                        key=lambda q: q.key):
+            v = views[p.cs]
+            need = t
+            if last is not None:
+                gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(last.actype, p.actype)) + self._margin()
+                need = max(last.slot_t, last.landing_t) + gap_nm / self._final_gs(v) * 3600.0
+            straight = self._straight_plan(t, v, p, need)
+            if straight is None:
+                continue
+            p.stage, p.side, p.d_join, p.straight = "downwind", straight.side, straight.d_join, True
+            p.level, p.want_expedite = straight.level, straight.want_expedite
+            p.alt_cmd = None
+            p.hdg_cmd = None
+            self.behind_released(p, views)
+            p.landing_t = t + self._eta(v, p)
+            p.slot_t = max(p.landing_t, need)
+            last = p
+            self.notes.append(f"{p.cs} straight in, joining at {p.d_join:.1f} NM")
+
     def _replan(self, t: float, views: dict) -> None:
+        if self.straight_in and self.fixed_paths:
+            self._straight_pass(t, views)
         if self.sequence in ("soonest", "skip"):
             rank = {p.cs: self._release_order(t, p, views) for p in self.plans.values()
                     if p.cs in views and p.stage == "inbound"}
@@ -629,6 +740,8 @@ class RulesController(Controller):
                     if self.release_check == "path" and self._exit_conflict(p, v, views, level, max(longest, D_JOIN_MIN_NM)):
                         can_go = False  # its way out passes too close to another aircraft: it waits
                 if can_go:
+                    if self.released_order:
+                        self.behind_released(p, views)
                     p.stage, p.side, p.holding = "downwind", side, False
                     p.level = level
                     p.alt_cmd = None
@@ -652,7 +765,7 @@ class RulesController(Controller):
             if self.fixed_paths and p.stage != "cleared":
                 if not self.stretch:
                     p.d_join = D_JOIN_FIXED_NM
-                elif p.stage == "downwind":
+                elif p.stage == "downwind" and not p.straight:
                     p.d_join = p.ai_turn_d or self._stretched_join(t, v, p, prev_t, prev_type)
                     if self.descent == "plan" and not p.ai_turn_d:
                         p.d_join = self._join_for_height(v, p, p.d_join, max(p.d_join, self.max_join(p.side)))
@@ -865,20 +978,20 @@ class RulesController(Controller):
                 to_d = bearing_xy(v.x, v.y, *pts["D"])
                 base_hdg = bearing_xy(*pts["D"], *pts["B"])
                 self._steer(t, p, v, pts["D"])
-                if (self.descent == "plan" and p.alt_cmd not in (None, JOIN_ALT_FT) and t >= p.retry_t
+                if (self.descent == "plan" and p.alt_cmd not in (None, self._join_level(p)) and t >= p.retry_t
                         and self._track_to_join(v, p) <= self._descent_nm(v, self._join_alt(p.d_join)) + 2.0):
-                    self._say(p, "altitude", JOIN_ALT_FT)
+                    self._say(p, "altitude", self._join_level(p))
                 if p.turn_now or distance_xy(v.x, v.y, *pts["D"]) <= self._turn_lead_nm(v, to_d, base_hdg):
                     if self.base_turns == "ai" and (p.ai_owns_turn or p.ai_turn_d):
                         p.d_join, p.turn_now = self._turn_d(p), False
                     p.stage = "base"
                     self._steer(t, p, v, pts["B"], force=True)
-                    self._say(p, "altitude", 3000)
+                    self._say(p, "altitude", self._join_level(p))
                     if self.speeds == "rules":
                         self._say(p, "speed", SPEED_BASE)
             elif p.stage == "base":
-                if p.alt_cmd != 3000 and t >= p.retry_t:
-                    self._say(p, "altitude", 3000)
+                if p.alt_cmd != self._join_level(p) and t >= p.retry_t:
+                    self._say(p, "altitude", self._join_level(p))
                 self._steer(t, p, v, pts["B"])
                 to_b = bearing_xy(v.x, v.y, *pts["B"])
                 icpt = self._intercept_heading(p)
@@ -1077,6 +1190,8 @@ class RulesController(Controller):
 
     def _resequence(self, t: float, p: Plan, why: str) -> None:
         p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
+        if p.straight:  # round again on the usual downwind
+            p.straight, p.side = False, self.south
         self.last_plan_t = -1e9
         self.notes.append(f"{p.cs} {why}: re-sequenced")
 

@@ -94,3 +94,68 @@ def test_stack_check_counts_the_whole_stack():
     c.plans = {"ME": me, "ABOVE": above}
     views = {"ME": aircraft("ME", 0.0, 10000.0, 10000.0), "ABOVE": aircraft("ABOVE", 8.0, 12000.0, 8000.0)}
     assert c._free_level(me, views["ME"], views, 8000.0) == 9000.0
+
+
+def test_straight_in_brings_an_aircraft_on_the_final_line_straight_in():
+    """With straight_in, an aircraft handed over far out near the extended centreline, heading the way of the final,
+    is planned straight in (its leg along the course on its own side, inside the RMA) rather than sent to its stack;
+    one far off the line, or with its slot later than speed can make, is not; and one brought straight in lands
+    behind every aircraft already released."""
+    import math
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import RMA_MARGIN_NM, Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", wind_aware=True, stretch=True, release="eager",
+                        descent="plan", height_by="time", expedite=True, straight_in=True)
+    crs = ap.runways["26L"].course_true
+
+    def aircraft(cs, along, lateral, alt, hdg=None):
+        x, y = ap.centreline_point("26L", along, lateral)
+        return SimpleNamespace(cs=cs, actype="A320", x=x, y=y, alt_ft=alt, vs_fpm=0.0, gs_kt=270.0, tas_kt=270.0,
+                               cas_kt=230.0, hdg=crs if hdg is None else hdg, trk=crs, wind_e_kt=0.0, wind_n_kt=0.0,
+                               along=along, lateral=lateral, target_alt=alt, expedite=False)
+
+    on_line = aircraft("ON", 30.0, -2.0, 7000.0)
+    p = Plan("ON", "A320", 0.0, c.south)
+    sp = c._straight_plan(0.0, on_line, p, need=0.0)
+    assert sp is not None and sp.straight and sp.side == -1.0
+    pts = c._points(sp)
+    assert all(c._inside(*pts[k], margin=RMA_MARGIN_NM.get(k, 0.0)) for k in ("B", "J"))
+    # its way to the leg along the course is at most 30 degrees off the final course
+    to_d = math.degrees(math.atan2(pts["D"][0] - on_line.x, pts["D"][1] - on_line.y)) % 360
+    assert abs((to_d - crs + 180) % 360 - 180) <= 30.5
+    assert c._straight_plan(0.0, aircraft("OFF", 30.0, -12.0, 7000.0), p, need=0.0) is None
+    assert c._straight_plan(0.0, aircraft("AWAY", 30.0, -2.0, 7000.0, hdg=(crs + 180) % 360), p, need=0.0) is None
+    assert c._straight_plan(0.0, on_line, p, need=3600.0) is None  # its slot is an hour away
+    # In the replan, it goes behind an aircraft already on its downwind, and ahead of one on its way to a stack.
+    released = Plan("DW", "A320", 0.0, c.south, stage="downwind")
+    released.landing_t = released.slot_t = 300.0
+    waiting = Plan("IN", "A320", 10.0, c.south)
+    waiting.landing_t = waiting.slot_t = 400.0
+    me = Plan("ON", "A320", 20.0, c.south)
+    c.plans = {"DW": released, "IN": waiting, "ON": me}
+    views = {"DW": aircraft("DW", 8.0, -6.0, 4000.0), "IN": aircraft("IN", 20.0, -25.0, 12000.0), "ON": on_line}
+    c._straight_pass(0.0, views)
+    assert me.stage == "downwind" and me.straight and me.key > released.key and me.slot_t > released.slot_t
+    assert waiting.stage == "inbound"
+
+
+def test_released_order_puts_a_released_aircraft_behind_those_already_released():
+    """With released_order, an aircraft released from its stack goes behind every aircraft already released, even
+    if its first estimated landing (its key) was earlier."""
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "26L", fixed_paths=True, released_order=True)
+    first = Plan("FIRST", "A320", 200.0, c.south, stage="base")
+    late = Plan("LATE", "A320", 100.0, c.south)  # estimated sooner at handover, but still holding
+    c.plans = {"FIRST": first, "LATE": late}
+    views = {"FIRST": SimpleNamespace(), "LATE": SimpleNamespace()}
+    c.behind_released(late, views)
+    assert late.key > first.key

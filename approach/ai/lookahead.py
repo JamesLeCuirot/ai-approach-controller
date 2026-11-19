@@ -199,6 +199,8 @@ class LookAheadController(VectorController):
         if side is None:
             return False
         p = rules.plans[cs]
+        if rules.released_order:
+            rules.behind_released(p, by_cs)
         p.stage, p.side, p.holding = "downwind", side, False
         ahead = sum(1 for q in rules.plans.values() if q.stage == "downwind" and q.cs in by_cs)
         p.level = min(6000, 4000 + 1000 * ahead)
