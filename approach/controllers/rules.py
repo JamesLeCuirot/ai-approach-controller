@@ -227,7 +227,13 @@ class RulesController(Controller):
         losses of separation, 147 of them at a stack, 91 go-arounds). "stack" froze the stacks behind aircraft
         still far off: 27.84 minutes, 1,700 landed, 257 losses (115 at a stack), 83 go-arounds. "zone", the same
         check only within STACK_ZONE_NM of the fix, took 25.15 minutes (worse in 40 sessions, better in 24), with
-        310 losses (162 at a stack) and 96 go-arounds. "near" stays the default.
+        310 losses (162 at a stack) and 96 go-arounds. "near" stays the default. "holders" is "near" plus every
+        aircraft holding in its stack, wherever it is in the hold and however far off this one still is, at the
+        level it is cleared to: an aircraft is not cleared down through a level a holder is kept at. Under "near",
+        an aircraft the look-ahead kept high in a hold (hold_level) was still taken by the planner as the bottom of
+        its stack, and the next arrival was cleared down through it while still far off (train48_sim4_slow, session
+        7: 891 ft at TIMBA two minutes later, beyond the safety check's look-ahead). The planner's own holders are
+        cleared to levels below those of the aircraft on their way, so on its own the planner is barely changed.
 
         ``inbound_descent`` is how far an aircraft on its way to a stack descends before it is released: "stack"
         (every result before 16 Nov 2026), to its stack level, 7,000 ft or above; "early", the first aircraft of its
@@ -338,8 +344,8 @@ class RulesController(Controller):
             raise ValueError(f"height_by must be distance or time, not {height_by!r}")
         if inbound_speed not in ("standard", "keep"):
             raise ValueError(f"inbound_speed must be standard or keep, not {inbound_speed!r}")
-        if stack_check not in ("near", "stack", "zone"):
-            raise ValueError(f"stack_check must be near, stack or zone, not {stack_check!r}")
+        if stack_check not in ("near", "stack", "zone", "holders"):
+            raise ValueError(f"stack_check must be near, stack, zone or holders, not {stack_check!r}")
         self.stack_check = stack_check
         if inbound_descent not in ("stack", "early"):
             raise ValueError(f"inbound_descent must be stack or early, not {inbound_descent!r}")
@@ -1218,17 +1224,28 @@ class RulesController(Controller):
     def _free_level(self, p: Plan, v, views: dict, want: float) -> float:
         """The lowest level from `want` up to the aircraft's current one that every aircraft below it nearby has left
         (stack_check="near"); with stack_check="stack", every aircraft below it in its stack, and that no aircraft in
-        its stack is cleared to."""
+        its stack is cleared to; with "holders", also above every level an aircraft holding in its stack is cleared
+        to."""
         stack = self.stack_check in ("stack", "zone") and p.hold_fix
         others = self._in_stack(p, v, views) if stack else self._near(v, views)
         below = [w for w in others if w.alt_ft < v.alt_ft - 50]
+        held = [w.target_alt for w in self._holders(p, v, views) if w.target_alt < v.alt_ft - 50]
         level, top = want, max(v.target_alt, want)
         while level < top:
             if all(w.alt_ft <= level - VACATED_FT for w in below) and (
-                    not stack or all(abs(w.target_alt - level) >= 900 for w in others)):
+                    not stack or all(abs(w.target_alt - level) >= 900 for w in others)) and (
+                    all(h <= level - VACATED_FT for h in held)):
                 return level
             level += 1000
         return top
+
+    def _holders(self, p: Plan, v, views: dict) -> list:
+        """stack_check="holders": the aircraft holding in this one's stack (within STACK_ZONE_NM of its fix)."""
+        if self.stack_check != "holders" or not p.hold_fix:
+            return []
+        fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
+        return [w for w in views.values() if w.cs != v.cs and getattr(w, "phase", "") == "holding"
+                and distance_xy(w.x, w.y, fx, fy) < STACK_ZONE_NM]
 
     def _final_spacing(self, views: dict) -> None:
         """Final director: keep a cleared follower at least 6 NM behind the aircraft ahead.
