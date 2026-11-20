@@ -46,10 +46,11 @@ from approach.live.spotter import ARRIVAL_P, Entries, Spotter
 STEP_S = 10  # the look-ahead decides every step, as in the benchmark
 SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the aircraft land
 # The planner with the four changes of 18 and 19 November (expedite descent, free_speed="fast", straight in,
-# landing in release order): with the look-ahead, 20.30 minutes per arrival on the 24 fresh training sessions against
-# 22.58 with the settings of the 120-session test on the updated simulator ({"height_by": "time"}), and the setting
-# of the second live hour.
-PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True}
+# landing in release order; the setting of the second live hour) and slow_room: with the look-ahead, 20.13 minutes per
+# arrival on the 48 new training sessions with 2 go-arounds, against 19.76 with 13 without slow_room and the go-around
+# fixes of 19 November, and 21.85 with 4 with the settings of the 120-session test on the updated simulator.
+PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
+           "slow_room": True}
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
 
 

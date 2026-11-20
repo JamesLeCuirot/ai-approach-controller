@@ -659,7 +659,26 @@ On the live hour, with both, the planner alone took 17.35 minutes per arrival (f
 
 Against the look-ahead of 18 November it is 2.3 minutes per arrival quicker (1.9 to 2.8), quicker in all 23 sessions with arrivals, with no losses of separation, go-arounds or gaps inside the minimum. Against expedite and `fast` alone, landing in release order and straight in add 0.2 minutes (within chance; quicker in 15 sessions, slower in 4) and take away the one loss of separation, go-around and short gap. The planner under it, alone, took 21.96 with 42 losses of separation: the look-ahead still does the work of keeping it safe. As before, the gain is in the busy hours: with 19 or more arrivals 21.15 against the planner's 22.55, with 6 or fewer the same.
 
-**Next:** the 48 new training sessions, then the next 120-session test with all four changes; shadow mode now uses them.
+**On the 48 new training sessions** (seed 2028, 753 arrivals; [`runs/lookahead/train48_sim4_bundle.json`](../runs/lookahead/train48_sim4_bundle.json)) the look-ahead with all four changes took 19.76 minutes per arrival against 21.85 with the settings of the last 120-session test, but had 13 go-arounds against 4. Each was traced:
+
+- **Too fast at 1,000 ft (5).** With `fast`, an aircraft with nothing ahead of it waiting flew its downwind at 250 kt and was slowed only for its base turn. A pilot who slows down slowly (the simulated pilots' rates are drawn from real ones) was still more than 25 kt above its approach speed at 1,000 ft, and went around. Now (`slow_room`) a downwind aircraft keeps more than 180 kt only while a slow pilot (0.32 kt a second) could still slow to 180 kt in the track left before it joins final, less 1 NM; and, with descents planned by time, only while it would still get down at that speed.
+- **Expedite cancelled (3).** The look-ahead's `hold_level` move had briefly climbed an aircraft told to expedite, which ends the expedite, as any new level does. The planner said "expedite" only once, so it went on planning an expedited descent the pilot was no longer flying, and the aircraft reached final too high. Now it says it again whenever its plan needs it and the aircraft isn't expediting.
+- **A slow pilot told to expedite (1).** The planner planned an expedited descent at the median rate of real arrivals short of distance. Now, from 30 seconds after the instruction, it scales that by the rate the aircraft is seen to descend (between half and twice). VLG6VX in session 4, descending at 550 to 800 ft/min while expediting, still goes around.
+- **A business jet given a light aircraft's approach speed (4).** The simulator gave light business jets (wake category light: Citations, Learjets, the Phenom 300, the Hawker 800) the 90 kt approach speed of a small propeller aircraft. NJE990K, a Citation in session 36, couldn't slow to it in time and went around four times, under every controller. They now approach at 120 kt. 17 of the 26,000 real arrivals of the 60 days are of these types; the bug was in every earlier run, so the table also gives the totals without session 36.
+
+| Look-ahead, 48 new training sessions | Minutes per arrival | Landed | Losses (at the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Settings of the last 120-session test | 21.85 | 751 | 1 (1) | 4 | 0 | 0 |
+| All four changes | 19.76 | 752 | 2 (0) | 13 | 0 | 0 |
+| ... with `slow_room` and the go-around fixes | **20.13** | **753** | 4 (2) | **2** | 1 | 1 |
+| *Without session 36:* | | | | | | |
+| Settings of the last 120-session test | 21.86 | 734 | 1 (1) | 0 | 0 | 0 |
+| All four changes | 19.74 | 735 | 2 (0) | 8 | 0 | 0 |
+| ... with `slow_room` and the go-around fixes | 20.19 | 735 | 4 (2) | 2 | 1 | 1 |
+
+The fixes take away 11 of the 13 go-arounds (2 to 23, beyond chance) for 0.4 minutes per arrival (0.05 to 0.7; slower in 36 sessions, quicker in 10), the cost of slowing down on the downwind in time for the slowest pilots. Against the settings of the last 120-session test the look-ahead is now 1.7 minutes per arrival quicker (1.3 to 2.1), quicker in 46 of the 48 sessions, with 2 fewer go-arounds and 3 more losses of separation, both within chance (−11 to +4 and −1 to +7). With 19 or more arrivals it took 21.26 minutes against 22.97 (19 sessions), with 6 or fewer 17.25 against 18.32 (7). The planner under it, alone, took 21.46 minutes with 51 losses of separation and 8 go-arounds ([`runs/lookahead/train48_sim4_slow.json`](../runs/lookahead/train48_sim4_slow.json)).
+
+**Next:** the next 120-session test with all four changes and `slow_room`, now running (shadow mode uses them too); meanwhile, on the training sessions, tracing the 4 losses of separation (sessions 4, 7, 24 and 28).
 
 ### The second live hour (19 November)
 
