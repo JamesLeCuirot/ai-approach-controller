@@ -38,6 +38,9 @@ LOOKAHEAD_S = 120
 STEP_S = 5
 H_SEP_NM = 3.0
 V_SEP_FT = 1000.0
+# With lookahead="model": two aircraft holding this close to each other are in the same stack. The hold takes each
+# anywhere around the racetrack, so only height keeps them apart, and the check counts them as one above the other.
+SAME_STACK_NM = 10.0  # WILLO and TIMBA are 17 NM apart; a hold reaches up to about 8 NM from its fix
 TURN_RATE_DEG_S = 2.0
 CLIMB_FT_S = 25.0
 AREA_RADIUS_NM = 40.0
@@ -113,6 +116,15 @@ class SafetyCheck:
                 snap[t.cs] = (t.x, t.y, t.alt)
             out.append(snap)
         return out
+
+    @staticmethod
+    def _same_stack(tracks: dict[str, Track], involving: str) -> set[str]:
+        """The aircraft holding in the same stack as `involving`, if it is holding."""
+        me = tracks.get(involving)
+        if me is None or not me.holding:
+            return set()
+        return {cs for cs, t in tracks.items()
+                if cs != involving and t.holding and math.hypot(t.x - me.x, t.y - me.y) < SAME_STACK_NM}
 
     @staticmethod
     def _first_conflict(pred, involving: str) -> tuple[int, str, float, float] | None:
@@ -233,6 +245,7 @@ class SafetyCheck:
         state = state_from_views(views)
         i = next(k for k, v in enumerate(views) if v.cs == instr.callsign)
         names = [v.cs for v in views]
+        stack = self._same_stack(self._tracks(views), instr.callsign)
 
         def first(pred) -> tuple[int, str, float, float] | None:
             me = pred[i]
@@ -240,7 +253,7 @@ class SafetyCheck:
                 for j, other in enumerate(names):
                     if j == i:
                         continue
-                    h = math.hypot(pred[j, k, 0] - me[k, 0], pred[j, k, 1] - me[k, 1])
+                    h = 0.0 if other in stack else math.hypot(pred[j, k, 0] - me[k, 0], pred[j, k, 1] - me[k, 1])
                     v = abs(pred[j, k, 2] - me[k, 2])
                     if h < H_SEP_NM and v < V_SEP_FT:
                         return k, other, h, v

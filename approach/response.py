@@ -11,7 +11,8 @@ The physics is simple and the same in every draw. The aircraft turns towards its
 gives at its true airspeed (banking in proportion to the heading still to turn, up to its pilot's limit), changes its indicated airspeed at its pilot's rate, climbs or descends at its
 pilot's rate, flies through the air on its heading and drifts with the wind. Cleared for the ILS, it captures
 the localiser as the simulated pilots do, holds the centreline, follows the glide path down and slows to 160 kt
-by 7 NM and its approach speed by 4 NM. A holding aircraft stays where it is (it circles its fix).
+by 7 NM and its approach speed by 4 NM. A holding aircraft stays where it is (it circles its fix), climbing or
+descending to its cleared level.
 
 It serves the safety check's look-ahead and the AI's inputs first, and model-based planning later. It is tested
 against constant velocity and the safety check's old look-ahead, in the simulator and on real tracks from the
@@ -253,7 +254,8 @@ class ResponseModel:
                         expedite &= alt > talt + 200.0  # until it reaches its cleared level
                         fast = _rate_by_height(pilots.descent_mids, exp_profile, alt) / 60.0
                         desc = np.where(expedite, fast, desc)
-                alt = np.where(moving, alt + np.clip(talt - alt, -desc * dt, desc * dt), alt)
+                # A holding aircraft stays near its fix but climbs and descends like any other.
+                alt = alt + np.clip(talt - alt, -desc * dt, desc * dt)
                 along, lateral = self._frame(x, y)
                 gp = self.gp0 + np.maximum(along, 0.0) * self.slope_ft_per_nm
                 if cleared.any():
