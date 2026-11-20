@@ -678,7 +678,7 @@ Against the look-ahead of 18 November it is 2.3 minutes per arrival quicker (1.9
 
 The fixes take away 11 of the 13 go-arounds (2 to 23, beyond chance) for 0.4 minutes per arrival (0.05 to 0.7; slower in 36 sessions, quicker in 10), the cost of slowing down on the downwind in time for the slowest pilots. Against the settings of the last 120-session test the look-ahead is now 1.7 minutes per arrival quicker (1.3 to 2.1), quicker in 46 of the 48 sessions, with 2 fewer go-arounds and 3 more losses of separation, both within chance (−11 to +4 and −1 to +7). With 19 or more arrivals it took 21.26 minutes against 22.97 (19 sessions), with 6 or fewer 17.25 against 18.32 (7). The planner under it, alone, took 21.46 minutes with 51 losses of separation and 8 go-arounds ([`runs/lookahead/train48_sim4_slow.json`](../runs/lookahead/train48_sim4_slow.json)).
 
-**Next:** the next 120-session test with all four changes and `slow_room`, now running (shadow mode uses them too); meanwhile, on the training sessions, tracing the 4 losses of separation (sessions 4, 7, 24 and 28).
+**Next:** the next 120-session test with all four changes and `slow_room` ([below](#the-test-with-the-planner-fixes-20-november); shadow mode uses them too); meanwhile, on the training sessions, tracing the 4 losses of separation (sessions 4, 7, 24 and 28).
 
 ### The second live hour (19 November)
 
@@ -699,6 +699,43 @@ The gap is 2.8 minutes per arrival, against 5.5 on the first live hour (20.5 aga
 - **Spotting.** Of the 219 aircraft that entered the handover region, the spotter called 12 Gatwick arrivals. All 11 real arrivals were among them; the twelfth, KQA109, a Kenya Airways 787, was departing Gatwick: the feed saw it take off from 26L, and as it levelled at 15,000 ft it crossed the top of the region and was called an arrival (88% sure). The AI flew it in and landed it, taking a slot the real arrivals behind it didn't have to give up. Now the spotter never judges an aircraft the feed has seen on the ground at Gatwick, or climbing away within 3 NM of it, on that visit: on the 14 recent days this skips 4,588 of 44,147 entries and changes nothing else (still 98.7% of arrivals found, and the same 87 called arrivals that were not), and on both live recordings it drops only KQA109. Re-flown without it (the planner alone, five sets of pilots), the hour took 17.26 minutes per arrival against 17.34: it cost the aircraft behind it about 2.5 minutes, the hour about 0.1.
 - **Where the 2.8 minutes went.** Most of it follows from one aircraft. EZY58UG, handed over at 13,600 ft 31 NM south-east with nothing ahead, was held at TIMBA as too high and landed 18.6 minutes after handover against 11.6. Its real crew, already descending at 2,000 ft/min at handover, came down from 13,500 to 5,200 ft in 5 minutes (about 1,650 ft/min) at 260 to 300 kt over the ground, on a nearly direct line to a base and a 9 NM final. The simulated pilot (in the planner-alone re-flight traced, at about 770 ft/min while slowing to 220 kt) was still at 11,700 ft on entering the RMA near TIMBA; even expediting it could not have got down on the planner's longest final from the south, so it held. The runway then stood empty for 7 minutes, where the real controllers landed EZY58UG; the AI landed THY6YE next, at about its real time, and every arrival after it 1.5 to 5.7 minutes later than in reality, two of them (PGT75UJ and NSZ62Q) after holding for their slots. The same thing happened to EZY71HM on the first live hour.
 - **The simulated pilots' descent rates.** A simulated pilot's rate is drawn at random from the measured spread, whatever the aircraft was doing when handed over. But on the 46 training days, of the 11,016 arrivals handed over above 11,000 ft and not held, those descending at more than 2,000 ft/min at handover came down to 7,000 ft at a median 1,221 ft/min, and those level or under 500 ft/min at 764 (rank correlation 0.44; 0.59 over the first 3 minutes). Drawing each pilot's place in the spread partly from its rate at handover (a normal copula with correlation 0.5), re-flown with the planner alone, made this hour quicker (16.42 minutes per arrival against 17.26; EZY58UG 13.9 against 16.7) but the first live hour slower (17.85 against 17.35): EZY71HM was handed over descending at only 960 ft/min, and its real crew later came down at 1,300 to 3,000. It would change the simulator every result has been measured in, so it needs the training hours, not two live ones, to decide it; it is an open question for now.
+
+### The test with the planner fixes (20 November)
+
+**The 120 test sessions** (1,785 arrivals) with the four planner changes of 18 and 19 November (expedite descent, `fast`, landing in release order and straight in) and `slow_room`, the look-ahead with the stack moves on top, as shadow mode now flies, every aircraft counted ([`runs/lookahead/test120_sim4_slow.json`](../runs/lookahead/test120_sim4_slow.json)):
+
+| | Minutes per arrival | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead with the planner fixes | 20.5 | 1,783 | 8 (3) | 12 | 1 | 0 |
+| The planner under it, alone | 21.7 | 1,755 | 152 (53) | 26 | 20 | 2 |
+| Real controllers | 17.8 | 1,776 | 4 (4) | 14 | 0 | 0 |
+| *18 November:* look-ahead | 22.1 | 1,781 | 17 (8) | 2 | 2 | 0 |
+| *18 November:* the planner under it, alone | 24.2 | 1,727 | 213 (85) | 51 | 62 | 8 |
+
+- **Against the 18 November test** it is 1.6 minutes per arrival quicker (1.3 to 2.0, beyond chance), quicker in 105 of the 116 sessions with arrivals and slower in 11. Its losses of separation fell from 17 to 8, 5 of them at the stacks against 9: within chance, just (19 fewer to none). Its go-arounds rose from 2 to 12, beyond chance (1 to 21 more); they are traced below.
+- **Against the real controllers** the gap is now 2.7 minutes per arrival (1.6 to 3.8), against 4.4 on 18 November and 6.0 on 16 November. Its 8 losses of separation against their 4 are now within chance (3 fewer to 11 more), as are its 12 go-arounds against their 14.
+- **The planner alone gained most:** 2.5 minutes per arrival quicker than on 18 November, with 61 fewer losses of separation, 25 fewer go-arounds and 42 fewer gaps inside the minimum. The look-ahead on top of it is 1.2 minutes per arrival quicker again (0.6 to 1.8) and takes away 144 of its 152 losses of separation and 14 of its 26 go-arounds, all beyond chance. It released aircraft early from a stack 157 times (268 on 18 November), took 22 off a stack above the lowest and brought 101 straight in: with the planner's own expedite and straight-in, it has less left to do.
+- **Light business jets.** The approach speed fix of 19 November changes the two test sessions with one (27 and 104, a Learjet 60 in each) for every simulated controller; the real controllers' figures are unchanged.
+
+**By traffic level** (minutes per arrival, each session weighted by its arrivals):
+
+| Arrivals in the session | Sessions | Look-ahead | 18 November | Planner alone | Real controllers | Gap to the real controllers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 to 6 | 15 | 16.46 | 17.38 | 16.45 | 13.47 | 3.0 |
+| 7 to 12 | 20 | 18.79 | 20.15 | 18.66 | 15.88 | 2.9 |
+| 13 to 18 | 41 | 19.39 | 20.72 | 20.12 | 16.34 | 3.1 |
+| 19 or more | 40 | 21.93 | 23.91 | 23.83 | 19.46 | 2.5 |
+
+The gap to the real controllers is now about the same at every traffic level, 2.5 to 3.1 minutes per arrival, and in quiet hours the look-ahead and the planner alone are level. So what is left is not how the busy hours are sequenced but how each aircraft is flown from handover to the runway: its path, its speeds and its descent. That is where the next work goes, starting from the quiet sessions, where nothing else is in the way.
+
+**Tracing the go-arounds.** The 10 test sessions with a go-around were flown again exactly as in the test, for diagnosis only, and each came out the same:
+
+- **10 were too fast at 1,000 ft**, at 165 to 177 kt where 25 kt above the approach speed is the most allowed (165 kt for most types). With `fast`, an aircraft with nothing ahead of it waiting flew 180 kt on its intercept and final down to 7 NM, where the pilot takes over its own speeds. A pilot slow to slow down (the simulated pilots' rates are drawn from real arrivals', and these were near the slowest tenth both while descending and from 5 NM to the approach speed) could not lose enough by 1,000 ft. Six of the ten were two aircraft going around again on their next approaches, flown the same way: EFW5JM four times in session 27 and TOM3AE twice in session 25. `slow_room` fixed the same thing on the downwind, but not on final.
+- **2 were too high:** EZY12YV (session 32), climbed back to 3,000 ft by a look-ahead move as it turned onto final, met the glide path from above 7.2 NM out; RYR6DK (session 100) joined the final only 4.9 NM out.
+
+Real arrivals flew their finals slower than that. Of 2,260 arrivals of types with a 140 kt approach speed on 8 training days, established on final, the median was 174 kt at 10 NM, 170 at 9, 165 at 8, 163 at 7 and 161 at 5; one in seven was faster than 175 kt at 7 NM. A new planner option, `final_room`, keeps the speed on the intercept and final no faster than one the slowest simulated pilot (0.277 kt a second, the slowest the simulator draws while descending) could slow from to 160 kt by 5 NM, less half a mile: 180 kt only beyond about 9 NM and 170 kt to 7 NM, close to the real medians. The go-arounds were found on the test hours, but the fix is measured on training hours only. On 96 training sessions (the planner alone, seed 2027) it costs no time (0.02 minutes per arrival, within chance, −0.13 to +0.13), but those sessions had only 3 go-arounds of this kind, against 12 for spacing (4 more of those with it, within chance). Its effect is now being measured on the same sessions with every pilot slow to slow down (rates drawn from the slowest fifth of the real ones), then with the look-ahead.
+
+**Next, on training hours:** the same-stack safety check and the `holders` stack check (now running on the 48 new training sessions), then `final_room`; and tracing the test's 8 losses of separation, for diagnosis only.
 
 ## Tools and data
 
