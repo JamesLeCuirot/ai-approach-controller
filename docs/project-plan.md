@@ -803,9 +803,20 @@ An earlier try (19 November) released aircraft anywhere, or within 10 NM of the 
 - **A planner fault, found on the way.** An aircraft that misses the localiser is brought round again, but its approach clearance stands, and on its way round it can capture the localiser after all. The planner still flew it as if on its downwind: 250 kt all the way down the glide path, and it went round at 246 kt. Now an aircraft established like that is flown as cleared, with the final approach speeds. With releases only inside the RMA this never happened on these 96 sessions (the results are identical with and without the fix); with `first_near`, 13 go-arounds with it against 17 without.
 - **`first_near` with the fix is the best:** 0.96 minutes per arrival quicker than releasing inside the RMA only (0.37 to 1.77, beyond chance), quicker in 62 sessions and slower in 10, with 21 more aircraft landed in the hour (none to 59 more), 6 fewer go-arounds (14 fewer to 2 more) and 19 fewer losses of separation (54 fewer to 7 more), both within chance. The check made for `first` cost `first_near` 0.34 minutes per arrival (0.15 to 0.56, beyond chance) with no fewer go-arounds or losses, so it applies to `first` only: within 10 NM of the RMA, an arrival is already low and slow enough.
 
-Per-session results: `runs/planner/release96.csv`. The code is on a branch on top of the `holders` and `final_room` changes, to be merged with them.
+Per-session results: `runs/planner/release96.csv`.
 
-**Next, on training hours:** `first_near` with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_release`), against the same look-ahead with `final_room` and without early release, once the runs above finish.
+**With the look-ahead**, on the 48 new training sessions (seed 2028, 753 arrivals; [`runs/lookahead/train48_sim4_release.json`](../runs/lookahead/train48_sim4_release.json)), against the same look-ahead with `final_room` and releases only inside the RMA:
+
+| Look-ahead, 48 new training sessions | Minutes per arrival | Landed | Losses (at the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| With `final_room` | 20.08 | 753 | 0 | 1 | 0 | 0 |
+| ... and `first_near` | **19.77** | 753 | 3 (1) | 1 | 0 | 0 |
+
+- **0.31 minutes per arrival quicker** (0.03 to 0.62, beyond chance), quicker in 29 sessions and slower in 12, and quicker at every traffic level: 0.41 in the 19 sessions with 19 or more arrivals.
+- **3 losses of separation against none** (sessions 19, at a stack, 29 and 46), within chance, but only just (none to 7 more). The go-arounds are the same in number (1), in a different session (16 against 4). The 3 losses are being traced.
+- The planner under it, alone, took 21.02 minutes per arrival against 21.32 (0.61 quicker to 0.05 slower), with 47 losses of separation against 41, 13 go-arounds against 8 and 14 gaps inside the minimum against 8, all within chance; and 2 wake infringements against none, within chance just. On these 48 sessions early release helped the planner alone less than on the 96 (0.29 minutes per arrival against 0.96), and made it no safer.
+
+`first_near` is now on main, with its re-sequence fix. It is a planner option, off unless asked for; shadow mode will use it once these results have been seen and its 3 losses of separation have been traced.
 
 ### The busy gaps against the real controllers', and closer spacing (21 November)
 
