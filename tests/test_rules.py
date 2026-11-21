@@ -213,3 +213,25 @@ def test_slow_room_slows_a_fast_downwind_in_time():
     assert c._room_to_slow(corner, p, 200, limits) == 200
     assert c._room_to_slow(near, Plan("B", "A320", 0.0, c.south, stage="base"), 180, (160, 180)) == 180
     assert RulesController(ap, "26L", fixed_paths=True, speeds="slot")._room_to_slow(near, p, 250, limits) == 250
+
+
+def test_final_room_slows_the_final_in_time_for_a_slow_pilot():
+    """With final_room, a speed on the intercept or final is no faster than one the slowest pilot can slow from to
+    160 kt by 5 NM out: 180 kt far out, 170 nearer, 160 by about 7 NM; off, 180 to the end of the band."""
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", final_room=True)
+    p = Plan("FI", "A320", 0.0, c.south, stage="cleared")
+    view = lambda along: SimpleNamespace(along=along, gs_kt=180.0, cas_kt=180.0)  # noqa: E731
+    limits = (160, 180)
+    assert c._room_to_slow(view(12.0), p, 180, limits) == 180
+    assert c._room_to_slow(view(8.0), p, 180, limits) == 170
+    assert c._room_to_slow(view(7.1), p, 180, limits) == 160
+    assert c._room_to_slow(view(8.0), p, 160, limits) == 160
+    tail = SimpleNamespace(along=9.0, gs_kt=216.0, cas_kt=180.0)  # a tailwind: more miles flown while slowing
+    assert c._room_to_slow(tail, p, 180, limits) == 170
+    assert RulesController(ap, "26L", fixed_paths=True, speeds="slot")._room_to_slow(view(7.1), p, 180, limits) == 180

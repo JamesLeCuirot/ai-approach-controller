@@ -1,0 +1,108 @@
+{
+  "controller": "lookahead",
+  "moves": "wide",
+  "hours": "train",
+  "sessions": 48,
+  "seed": 2028,
+  "draws": 3,
+  "min_gain": 1.0,
+  "look_every_s": 30,
+  "horizon_s": 420,
+  "gap_weight": 3.0,
+  "time_weight": 0.1,
+  "releases": true,
+  "go_around_extra": 0.0,
+  "planner": {
+    "height_by": "time",
+    "free_speed": "fast",
+    "expedite": true,
+    "straight_in": true,
+    "released_order": true,
+    "slow_room": true,
+    "stack_check": "holders",
+    "final_room": true
+  },
+  "quick_copies": true,
+  "changes": 398,
+  "back_to_plan": 201,
+  "moves_set": 72,
+  "moves_set_planned": 47,
+  "moves_hold_level": 209,
+  "moves_release": 154,
+  "moves_extend": 4,
+  "moves_release_now": 62,
+  "moves_release_above": 12,
+  "moves_straight_in": 39,
+  "copies": 42690,
+  "looks": 5802,
+  "looks_with_a_problem": 424,
+  "releases_vetoed": 606,
+  "release_horizon_s": 900,
+  "stack_moves": true,
+  "stack_moves_horizon_s": 1200,
+  "stack_moves_retry_s": 120,
+  "seconds_per_look": 6.9,
+  "minutes_per_session": 14.3,
+  "ai": {
+    "sessions": 48,
+    "landed": 753,
+    "mean_gap_error_nm": 2.571,
+    "gaps_inside_minimum": 0,
+    "separation_losses": 0,
+    "losses_at_stack": 0,
+    "wake_infringements": 0,
+    "go_arounds": 1,
+    "speed_instructions_per_arrival": 0.35,
+    "mean_reward": 8.33,
+    "minutes_per_arrival": 20.1,
+    "arrivals": 753,
+    "minutes_per_arrival_all": 20.1
+  },
+  "rules_vector": {
+    "sessions": 48,
+    "landed": 747,
+    "mean_gap_error_nm": 2.791,
+    "gaps_inside_minimum": 8,
+    "separation_losses": 41,
+    "losses_at_stack": 27,
+    "wake_infringements": 0,
+    "go_arounds": 8,
+    "speed_instructions_per_arrival": 0.0,
+    "mean_reward": 2.67,
+    "minutes_per_arrival": 21.1,
+    "arrivals": 753,
+    "minutes_per_arrival_all": 21.3
+  },
+  "ai_minus_rules_vector": {
+    "separation_losses": {
+      "difference": -41,
+      "range_95": 14.3,
+      "beyond_chance": true
+    },
+    "losses_at_stack": {
+      "difference": -27,
+      "range_95": 12.2,
+      "beyond_chance": true
+    },
+    "wake_infringements": {
+      "difference": 0,
+      "range_95": 0.0,
+      "beyond_chance": false
+    },
+    "go_arounds": {
+      "difference": -7,
+      "range_95": 4.8,
+      "beyond_chance": true
+    },
+    "gaps_inside_minimum": {
+      "difference": -8,
+      "range_95": 6.5,
+      "beyond_chance": true
+    },
+    "landed": {
+      "difference": 6,
+      "range_95": 7.2,
+      "beyond_chance": false
+    }
+  }
+}

@@ -68,6 +68,14 @@ FREE_SPARE_S = 60.0  # free_speed="fast": an aircraft this far ahead of the gap 
 SLOW_ROOM_KT_S = 0.32  # slow_room: a slow pilot's slowing while descending (real arrivals' 10th percentile, 0.324 kt/s)
 SLOW_ROOM_TO_KT = 180  # slow_room: the speed to be down to by the join point (the top of the base and final bands)
 SLOW_ROOM_MARGIN_NM = 1.0
+# final_room: on the intercept and final, a speed no faster than one the slowest simulated pilot could slow from to
+# FINAL_ROOM_TO_KT by FINAL_ROOM_AT_NM, where pilots begin slowing to their approach speed, some very slowly (the
+# 10th percentile of real 140-kt types, 0.075 kt/s between 5 and 3 NM). FINAL_ROOM_KT_S is the slowest draw of
+# approach.sim.world.draw from real arrivals' slowing while descending (10th percentile 0.324 kt/s, the tail 0.277).
+FINAL_ROOM_KT_S = 0.277
+FINAL_ROOM_TO_KT = 160
+FINAL_ROOM_AT_NM = 5.0
+FINAL_ROOM_MARGIN_NM = 0.5
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
@@ -167,7 +175,8 @@ class RulesController(Controller):
                  inbound_speed: str = "standard", stack_check: str = "near",
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
-                 straight_in: bool = False, released_order: bool = False, slow_room: bool = False):
+                 straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
+                 final_room: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -329,7 +338,14 @@ class RulesController(Controller):
         aircraft with nothing ahead flew its whole downwind at 250 kt and was told 180 only at its base turn; a pilot
         who slows down slowly was then still too fast at 1,000 ft and went around: on 48 training sessions (the
         look-ahead with all four changes of 18 and 19 November) 13 go-arounds against 4 without them, the single
-        arrival of session 47 among them, 167 kt at 1,000 ft. Off, as in every result before 19 Nov 2026."""
+        arrival of session 47 among them, 167 kt at 1,000 ft. Off, as in every result before 19 Nov 2026.
+
+        ``final_room`` (with speeds="slot"): a speed on the intercept and final no faster than one the slowest
+        simulated pilot could slow from to 160 kt by 5 NM out (FINAL_ROOM_*), so 180 kt only beyond about 9 NM and
+        170 to 7 NM, where the pilot takes its own speeds over. With free_speed="fast" an aircraft with nothing ahead
+        flew 180 kt to 7 NM; a pilot who slows slowly while descending, and slowly again from 5 NM to its approach
+        speed, was then still above its approach speed + 25 kt at 1,000 ft and went around, and often again on its
+        next approach, flown the same way. Off, as in every result before 20 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -366,6 +382,7 @@ class RulesController(Controller):
         self.straight_in = straight_in
         self.released_order = released_order
         self.slow_room = slow_room
+        self.final_room = final_room
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -1091,9 +1108,26 @@ class RulesController(Controller):
             target = speed.STANDARD_KT[p.stage]
         return self._room_to_slow(v, p, speed.in_band(target, limits), limits)
 
+    def _final_room(self, v, target: int, limits: tuple[int, int]) -> int:
+        """final_room: the speed brought down to the fastest on the intercept or final the slowest pilot could still
+        slow from to FINAL_ROOM_TO_KT by FINAL_ROOM_AT_NM out (the distance along the course is the least it has)."""
+        if not self.final_room or target <= FINAL_ROOM_TO_KT:
+            return target
+        room = v.along - FINAL_ROOM_AT_NM - FINAL_ROOM_MARGIN_NM
+        ground = min(max(v.gs_kt / max(v.cas_kt, 100.0), 0.8), 1.5)  # miles over the ground per mile flown
+        s = target
+        while s > max(limits[0], FINAL_ROOM_TO_KT):
+            need = (s - FINAL_ROOM_TO_KT) / FINAL_ROOM_KT_S * (s + FINAL_ROOM_TO_KT) / 2.0 * ground / 3600.0
+            if need <= room:
+                break
+            s -= 10
+        return speed.in_band(s, limits)
+
     def _room_to_slow(self, v, p: Plan, target: int, limits: tuple[int, int]) -> int:
         """slow_room: the speed brought down to the fastest on the downwind the aircraft could still slow from to
-        SLOW_ROOM_TO_KT by its join point at SLOW_ROOM_KT_S."""
+        SLOW_ROOM_TO_KT by its join point at SLOW_ROOM_KT_S; and final_room on the intercept and final."""
+        if p.stage == "cleared":
+            return self._final_room(v, target, limits)
         if not self.slow_room or p.stage != "downwind" or target <= SLOW_ROOM_TO_KT:
             return target
         room = self._track_to_join(v, p) - SLOW_ROOM_MARGIN_NM
