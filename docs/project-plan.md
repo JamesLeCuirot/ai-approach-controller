@@ -796,6 +796,43 @@ Per-session results: `runs/planner/release96.csv`. The code is on a branch on to
 
 **Next, on training hours:** `first_near` with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_release`), against the same look-ahead with `final_room` and without early release, once the runs above finish.
 
+### The busy gaps against the real controllers', and closer spacing (21 November)
+
+**The real controllers' busy gaps.** The same measure of busy gaps on the real landings of the same 96 training sessions (seed 77): 1,123 gaps, 2.65 minutes on average (median 2.43), only 7% of them longer than 4 minutes, and that with departures between some of them, which the simulator doesn't have yet. The planner alone left 3.10 minutes (median 2.73), 18% longer than 4 minutes, both with the 20 November bundle and with `holders`, `final_room` and `first_near` added.
+
+With all of those, in 60% of the planner's busy gaps the aircraft landing second was already on its downwind 10 minutes before the first landed, and those gaps hold 48% of the extra time, 1.29 minutes each. It had been released a median 11.4 minutes before the first landed. The longest gaps are the rarer cases: the second aircraft still outside the RMA (3.4 extra minutes), the one ahead of it still holding (3.1), too high (2.5 to 3.4) or not yet handed over (3.9). So most of the extra time is now in how closely aircraft already on their way to final are spaced.
+
+**Not the final approach.** Split into stages, the planner's arrivals took 4.12 minutes over their last 8 NM against the real arrivals' 3.41, but leaving out go-arounds the medians are the same (3.33 against 3.36). The rest is the go-arounds (21, about 20 minutes each, 0.28 minutes per arrival) and the measure itself: an aircraft counts as inside 8 NM the first time it is within 8 NM along the centreline and 1 NM either side of it, at any height, and arrivals for WILLO from the north cross the extended centreline high on their way.
+
+**Closer spacing.** The planner plans each landing slot at the spacing minimum plus 1 NM. Planning closer, the planner alone on 96 training sessions (seed 2027, 1,614 arrivals) with `holders`, `final_room` and `first_near`:
+
+| Planned margin over the minimum | Minutes per arrival | Landed | Losses of separation (at stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 NM (as now) | 21.63 | 1,584 | 126 (88) | 13 | 28 | 3 |
+| 0.5 NM | 20.24 | 1,611 | 220 (77) | 70 | 126 | 12 |
+| None | 20.31 | 1,610 | 332 (63) | 146 | 224 | 27 |
+
+- **Half a mile** is 1.39 minutes per arrival quicker (0.64 to 2.24, beyond chance) and lands 27 more, but with 94 more losses of separation (54 to 137 more) and 57 more go-arounds, all beyond chance. The losses it adds are away from the stacks, on the way to final and on it (143 against 38): the planner alone can't hold spacing that tight once the pilots' speeds and descents vary.
+- **No margin** is no quicker than half a mile, with more of everything else.
+
+Half a mile is being tried with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_margin`, with `first_near`), against the same look-ahead with the 1 NM margin: the question is whether the look-ahead keeps the spacing where the planner alone can't.
+
+### Session 28, and the planner's losses away from the stacks (21 November)
+
+**Seen descent rates.** Session 28's loss of separation (a Dash 8 and an A320neo converging while descending at different rates) suggested the safety check should start each aircraft from the rate it is seen descending at, not the typical rate for its height. On the real tracks of 6 training days (24,485 points in descents), predicting height 60 and 120 seconds ahead, the typical rate was out by 294 and 475 ft on average; starting from the seen rate and easing back towards the typical one over about 2 minutes, by 209 and 388 ft (keeping the seen rate throughout was worse, 240 and 561). With the planner alone on 96 training sessions (seed 2027), the safety check with seen rates made no difference: 151 losses of separation either way, 22.56 minutes per arrival against 22.57, and only 11 sessions came out differently. The check blocks only instructions that would bring a conflict sooner than without them, and these convergences start from clearances that were safe when given. It stays on its own branch.
+
+**The planner's 40 losses away from the stacks** on the same sessions, sorted by how they happened:
+
+| How | Losses |
+| --- | --- |
+| On the downwind or base at similar heights, converging sideways | 19 |
+| Close sideways, losing their height difference (session 28's kind) | 7 |
+| Both ways at once | 5 |
+| Both on final | 7 |
+| One on the localiser, one not | 2 |
+
+The first kind were mostly 5 to 9 NM apart a minute before, and most came only just inside the 3 NM minimum (2.84 to 2.90 NM). In nearly all, both aircraft were cleared to 3,000 ft. A planner rule for them (stepping one of the two down to a different level) was considered but not built: with the look-ahead on top of the planner, the 48 training sessions (753 arrivals) had only one loss of separation away from the stacks, session 28's, and the time gap to the real controllers is the bigger problem.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
