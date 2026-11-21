@@ -295,11 +295,13 @@ class RulesController(Controller):
         and "any" 27.54 (beyond chance), with no fewer losses of separation either way. "rma" stays the default.
         "first" releases one outside the RMA only when no aircraft still waiting to be released is ahead of it, so it
         takes no one's place: the runway would otherwise wait for it; "first_near", the same within RELEASE_NEAR_NM.
-        Outside the RMA, either only when it is no faster than RELEASE_OUTSIDE_MAX_KT and can get down on its usual
-        descent, not an expedited one (_outside_ok). Without that, on 96 training sessions (the planner alone, seed
-        2027), "first" took 22.20 minutes per arrival against 22.58 but had 36 go-arounds against 19: arrivals
-        released at the handover, about 30 NM out at FL150 and 280 to 310 kt, planned on an expedited descent, were
-        still 1,000 to 1,500 ft above the glide path and over 200 kt at 12 NM.
+        "first" releases one outside the RMA only when it is no faster than RELEASE_OUTSIDE_MAX_KT, on its downwind's
+        side of the final approach course and able to get down on its usual descent, not an expedited one
+        (_outside_ok). Without that, on 96 training sessions (the planner alone, seed 2027), "first" took 22.20 minutes
+        per arrival against 22.58 but had 36 go-arounds against 19: arrivals released at the handover, about 30 NM out
+        at FL150 and 280 to 310 kt, planned on an expedited descent, were still 1,000 to 1,500 ft above the glide path
+        and over 200 kt at 12 NM. With it, 21.98 minutes and 16 go-arounds. "first_near" needs no such check: within
+        RELEASE_NEAR_NM of the RMA, 21.66 minutes and 17 go-arounds without it, 22.01 and 18 with it.
         In busy spells on 96 training sessions (the planner bundle alone, 20 Nov 2026), in a fifth of the landing gaps
         the aircraft that landed next was still on its way to its stack outside the RMA 10 minutes before the one ahead
         landed, and those gaps held about a third of the time the runway stood idle beyond the spacing.
@@ -817,9 +819,9 @@ class RulesController(Controller):
                     can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, waiting_ahead == 0)
                               and t + self._eta(v, probe, longest) >= need)
                     height_reach = longest
-                if (can_go and self.release_where in ("first", "first_near") and not self._inside(v.x, v.y)
+                if (can_go and self.release_where == "first" and not self._inside(v.x, v.y)
                         and not self._outside_ok(v, probe, height_reach)):
-                    can_go = False  # outside the RMA: only if slow enough and low enough on its usual descent
+                    can_go = False  # outside the RMA: only if slow enough, low enough and on its downwind's side
                 if (self.expedite and self.descent == "plan" and not p.holding and p.wait_s <= EARLY_WAIT_S
                         and not self._height_ok(v, probe, height_reach) and self._expedite_helps(v, probe, height_reach)):
                     p.want_expedite = probe.want_expedite = True  # on its way in, its slot free: down sooner
