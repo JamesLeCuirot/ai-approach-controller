@@ -235,3 +235,30 @@ def test_final_room_slows_the_final_in_time_for_a_slow_pilot():
     tail = SimpleNamespace(along=9.0, gs_kt=216.0, cas_kt=180.0)  # a tailwind: more miles flown while slowing
     assert c._room_to_slow(tail, p, 180, limits) == 170
     assert RulesController(ap, "26L", fixed_paths=True, speeds="slot")._room_to_slow(view(7.1), p, 180, limits) == 180
+
+
+def test_release_first_outside_the_rma_only_slow_and_low_enough():
+    """release_where="first": outside the RMA, released only when no faster than 250 kt and able to get down on its
+    usual descent; a fast or high arrival waits (planned on an expedited descent, one was still 200 kt and 1,500 ft
+    high at 12 NM)."""
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", height_by="time", release_where="first")
+    side = c.south
+    p = Plan("FI", "A320", 0.0, side, stage="downwind")
+    p.d_join = 11.0
+    d = c._points(p)["D"]
+    x, y = d[0] + 20.0, d[1] + 20.0  # about 28 NM beyond the downwind point
+    assert not c._inside(x, y)
+
+    def view(alt, cas, vs=-1500.0):
+        return SimpleNamespace(x=x, y=y, alt_ft=alt, cas_kt=cas, tas_kt=cas * (1 + alt / 60000.0), gs_kt=cas * 1.2,
+                               vs_fpm=vs, expedite=False, wind_e_kt=0.0, wind_n_kt=0.0)
+
+    assert c._outside_ok(view(8000.0, 240.0), p, 11.0)
+    assert not c._outside_ok(view(8000.0, 300.0), p, 11.0)  # too fast
+    assert not c._outside_ok(view(30000.0, 250.0, vs=0.0), p, 11.0)  # too high for its usual descent
