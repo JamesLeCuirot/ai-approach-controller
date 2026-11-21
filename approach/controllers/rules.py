@@ -109,7 +109,8 @@ VACATED_FT = 950  # ... by at least this much (the scoring counts a loss under 9
 EARLY_WAIT_S = 60.0  # inbound_descent="early": a wait this short or less counts as none
 STACK_ZONE_NM = 10.0  # stack_check="stack": an aircraft this close to a stack's fix counts as in that stack
 RMA_MARGIN_NM = {"D": 1.0, "B": 0.5}  # keep the planned downwind and base points this far inside the RMA
-RELEASE_NEAR_NM = 10.0  # release_where="near": how far outside the RMA an aircraft may be released
+RELEASE_NEAR_NM = 10.0  # release_where="near" or "first_near": how far outside the RMA an aircraft may be released
+RELEASE_OUTSIDE_MAX_KT = 250  # release_where="first" or "first_near": no faster than this when released outside the RMA
 EXPEDITE_SETTLE_S = 30.0  # after this long expediting, a descent slower or faster than the median scales the estimate
 EXPEDITE_MIN_FT = 6000.0  # expedite=True: asked for only above this (lower down, real arrivals descend no faster)
 # straight_in=True: an arrival on the final approach side of the airport, near the extended centreline, is brought
@@ -164,6 +165,7 @@ class Plan:
     expedite_said: bool = False
     straight: bool = False  # straight_in=True: brought straight in, not by way of its stack
     expedite_t: float = -1e9  # when last told to expedite
+    resequenced: bool = False  # brought round again after missing the localiser, until it is established
 
 
 class RulesController(Controller):
@@ -291,6 +293,18 @@ class RulesController(Controller):
         slots, and the aircraft nearer the runway, handed over just after, held behind them. On 96 training sessions
         (the planner alone, height_by="time"), "near" took 26.45 minutes per arrival against 26.02 (within chance)
         and "any" 27.54 (beyond chance), with no fewer losses of separation either way. "rma" stays the default.
+        "first" releases one outside the RMA only when no aircraft still waiting to be released is ahead of it, so it
+        takes no one's place: the runway would otherwise wait for it; "first_near", the same within RELEASE_NEAR_NM.
+        "first" releases one outside the RMA only when it is no faster than RELEASE_OUTSIDE_MAX_KT, on its downwind's
+        side of the final approach course and able to get down on its usual descent, not an expedited one
+        (_outside_ok). Without that, on 96 training sessions (the planner alone, seed 2027), "first" took 22.20 minutes
+        per arrival against 22.58 but had 36 go-arounds against 19: arrivals released at the handover, about 30 NM out
+        at FL150 and 280 to 310 kt, planned on an expedited descent, were still 1,000 to 1,500 ft above the glide path
+        and over 200 kt at 12 NM. With it, 21.98 minutes and 16 go-arounds. "first_near" needs no such check: within
+        RELEASE_NEAR_NM of the RMA, 21.66 minutes and 17 go-arounds without it, 22.01 and 18 with it.
+        In busy spells on 96 training sessions (the planner bundle alone, 20 Nov 2026), in a fifth of the landing gaps
+        the aircraft that landed next was still on its way to its stack outside the RMA 10 minutes before the one ahead
+        landed, and those gaps held about a third of the time the runway stood idle beyond the spacing.
 
         ``expedite`` (with descent="plan" and height_by="time"): an aircraft too high to get down in time on any path
         is told to expedite its descent, if that would get it down, rather than kept holding to lose height; and one
@@ -375,8 +389,8 @@ class RulesController(Controller):
         if free_speed not in ("standard", "fast", "downwind", "fast_safe"):
             raise ValueError(f"free_speed must be standard, fast, downwind or fast_safe, not {free_speed!r}")
         self.free_speed = free_speed
-        if release_where not in ("rma", "near", "any"):
-            raise ValueError(f"release_where must be rma, near or any, not {release_where!r}")
+        if release_where not in ("rma", "near", "any", "first", "first_near"):
+            raise ValueError(f"release_where must be rma, near, any, first or first_near, not {release_where!r}")
         self.release_where = release_where
         self.expedite = expedite
         self.straight_in = straight_in
@@ -417,11 +431,32 @@ class RulesController(Controller):
             return True
         return self.rma.contains(x, y) and (margin == 0.0 or self.rma.polygon.exterior.distance(Point(x, y)) >= margin)
 
-    def _may_release_at(self, v) -> bool:
-        """Whether an aircraft on its way to its stack is somewhere it may be released (release_where)."""
+    def _may_release_at(self, v, first: bool = False) -> bool:
+        """Whether an aircraft on its way to its stack is somewhere it may be released (release_where). ``first``: no
+        aircraft still waiting to be released is ahead of it in this replan."""
         if self.release_where == "any" or self._inside(v.x, v.y):
             return True
-        return self.release_where == "near" and self.rma.distance_nm(v.x, v.y) <= RELEASE_NEAR_NM
+        if self.release_where == "first":
+            return first
+        near = self.rma.distance_nm(v.x, v.y) <= RELEASE_NEAR_NM
+        return near and (self.release_where == "near" or (self.release_where == "first_near" and first))
+
+    def _outside_ok(self, v, p: "Plan", reach: float) -> bool:
+        """release_where "first" or "first_near": whether an aircraft still outside the RMA is slow enough and low
+        enough to be released there: no faster than RELEASE_OUTSIDE_MAX_KT, already on its downwind's side of the
+        extended centreline, and able to reach the join point ``reach`` out on its usual descent (at the measured rates
+        by height too, with height_by="time"), not an expedited one: an aircraft expediting its descent barely slows
+        down. One released north-west of the airport flew across the final approach course to its downwind, was
+        turned in too close, missed the localiser and went round at 246 kt (training session 0, seed 2027)."""
+        if v.cas_kt > RELEASE_OUTSIDE_MAX_KT + 5:
+            return False
+        if v.lateral * p.side <= 0:
+            return False  # on the far side of the final approach course: its way to the downwind would cross it
+        q = Plan(**{**vars(p), "want_expedite": False})
+        if self.height_by != "time":
+            return self._track_to_join(v, q, reach) >= self._descent_nm(v, self._join_alt(reach))
+        need = max(self._descent_s(v, self._join_alt(reach)), self._descent_s(v, self._join_alt(reach), measured=True))
+        return self._time_to_join(v, q, reach) >= need
 
     def max_join(self, side: float) -> float:
         """The longest final (join point distance) whose downwind and base stay inside the RMA on that side."""
@@ -762,6 +797,7 @@ class RulesController(Controller):
                            key=lambda p: ({"cleared": 0, "base": 1, "downwind": 2}.get(p.stage, 3), p.key))
         prev_t, prev_type = None, None
         stacks_seen: set[str] = set()
+        waiting_ahead = 0  # aircraft on their way in or holding, not released in this replan, ahead of this one
         for p in order:
             v = views[p.cs]
             if p.stage == "inbound":
@@ -776,12 +812,16 @@ class RulesController(Controller):
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
                     reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
-                    can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v)
+                    can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v, waiting_ahead == 0)
                               and t + self._eta(v, probe, reach) + SPEED_ABSORB_S >= need)
                     height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
-                    can_go = longest >= D_JOIN_MIN_NM and self._may_release_at(v) and t + self._eta(v, probe, longest) >= need
+                    can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, waiting_ahead == 0)
+                              and t + self._eta(v, probe, longest) >= need)
                     height_reach = longest
+                if (can_go and self.release_where == "first" and not self._inside(v.x, v.y)
+                        and not self._outside_ok(v, probe, height_reach)):
+                    can_go = False  # outside the RMA: only if slow enough, low enough and on its downwind's side
                 if (self.expedite and self.descent == "plan" and not p.holding and p.wait_s <= EARLY_WAIT_S
                         and not self._height_ok(v, probe, height_reach) and self._expedite_helps(v, probe, height_reach)):
                     p.want_expedite = probe.want_expedite = True  # on its way in, its slot free: down sooner
@@ -821,6 +861,7 @@ class RulesController(Controller):
                             p.early = p.early or min(6000, 4000 + 1000 * ahead)
                         stacks_seen.add(p.hold_fix)
                     prev_t, prev_type = p.landing_t, p.actype
+                    waiting_ahead += 1
                     continue
             if self.fixed_paths and p.stage != "cleared":
                 if not self.stretch:
@@ -992,6 +1033,13 @@ class RulesController(Controller):
                 # Crossed to the far side of final without capturing the localiser: bring it round again.
                 if not v.loc and v.lateral * p.side < -1.0:
                     self._resequence(t, p, "missed the localiser")
+                continue
+            if p.resequenced and v.cleared and v.loc:
+                # Re-sequenced, but still cleared for the approach, it captured the localiser on its way round: it is
+                # on the final, so it is flown as cleared (speeds included). Before 21 Nov 2026 it was still flown as
+                # on its downwind, told 250 kt all the way down the glide path, and went round unstable at 246 kt.
+                p.stage, p.resequenced = "cleared", False
+                self.notes.append(f"{p.cs} established after all: cleared")
                 continue
             if p.stage == "inbound":
                 fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
@@ -1302,6 +1350,7 @@ class RulesController(Controller):
 
     def _resequence(self, t: float, p: Plan, why: str) -> None:
         p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
+        p.resequenced = True
         if p.straight:  # round again on the usual downwind
             p.straight, p.side = False, self.south
         self.last_plan_t = -1e9
