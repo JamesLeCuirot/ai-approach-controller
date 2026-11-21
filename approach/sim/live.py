@@ -107,7 +107,9 @@ class LiveSession:
         v = by_cs.get(instr.callsign)
         if v is None:
             return False, "no such aircraft"
-        phrase = instr.phrase(v.target_hdg, v.target_alt, self.airport.magnetic_variation_east,
+        # Climb or descend, and which way to turn, from where the aircraft is now (as a pilot hears it), not from
+        # its last clearance: stopped part way down, it is told to descend to the new level, not climb.
+        phrase = instr.phrase(v.hdg, v.alt_ft, self.airport.magnetic_variation_east,
                               self.airport.transition_altitude_ft)
         ok, reason = self.safety.review(instr, self.views) if self.safety else (True, "")
         if ok:

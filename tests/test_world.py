@@ -205,3 +205,29 @@ def test_expedite_descent_is_faster_until_the_cleared_level(airport):
         assert v.alt_ft == pytest.approx(7000, abs=100) and not v.expedite  # over once it reaches its level
     assert lost[True] > lost[False] * 1.15
     assert Instruction("TEST1", "expedite").phrase() == "TEST1, expedite descent"
+
+
+def test_instruction_wording_is_from_where_the_aircraft_is_now(airport):
+    """Descending from 7,500 ft to 3,000 ft and stopped at 4,000 ft part way down, an aircraft is told to descend,
+    not climb; and the turn is the way it will turn from the heading it is on."""
+    from types import SimpleNamespace
+
+    from approach.scenarios import Scenario
+    from approach.session import SessionLog
+    from approach.sim.live import LiveSession
+
+    session = LiveSession(airport, Scenario("t", "t"), SimpleNamespace(name="test"), SessionLog({}, {}),
+                          use_safety=False)
+    ll = airport.grid.to_latlon(20.0, -6.0)
+    session.world.spawn("W1", "A320", ll.lat, ll.lon, 270.0, 7500, 220)
+    session.world.instruct(Instruction("W1", "altitude", 3000))
+    session.world.instruct(Instruction("W1", "heading", 180.0))
+    for _ in range(30):
+        session.world.step(1)
+    session.views = session.world.views()
+    v = session.views[0]
+    assert v.alt_ft > 4500 and v.target_alt == 3000 and 180 < v.hdg < 240
+    session.instruct(Instruction("W1", "altitude", 4000))
+    assert session.log.events[-1]["text"].endswith("descend altitude 4,000 ft")
+    session.instruct(Instruction("W1", "heading", 250.0))  # still turning left towards 180: right from here
+    assert "turn right heading" in session.log.events[-1]["text"]
