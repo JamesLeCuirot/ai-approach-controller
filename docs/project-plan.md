@@ -737,6 +737,30 @@ Real arrivals flew their finals slower than that. Of 2,260 arrivals of types wit
 
 **Next, on training hours:** the same-stack safety check and the `holders` stack check (now running on the 48 new training sessions), then `final_room`; and tracing the test's 8 losses of separation, for diagnosis only.
 
+### Holders in the same stack (21 November)
+
+**The 4 losses of separation on the 48 new training sessions** (the look-ahead with all four changes and `slow_room`, `train48_sim4_slow`) were each traced:
+
+- **Session 24, two holders in one stack.** With the model look-ahead, the safety check took a holding aircraft to stay at its level, so a climb or descent in a hold was never checked; and two aircraft on opposite sides of the same racetrack, more than 3 NM apart, could be cleared through each other's level, though the hold soon brings them together.
+- **Session 7, a holder the planner didn't know about.** The look-ahead's `hold_level` move had climbed an aircraft holding at TIMBA to FL120, but the planner still took it as the bottom of the stack and cleared the next arrival, still far off, down to FL80 through it: 891 ft apart two minutes later, beyond the safety check's two-minute look-ahead. Only the training world's own check counts it; the scoring does not.
+- **Session 4, during a go-around.** Two aircraft close together inside the runway area as VLG6VX went around (the slow pilot told to expedite, [above](#landing-in-release-order-and-straight-in-19-november)). The scoring does not count it.
+- **Session 28, away from the stacks.** A Dash 8 and an A320neo converging on their way in while descending at different rates.
+
+**The same-stack safety check** fixes the first. In the safety check's model look-ahead a holding aircraft now climbs and descends to its cleared level, and two aircraft holding within 10 NM of each other count as one above the other, whatever their distance apart now (WILLO and TIMBA are 17 NM apart, and a hold reaches about 8 NM from its fix). On the 48 training sessions (seed 2028, 753 arrivals; [`runs/lookahead/train48_sim4_samestack.json`](../runs/lookahead/train48_sim4_samestack.json)):
+
+| Look-ahead, 48 new training sessions | Minutes per arrival | Landed | Losses (at the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| With `slow_room` and the go-around fixes | 20.13 | 753 | 4 (2) | 2 | 1 | 1 |
+| ... and the same-stack check | 20.34 | 753 | **2 (1)** | 2 | **0** | **0** |
+
+- Session 24's loss is gone, and so is session 4's (its go-around remains). Session 7's remains: the `holders` planner check below is for it. Session 28's remains.
+- **It costs no time beyond chance:** 0.20 minutes per arrival (0.07 quicker to 0.63 slower), the same in 29 sessions, quicker in 9 and slower in 10. Nearly all of it is one session: session 6, the busiest (28 arrivals), took 4.9 minutes per arrival more. The check blocked none of the look-ahead's instructions there; its copies of the future, flown with the stricter check, came out differently, and the look-ahead chose differently from early on. Without session 6 the two are level (19.87 against 19.85).
+- The planner under it, alone, took 21.62 minutes per arrival against 21.46, with 54 losses of separation against 51 (both within chance: 0.01 quicker to 0.46 slower, and 3 fewer to 11 more). The planner's own instructions also go through the safety check, which now holds back some of them near the stacks.
+
+The same-stack check is now on main and in every run after this one.
+
+**`holders`, for session 7.** A new planner option, `stack_check="holders"`, treats every aircraft holding in a stack, at the level it is cleared to, as one an arrival may not be cleared down through on its way to that stack. Re-flown with it, session 7 had no loss of separation (19.5 minutes per arrival against 20.1). It is now running with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_holders`), against the same-stack check alone.
+
 ### Releasing the next arrival before it reaches the RMA (21 November)
 
 **Where the busy hours' time goes.** On 96 training sessions (the planner alone with the 20 November bundle, seed 77), every gap between two landings in a busy spell was compared with the shortest the spacing rules allow, and the aircraft landing second was looked at 10 minutes before the first landed. Of 1,272 busy gaps (3.10 minutes on average, 1.62 more than the shortest allowed), in 18% the second aircraft was still on its way to its stack, outside the RMA; those gaps hold 31% of the extra time, 2.9 extra minutes each on average against 1.2 when it had already been released. The planner releases an aircraft towards its downwind only once it is inside the RMA, so the runway waited for it. Terminal Control often takes an arrival off its route earlier.
@@ -757,7 +781,7 @@ An earlier try (19 November) released aircraft anywhere, or within 10 NM of the 
 - **A planner fault, found on the way.** An aircraft that misses the localiser is brought round again, but its approach clearance stands, and on its way round it can capture the localiser after all. The planner still flew it as if on its downwind: 250 kt all the way down the glide path, and it went round at 246 kt. Now an aircraft established like that is flown as cleared, with the final approach speeds. With releases only inside the RMA this never happened on these 96 sessions (the results are identical with and without the fix); with `first_near`, 13 go-arounds with it against 17 without.
 - **`first_near` with the fix is the best:** 0.96 minutes per arrival quicker than releasing inside the RMA only (0.37 to 1.77, beyond chance), quicker in 62 sessions and slower in 10, with 21 more aircraft landed in the hour (none to 59 more), 6 fewer go-arounds (14 fewer to 2 more) and 19 fewer losses of separation (54 fewer to 7 more), both within chance. The check made for `first` cost `first_near` 0.34 minutes per arrival (0.15 to 0.56, beyond chance) with no fewer go-arounds or losses, so it applies to `first` only: within 10 NM of the RMA, an arrival is already low and slow enough.
 
-Per-session results: `runs/planner/release96.csv`. The code is on a branch on top of the same-stack, `holders` and `final_room` changes, to be merged with them.
+Per-session results: `runs/planner/release96.csv`. The code is on a branch on top of the `holders` and `final_room` changes, to be merged with them.
 
 **Next, on training hours:** `first_near` with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_release`), against the same look-ahead with `final_room` and without early release, once the runs above finish.
 
