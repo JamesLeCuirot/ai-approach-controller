@@ -96,6 +96,37 @@ def test_stack_check_counts_the_whole_stack():
     assert c._free_level(me, views["ME"], views, 8000.0) == 9000.0
 
 
+def test_stack_check_holders_keeps_arrivals_above_a_holder_kept_high():
+    """With stack_check="holders", an aircraft on its way to a stack is not cleared down through the level an
+    aircraft holding in that stack is cleared to, however far off it still is; with "near" it is, and a holder
+    cleared below the level wanted does not stop it."""
+    from types import SimpleNamespace
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+
+    ap = egkk.load()
+    fx, fy = ap.xy(ap.holds["TIMBA"].position)
+
+    def plan(cs, holding):
+        p = Plan(cs, "A320", 0.0, 1.0, stage="inbound")
+        p.hold_fix, p.holding = "TIMBA", holding
+        return p
+
+    def aircraft(cs, dx, alt, target, phase):
+        return SimpleNamespace(cs=cs, x=fx + dx, y=fy, alt_ft=alt, target_alt=target, phase=phase)
+
+    for check, high_holder, free in (("near", 12000.0, 8000.0), ("holders", 12000.0, 13000.0),
+                                     ("holders", 7000.0, 8000.0)):
+        c = RulesController(ap, "26L", stack_check=check)
+        me, holder = plan("ME", False), plan("HOLDER", True)
+        c.plans = {"ME": me, "HOLDER": holder}
+        # A new arrival 20 NM from the fix at FL126, cleared FL130; the holder sits on the far side of the hold.
+        views = {"ME": aircraft("ME", 20.0, 12600.0, 13000.0, "vectoring"),
+                 "HOLDER": aircraft("HOLDER", -3.0, high_holder, high_holder, "holding")}
+        assert c._free_level(me, views["ME"], views, 8000.0) == free
+
+
 def test_straight_in_brings_an_aircraft_on_the_final_line_straight_in():
     """With straight_in, an aircraft handed over far out near the extended centreline, heading the way of the final,
     is planned straight in (its leg along the course on its own side, inside the RMA) rather than sent to its stack;
