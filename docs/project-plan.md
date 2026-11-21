@@ -737,6 +737,30 @@ Real arrivals flew their finals slower than that. Of 2,260 arrivals of types wit
 
 **Next, on training hours:** the same-stack safety check and the `holders` stack check (now running on the 48 new training sessions), then `final_room`; and tracing the test's 8 losses of separation, for diagnosis only.
 
+### Releasing the next arrival before it reaches the RMA (21 November)
+
+**Where the busy hours' time goes.** On 96 training sessions (the planner alone with the 20 November bundle, seed 77), every gap between two landings in a busy spell was compared with the shortest the spacing rules allow, and the aircraft landing second was looked at 10 minutes before the first landed. Of 1,272 busy gaps (3.10 minutes on average, 1.62 more than the shortest allowed), in 18% the second aircraft was still on its way to its stack, outside the RMA; those gaps hold 31% of the extra time, 2.9 extra minutes each on average against 1.2 when it had already been released. The planner releases an aircraft towards its downwind only once it is inside the RMA, so the runway waited for it. Terminal Control often takes an arrival off its route earlier.
+
+An earlier try (19 November) released aircraft anywhere, or within 10 NM of the RMA, and did worse or no better: aircraft released far out took the first landing slots, and those nearer the runway, handed over just after, held behind them. The new option releases one outside the RMA only when no aircraft still waiting to be released is ahead of it in the queue, so it takes no one's place: `release_where="first"` from anywhere, `"first_near"` only within 10 NM of the RMA.
+
+**Results**, the planner alone on 96 training sessions (seed 2027, 1,614 arrivals; the test hours were not used):
+
+| Release outside the RMA | Minutes per arrival | Landed | Losses of separation (at stacks) | Go-arounds |
+| --- | --- | --- | --- | --- |
+| Never (as before) | 22.58 | 1,563 | 145 (105) | 19 |
+| `first`, from anywhere | 22.20 | 1,584 | 150 (95) | 36 |
+| `first`, with the release check and the re-sequence fix below | 21.98 | 1,584 | 125 (87) | 16 |
+| `first_near`, within 10 NM | 21.66 | 1,584 | 128 (87) | 17 |
+| `first_near`, with the re-sequence fix below | **21.63** | 1,584 | 126 (88) | **13** |
+
+- **`first` from anywhere** doubled the go-arounds (17 more, 3 to 32, beyond chance). Traced on training sessions: aircraft were released at the handover, about 30 NM out at FL150 and 280 to 310 kt, on a path planned for an expedited descent; an aircraft expediting barely slows down, and they were still 1,000 to 1,500 ft above the glide path and over 200 kt at 12 NM. One released north-west of the airport flew across the final approach course to its downwind on the south side, was turned in too close and missed the localiser. So `first` now releases an aircraft outside the RMA only when it is no faster than 250 kt, already on its downwind's side of the final approach course, and able to get down on its usual descent rather than an expedited one: 16 go-arounds and 0.60 minutes per arrival quicker than before (0.10 to 1.37, beyond chance).
+- **A planner fault, found on the way.** An aircraft that misses the localiser is brought round again, but its approach clearance stands, and on its way round it can capture the localiser after all. The planner still flew it as if on its downwind: 250 kt all the way down the glide path, and it went round at 246 kt. Now an aircraft established like that is flown as cleared, with the final approach speeds. With releases only inside the RMA this never happened on these 96 sessions (the results are identical with and without the fix); with `first_near`, 13 go-arounds with it against 17 without.
+- **`first_near` with the fix is the best:** 0.96 minutes per arrival quicker than releasing inside the RMA only (0.37 to 1.77, beyond chance), quicker in 62 sessions and slower in 10, with 21 more aircraft landed in the hour (none to 59 more), 6 fewer go-arounds (14 fewer to 2 more) and 19 fewer losses of separation (54 fewer to 7 more), both within chance. The check made for `first` cost `first_near` 0.34 minutes per arrival (0.15 to 0.56, beyond chance) with no fewer go-arounds or losses, so it applies to `first` only: within 10 NM of the RMA, an arrival is already low and slow enough.
+
+Per-session results: `runs/planner/release96.csv`. The code is on a branch on top of the same-stack, `holders` and `final_room` changes, to be merged with them.
+
+**Next, on training hours:** `first_near` with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_release`), against the same look-ahead with `final_room` and without early release, once the runs above finish.
+
 ## Tools and data
 
 Everything needed is free and open source, so the project runs on a laptop with no paid data or licences.
