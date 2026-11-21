@@ -238,9 +238,9 @@ def test_final_room_slows_the_final_in_time_for_a_slow_pilot():
 
 
 def test_release_first_outside_the_rma_only_slow_and_low_enough():
-    """release_where="first": outside the RMA, released only when no faster than 250 kt and able to get down on its
-    usual descent; a fast or high arrival waits (planned on an expedited descent, one was still 200 kt and 1,500 ft
-    high at 12 NM)."""
+    """release_where="first": outside the RMA, released only when no faster than 250 kt, on its downwind's side of the
+    final approach course and able to get down on its usual descent; otherwise it waits (planned on an expedited
+    descent, one was still 200 kt and 1,500 ft high at 12 NM; one from the far side went round at 246 kt)."""
     from types import SimpleNamespace
 
     from approach.airports import egkk
@@ -248,17 +248,17 @@ def test_release_first_outside_the_rma_only_slow_and_low_enough():
 
     ap = egkk.load()
     c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", height_by="time", release_where="first")
-    side = c.south
-    p = Plan("FI", "A320", 0.0, side, stage="downwind")
+    p = Plan("FI", "A320", 0.0, c.south, stage="downwind")
     p.d_join = 11.0
-    d = c._points(p)["D"]
-    x, y = d[0] + 20.0, d[1] + 20.0  # about 28 NM beyond the downwind point
-    assert not c._inside(x, y)
 
-    def view(alt, cas, vs=-1500.0):
+    def view(alt, cas, lateral, vs=-1500.0):
+        x, y = ap.centreline_point("26L", 35.0, lateral)
         return SimpleNamespace(x=x, y=y, alt_ft=alt, cas_kt=cas, tas_kt=cas * (1 + alt / 60000.0), gs_kt=cas * 1.2,
-                               vs_fpm=vs, expedite=False, wind_e_kt=0.0, wind_n_kt=0.0)
+                               vs_fpm=vs, expedite=False, wind_e_kt=0.0, wind_n_kt=0.0, lateral=lateral)
 
-    assert c._outside_ok(view(8000.0, 240.0), p, 11.0)
-    assert not c._outside_ok(view(8000.0, 300.0), p, 11.0)  # too fast
-    assert not c._outside_ok(view(30000.0, 250.0, vs=0.0), p, 11.0)  # too high for its usual descent
+    near_side = 12.0 * c.south
+    assert not c._inside(view(8000.0, 240.0, near_side).x, view(8000.0, 240.0, near_side).y)
+    assert c._outside_ok(view(8000.0, 240.0, near_side), p, 11.0)
+    assert not c._outside_ok(view(8000.0, 300.0, near_side), p, 11.0)  # too fast
+    assert not c._outside_ok(view(8000.0, 240.0, -near_side), p, 11.0)  # on the far side of the final approach course
+    assert not c._outside_ok(view(30000.0, 250.0, near_side, vs=0.0), p, 11.0)  # too high for its usual descent

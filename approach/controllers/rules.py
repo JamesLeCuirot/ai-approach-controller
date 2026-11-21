@@ -165,6 +165,7 @@ class Plan:
     expedite_said: bool = False
     straight: bool = False  # straight_in=True: brought straight in, not by way of its stack
     expedite_t: float = -1e9  # when last told to expedite
+    resequenced: bool = False  # brought round again after missing the localiser, until it is established
 
 
 class RulesController(Controller):
@@ -440,11 +441,15 @@ class RulesController(Controller):
 
     def _outside_ok(self, v, p: "Plan", reach: float) -> bool:
         """release_where "first" or "first_near": whether an aircraft still outside the RMA is slow enough and low
-        enough to be released there: no faster than RELEASE_OUTSIDE_MAX_KT, and able to reach the join point
-        ``reach`` out on its usual descent (at the measured rates by height too, with height_by="time"), not an
-        expedited one: an aircraft expediting its descent barely slows down."""
+        enough to be released there: no faster than RELEASE_OUTSIDE_MAX_KT, already on its downwind's side of the
+        extended centreline, and able to reach the join point ``reach`` out on its usual descent (at the measured rates
+        by height too, with height_by="time"), not an expedited one: an aircraft expediting its descent barely slows
+        down. One released north-west of the airport flew across the final approach course to its downwind, was
+        turned in too close, missed the localiser and went round at 246 kt (training session 0, seed 2027)."""
         if v.cas_kt > RELEASE_OUTSIDE_MAX_KT + 5:
             return False
+        if v.lateral * p.side <= 0:
+            return False  # on the far side of the final approach course: its way to the downwind would cross it
         q = Plan(**{**vars(p), "want_expedite": False})
         if self.height_by != "time":
             return self._track_to_join(v, q, reach) >= self._descent_nm(v, self._join_alt(reach))
@@ -1027,6 +1032,13 @@ class RulesController(Controller):
                 if not v.loc and v.lateral * p.side < -1.0:
                     self._resequence(t, p, "missed the localiser")
                 continue
+            if p.resequenced and v.cleared and v.loc:
+                # Re-sequenced, but still cleared for the approach, it captured the localiser on its way round: it is
+                # on the final, so it is flown as cleared (speeds included). Before 21 Nov 2026 it was still flown as
+                # on its downwind, told 250 kt all the way down the glide path, and went round unstable at 246 kt.
+                p.stage, p.resequenced = "cleared", False
+                self.notes.append(f"{p.cs} established after all: cleared")
+                continue
             if p.stage == "inbound":
                 fx, fy = self.airport.xy(self.airport.holds[p.hold_fix].position)
                 if not p.direct_sent:
@@ -1336,6 +1348,7 @@ class RulesController(Controller):
 
     def _resequence(self, t: float, p: Plan, why: str) -> None:
         p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
+        p.resequenced = True
         if p.straight:  # round again on the usual downwind
             p.straight, p.side = False, self.south
         self.last_plan_t = -1e9
