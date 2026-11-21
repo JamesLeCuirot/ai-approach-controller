@@ -759,7 +759,18 @@ Real arrivals flew their finals slower than that. Of 2,260 arrivals of types wit
 
 The same-stack check is now on main and in every run after this one.
 
-**`holders`, for session 7.** A new planner option, `stack_check="holders"`, treats every aircraft holding in a stack, at the level it is cleared to, as one an arrival may not be cleared down through on its way to that stack. Re-flown with it, session 7 had no loss of separation (19.5 minutes per arrival against 20.1). It is now running with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_holders`), against the same-stack check alone.
+**`holders`, for session 7.** A new planner option, `stack_check="holders"`, treats every aircraft holding in a stack, at the level it is cleared to, as one an arrival may not be cleared down through on its way to that stack. With the look-ahead on the same 48 training sessions ([`runs/lookahead/train48_sim4_holders.json`](../runs/lookahead/train48_sim4_holders.json)):
+
+| Look-ahead, 48 new training sessions | Minutes per arrival | Landed | Losses (at the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| With the same-stack check | 20.34 | 753 | 2 (1) | 2 | 0 | 0 |
+| ... and `holders` | **20.11** | 753 | **1 (0)** | 2 | 1 | 0 |
+
+- Session 7's loss is gone; the one left is session 28's, away from the stacks. The gap inside the minimum is new, in session 45.
+- 0.23 minutes per arrival quicker (0.80 quicker to 0.27 slower, within chance), quicker in 13 sessions and slower in 10. The losses and go-arounds are within chance too: 1 fewer loss (3 fewer to none), the same go-arounds.
+- The planner under it, alone, took 21.53 minutes per arrival against 21.62, with 47 losses of separation against 54 (30 at the stacks against 32) and 7 gaps inside the minimum against 9; all within chance (0.40 quicker to 0.10 slower; 19 fewer to 4 more losses).
+
+`holders` is now on main. It is a planner option, off unless asked for; the runs after this one (`final_room`, then early release) use it, and shadow mode will once these results have been seen.
 
 ### Releasing the next arrival before it reaches the RMA (21 November)
 
