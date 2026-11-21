@@ -422,3 +422,30 @@ def test_an_expedited_aircraft_is_predicted_to_descend_faster():
     already = model.predict(state, pilot)[0, 0, :, 2]
     assert told[6] < usual[6] - 150 and already[6] <= told[6] + 1
     assert already.min() >= 7000 - 50  # never below its cleared level
+
+
+def test_safety_check_with_the_model_keeps_holders_in_a_stack_apart_by_height(airport):
+    """Two aircraft holding at WILLO, more than 5 NM apart around the racetrack: one may not climb or descend to
+    within 1,000 ft of the other, wherever each is in the hold; one holding at the other stack may."""
+    from approach.controllers.safety import SafetyCheck
+    from approach.sim.world import World
+
+    world = World(airport, "26L", seed=3, pilots="measured")
+    fx, fy = airport.xy(airport.holds["WILLO"].position)
+    tx, ty = airport.xy(airport.holds["TIMBA"].position)
+    for cs, (x, y), hdg, alt in (("LOW", (fx - 8.0, fy), 90.0, 7000), ("HIGH", (fx, fy - 8.0), 0.0, 9000),
+                                 ("FAR", (tx + 8.0, ty), 270.0, 8000)):
+        ll = airport.grid.to_latlon(x, y)
+        world.spawn(cs, "A320", ll.lat, ll.lon, hdg, alt, 220)
+        world.instruct(Instruction(cs, "hold", "WILLO" if cs != "FAR" else "TIMBA"))
+    for _ in range(240):
+        world.step(1)
+    views = world.views()
+    assert all(v.phase == "holding" for v in views)
+    low, high = (next(v for v in views if v.cs == cs) for cs in ("LOW", "HIGH"))
+    assert math.hypot(low.x - high.x, low.y - high.y) > 5.0  # far apart now, but not for long
+    check = SafetyCheck(airport, "26L", lookahead="model")
+    assert not check.review(Instruction("LOW", "altitude", 9000), views)[0]
+    assert not check.review(Instruction("HIGH", "altitude", 7000), views)[0]
+    assert check.review(Instruction("HIGH", "altitude", 8000), views)[0]  # 1,000 ft above LOW
+    assert check.review(Instruction("FAR", "altitude", 7000), views)[0]
