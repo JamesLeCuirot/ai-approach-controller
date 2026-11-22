@@ -842,7 +842,17 @@ With all of those, in 60% of the planner's busy gaps the aircraft landing second
 - **Half a mile** is 1.39 minutes per arrival quicker (0.64 to 2.24, beyond chance) and lands 27 more, but with 94 more losses of separation (54 to 137 more) and 57 more go-arounds, all beyond chance. The losses it adds are away from the stacks, on the way to final and on it (143 against 38): the planner alone can't hold spacing that tight once the pilots' speeds and descents vary.
 - **No margin** is no quicker than half a mile, with more of everything else.
 
-Half a mile is being tried with the look-ahead on the 48 training sessions (`runs/lookahead/train48_sim4_margin`, with `first_near`), against the same look-ahead with the 1 NM margin: the question is whether the look-ahead keeps the spacing where the planner alone can't.
+**Half a mile with the look-ahead (22 November).** The look-ahead with `holders`, `final_room` and `first_near` on the 48 training sessions (seed 2028, 753 arrivals), planning at half a mile (`runs/lookahead/train48_sim4_margin`) against 1 NM (`train48_sim4_release`):
+
+| Planned margin over the minimum | Minutes per arrival | Landed | Losses of separation (at stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 NM | 19.77 | 753 | 3 (1) | 1 | 0 | 0 |
+| 0.5 NM | 19.17 | 753 | 3 (0) | 0 | 2 | 0 |
+
+- **Quicker, and no less safe on these sessions.** 0.60 minutes per arrival quicker (0.33 to 0.88, beyond chance), quicker in 34 sessions and slower in 5. The same number of losses of separation (4 fewer to 4 more), one go-around fewer and two gaps inside the minimum against none (0 to 5 more), all within chance, the gaps just.
+- **The look-ahead keeps the spacing the planner alone can't.** The planner under it, alone with half a mile, had 95 losses of separation against 47 (19 to 79 more), 38 go-arounds against 13 and 37 gaps inside the minimum against 14, all beyond chance, for 0.88 minutes per arrival (0.13 to 1.78 quicker). With the look-ahead on top, its landing gaps were 2.26 NM from the target on average against 2.68; it gave more speed instructions (0.56 per arrival against 0.35) and released fewer aircraft early from the stacks (43 against 67).
+
+`margin_nm` is now on main (cef5242). It is a planner option, off unless asked for; shadow mode will use it once these results have been seen.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
