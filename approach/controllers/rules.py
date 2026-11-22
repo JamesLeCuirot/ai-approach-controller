@@ -178,7 +178,7 @@ class RulesController(Controller):
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
-                 final_room: bool = False):
+                 final_room: bool = False, margin_nm: float | None = None):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -359,7 +359,11 @@ class RulesController(Controller):
         170 to 7 NM, where the pilot takes its own speeds over. With free_speed="fast" an aircraft with nothing ahead
         flew 180 kt to 7 NM; a pilot who slows slowly while descending, and slowly again from 5 NM to its approach
         speed, was then still above its approach speed + 25 kt at 1,000 ft and went around, and often again on its
-        next approach, flown the same way. Off, as in every result before 20 Nov 2026."""
+        next approach, flown the same way. Off, as in every result before 20 Nov 2026.
+
+        ``margin_nm``: the margin added to the spacing minimum when landing slots are planned, in place of
+        PLANNING_MARGIN_NM (or FIXED_PATH_MARGIN_NM with fixed paths). None keeps those, as in every result before
+        21 Nov 2026."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -397,6 +401,7 @@ class RulesController(Controller):
         self.released_order = released_order
         self.slow_room = slow_room
         self.final_room = final_room
+        self.margin_nm = margin_nm
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -472,6 +477,8 @@ class RulesController(Controller):
         return self._max_join[side]
 
     def _margin(self) -> float:
+        if self.margin_nm is not None:
+            return self.margin_nm
         return FIXED_PATH_MARGIN_NM if self.fixed_paths else PLANNING_MARGIN_NM
 
     def _south_side(self) -> float:
@@ -880,7 +887,8 @@ class RulesController(Controller):
                 prev_t, prev_type = p.slot_t, p.actype
                 continue
             if p.stage == "downwind" and prev_t is not None:
-                gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + PLANNING_MARGIN_NM
+                gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + (
+                    PLANNING_MARGIN_NM if self.margin_nm is None else self.margin_nm)
                 need = prev_t + gap_nm / self._final_gs(v) * 3600.0  # landing time that keeps the gap
                 lo, hi = D_JOIN_MIN_NM, max(D_JOIN_MIN_NM, self.max_join(p.side))
                 if t + self._eta(v, p, hi) < need:
