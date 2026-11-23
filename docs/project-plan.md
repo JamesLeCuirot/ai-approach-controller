@@ -876,6 +876,35 @@ All six losses traced with early release and half a mile were an aircraft descen
   - *Session 7: not the move itself.* ICE6H, a Boeing 757, joined the localiser 3.7 NM behind BAW25K, a Boeing 777, about 16 NM out. RECAT-EU, in force at Gatwick that day, needs 4 NM between them. The gap opened to 4.15 NM by the time the 777 landed, so the landing spacing was not inside the minimum and the scoring at the runway did not count it. Neither aircraft had been levelled off. In the run without the move, the 777 had been sent straight in about 7 minutes earlier.
 - **What it would need.** Before it is tried again, two things would need to change. The level it stops at must be clear of holders and other traffic nearby. The room it leaves must allow for slow descents below 6,000 ft. On these sessions the losses it targets are 3 or 4 in 753 arrivals.
 
+### The test with the planner changes of 21 and 22 November
+
+**The 120 test sessions** (1,785 arrivals) with everything in the 20 November test plus the planner changes found on training hours since: the `holders` stack check, `final_room`, releasing at `first_near` and planning half a mile over the minimum (`margin_nm` 0.5), the look-ahead with the stack moves on top, every aircraft counted ([`runs/lookahead/test120_sim4_margin.json`](../runs/lookahead/test120_sim4_margin.json)):
+
+| | Minutes per arrival | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead with the 21 and 22 November changes | **19.8** | 1,785 | 11 (6) | **5** | 2 | 0 |
+| The planner under it, alone | 20.1 | 1,779 | 172 (98) | 64 | 84 | 8 |
+| Real controllers | 17.8 | 1,776 | 4 (4) | 14 | 0 | 0 |
+| *20 November:* look-ahead | 20.5 | 1,783 | 8 (3) | 12 | 1 | 0 |
+| *20 November:* the planner under it, alone | 21.7 | 1,755 | 152 (53) | 26 | 20 | 2 |
+
+- **Against the 20 November test** it is 0.71 minutes per arrival quicker (0.43 to 0.99, beyond chance), quicker in 81 of the 116 sessions with arrivals and slower in 27. Its go-arounds fell from 12 to 5 (19 fewer to 3 more) and its losses of separation rose from 8 to 11 (5 fewer to 11 more), both within chance. All 3 extra losses are away from the stacks (6 against 3); at the stacks it had 5, as before. It had 2 gaps inside the minimum against 1 and no wake infringements.
+- **Against the real controllers** the gap is now 2.0 minutes per arrival (0.9 to 3.0), against 2.7 on 20 November; it was quicker than them in 20 sessions and slower in 95. Its 11 losses of separation against their 4 are within chance, just (1 fewer to 16 more), and its 5 go-arounds against their 14 are within chance too (21 fewer to 1 more).
+- **The planner alone is quicker but much less safe on its own.** Planning half a mile closer made it 1.6 minutes per arrival quicker than on 20 November, but it had 98 losses away from the stacks against 53, 64 go-arounds against 26 and 84 gaps inside the minimum against 20, as on training hours. The look-ahead on top takes away 161 of its 172 losses of separation and 59 of its 64 go-arounds (both beyond chance) and is 0.32 minutes per arrival quicker again (0.75 quicker to 0.12 slower, within chance). So with these settings the look-ahead is what keeps the spacing, not a refinement on top of a planner that is safe without it. It released aircraft early from a stack 96 times (157 on 20 November), took 16 off a stack above the lowest (22) and brought 74 straight in (101).
+
+**By traffic level** (minutes per arrival, each session weighted by its arrivals):
+
+| Arrivals in the session | Sessions | Look-ahead | 20 November | Planner alone | Real controllers | Gap to the real controllers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 to 6 | 15 | 16.08 | 16.46 | 16.13 | 13.47 | 2.6 |
+| 7 to 12 | 20 | 18.52 | 18.79 | 18.24 | 15.88 | 2.6 |
+| 13 to 18 | 41 | 18.88 | 19.39 | 19.10 | 16.34 | 2.5 |
+| 19 or more | 40 | 20.95 | 21.93 | 21.50 | 19.46 | 1.5 |
+
+Most of the time gained is in the busiest hours, where closer spacing matters most: the gap there fell from 2.5 to 1.5 minutes per arrival. In the quieter hours it is still about 2.6, much as before, so what is left there is still how each aircraft is flown from handover to the runway.
+
+**The losses of separation:** 5 at the stacks (sessions 7, 32, 72, 74 and 89) and 6 away from them (sessions 16, 49 twice, 91, 107 and 114); by traffic level, 0, 1, 3 and 7 against the real controllers' 0, 0, 1 and 3. **The go-arounds:** sessions 1, 8, 9, 54 and 107. **The gaps inside the minimum:** sessions 9 and 15. Each is being flown again exactly as in the test and traced, for diagnosis only; nothing is tuned on these hours.
+
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
 **Seen descent rates.** Session 28's loss of separation (a Dash 8 and an A320neo converging while descending at different rates) suggested the safety check should start each aircraft from the rate it is seen descending at, not the typical rate for its height. On the real tracks of 6 training days (24,485 points in descents), predicting height 60 and 120 seconds ahead, the typical rate was out by 294 and 475 ft on average; starting from the seen rate and easing back towards the typical one over about 2 minutes, by 209 and 388 ft (keeping the seen rate throughout was worse, 240 and 561). With the planner alone on 96 training sessions (seed 2027), the safety check with seen rates made no difference: 151 losses of separation either way, 22.56 minutes per arrival against 22.57, and only 11 sessions came out differently. The check blocks only instructions that would bring a conflict sooner than without them, and these convergences start from clearances that were safe when given. It stays on its own branch.
