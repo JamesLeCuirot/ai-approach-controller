@@ -952,8 +952,33 @@ Most of the time gained is in the busiest hours, where closer spacing matters mo
 
 **Next, on training hours only.**
 
-1. **The ILS clearance reviewed by the safety check** (session 43 here, test session 107): running now (`train48_sim4_ils`, the `ils-check` branch).
-2. **A released holder flown on its heading, with seen rates** (session 4 here): the `leaving-hold` branch, queued after the ILS run (`train48_sim4_leave`).
+1. **The ILS clearance reviewed by the safety check** (session 43 here, test session 107): stopped after 16 sessions, not merged ([below](#the-ils-clearance-reviewed-by-the-safety-check-24-november)).
+2. **A released holder flown on its heading, with seen rates** (session 4 here): the `leaving-hold` branch, running now (`train48_sim4_leave`).
+3. **Holding aircraft moving in the check's model** (test sessions 7 and 72).
+4. **The back and forth at the stacks** (test sessions 32 and 74), with a new design.
+5. **A path for an aircraft starting inside its downwind** (4 of the 5 test go-arounds).
+
+### The ILS clearance reviewed by the safety check (24 November)
+
+**Stopped after 16 of the 48 training sessions, because it could no longer win.** With the safety check also reviewing ILS clearances (the `ils-check` branch, `--safety model+ils`), the first 16 sessions ([`runs/lookahead/train48_sim4_ils_first16.csv`](../runs/lookahead/train48_sim4_ils_first16.csv)) against the same 16 of `train48_sim4_margin`:
+
+| | Minutes per arrival | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, check reviews ILS clearances | 19.7 | 262 | 3 | 1 | 0 |
+| Look-ahead, as `train48_sim4_margin` | 19.5 | 262 | 2 | 0 | 0 |
+| Competitor, check reviews ILS clearances | 20.2 | 262 | 33 | 15 | 12 |
+| Competitor, as `train48_sim4_margin` | 20.2 | 262 | 35 | 15 | 12 |
+
+Three losses of separation already match all 48 sessions of `train48_sim4_margin` (sessions 4, 12 and 29), so the run could not end with fewer, and it was stopped to start the `leaving-hold` run 6 hours sooner. Not merged. Sessions 4 and 12 kept their losses; session 3 gained a loss and a go-around. The competitor (the planner flying alone) lost 2 fewer, a small help but not what the change was for.
+
+- *Session 3: a clearance that takes effect after the check has stopped looking.* Flown again and traced, no ILS clearance for either aircraft was blocked: the runs took different paths, as the look-ahead flies its copies with the same check, so its choices change too. On this path EZY47DT and EJU92DV, both A319s sent to WILLO, were brought round east of the airport close together. EZY47DT, at 5,000 ft heading east, was given an almost U-turn onto its intercept heading (285) and cleared for the ILS. Turning through north it crossed the final approach line too steeply to catch it, was turned back left, and caught the localiser and glide path 13.4 NM out, 160 seconds after its clearance. The check looks 2 minutes ahead, so the descent at capture was beyond it when the clearance was reviewed. Later headings were checked, but the clearance stood whatever heading was given, so none of them brought the descent sooner and none was blocked. Caught from above, EZY47DT came down at about 1,400 ft/min towards EJU92DV, at 4,000 ft and turning in behind it: 2.7 NM and 862 ft. EJU92DV caught the localiser behind it, 14.4 NM out, and went around, too close to the aircraft ahead.
+
+**So reviewing a clearance when it is given is not enough.** Session 3 here, session 43 of `train48_sim4_seen` and test session 107 are the same kind: the higher of two aircraft turning onto final together catches the glide path and comes down onto the lower. A clearance needs either to be given only when the aircraft will catch the localiser within the check's 2 minutes, or to be reviewed again before it does, with a way to take it back (keep the aircraft at its level).
+
+**Next, on training hours only.**
+
+1. **A released holder flown on its heading, with seen rates** (session 4 of `train48_sim4_seen`): running now (`train48_sim4_leave`, the `leaving-hold` branch).
+2. **ILS clearances given or reviewed nearer the capture** (session 3 here, session 43 of `train48_sim4_seen`, test session 107).
 3. **Holding aircraft moving in the check's model** (test sessions 7 and 72).
 4. **The back and forth at the stacks** (test sessions 32 and 74), with a new design.
 5. **A path for an aircraft starting inside its downwind** (4 of the 5 test go-arounds).
