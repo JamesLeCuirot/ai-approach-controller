@@ -12,6 +12,7 @@ from __future__ import annotations
 import gzip
 import json
 import math
+import os
 import time
 import urllib.request
 from pathlib import Path
@@ -25,9 +26,16 @@ FIELDS = ["t", "lat", "lon", "alt", "gs", "track", "vrate", "callsign", "flags",
 
 
 def poll(lat: float, lon: float, radius_nm: float = RADIUS_NM + 5, timeout: float = 15.0) -> tuple[float, list[dict]]:
-    """The feed now: (time it was served, seconds since 1970; the aircraft as adsb.lol gives them)."""
-    req = urllib.request.Request(URL.format(lat=lat, lon=lon, radius=radius_nm),
-                                 headers={"User-Agent": "ai-approach-controller"})
+    """The feed now: (time it was served, seconds since 1970; the aircraft as adsb.lol gives them).
+
+    Since November 2026 adsb.lol meters this path: without a key, 500 requests a day per internet address (shared
+    by everyone behind it); a free key from adsb.lol raises that (1,000 a day by its request form, 7,200 for those
+    who feed it). A key in the environment variable ADSBLOL_API_KEY is sent as ``x-api-key``. Over the quota the
+    feed answers 429 (the recorder logs it and skips the poll)."""
+    headers = {"User-Agent": "ai-approach-controller"}
+    if os.environ.get("ADSBLOL_API_KEY"):
+        headers["x-api-key"] = os.environ["ADSBLOL_API_KEY"]
+    req = urllib.request.Request(URL.format(lat=lat, lon=lon, radius=radius_nm), headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.loads(r.read())
     return float(d.get("now", time.time() * 1000)) / 1000.0, d.get("ac", [])
