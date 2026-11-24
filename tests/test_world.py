@@ -261,3 +261,31 @@ def test_cancelled_approach_clearance_is_not_flown(airport):
     captured, sides, v = fly(cancel=True)
     assert not captured and v.cleared is None and sides == {True, False}  # it flew on through the localiser
     assert Instruction("EZY12AB", "cancel_approach", "26L").phrase() == "EZY12AB, cancel approach clearance"
+
+
+def test_aircraft_through_the_localiser_turned_back_from_the_north_captures_it(airport):
+    """Cleared at too steep an angle to capture, the pilot flies through the localiser; turned back onto it from the
+    other side at 30 degrees, still cleared, it captures it and the glide path and lands."""
+    from approach.sim.world import World
+
+    world = World(airport, "26L", seed=5)
+    spawn_at_willo(world, airport, cs="EZY12AB")
+    crs = airport.runways["26L"].course_true
+    script = {5: [("heading", 75.0), ("altitude", 4000)], 300: [("altitude", 3000), ("speed", 180)],
+              420: [("heading", (crs + 90) % 360), ("cleared_ils", "26L")]}  # across it at 90 degrees
+    through_t, captured_t = None, None
+    for t in range(1500):
+        for kind, value in script.get(t, []):
+            world.instruct(Instruction("EZY12AB", kind, value))
+        world.step(1)
+        views = world.views()
+        if not views:
+            break  # landed
+        v = views[0]
+        if through_t is None and not v.loc and v.lateral > 0.3:  # through, on the north side
+            through_t = t
+            world.instruct(Instruction("EZY12AB", "heading", (crs - 30) % 360))
+        if v.loc and captured_t is None:
+            captured_t, captured_nm = t, v.along
+    assert through_t is not None and captured_t > through_t and captured_nm > 10.0
+    assert not views  # landed

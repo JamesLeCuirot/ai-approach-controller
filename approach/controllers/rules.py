@@ -117,6 +117,14 @@ EXPEDITE_MIN_FT = 6000.0  # expedite=True: asked for only above this (lower down
 # straight in: direct to a short leg along the course on its own side of the centreline, then the intercept
 STRAIGHT_LAT_NM = 8.0  # at most this far either side of the extended centreline
 STRAIGHT_LEG_NM = 2.0  # the leg along the course before the intercept (its "downwind")
+# overshoot="rejoin": an aircraft through the final approach line is turned back onto it from the north side as soon
+# as it is REJOIN_THROUGH_NM through (a controller sees it is not turning), only if
+# it would catch the localiser at least REJOIN_MIN_NM out, no more than REJOIN_ABOVE_GP_FT above the glide path
+# (it then comes down a little faster to catch it, as from a planned join), and land at least the spacing minimum
+# ahead of the aircraft behind.
+REJOIN_MIN_NM = 6.0
+REJOIN_THROUGH_NM = 0.3  # turned back once this far through (else a mile through: brought round)
+REJOIN_ABOVE_GP_FT = 300.0
 STRAIGHT_MAX_DEG = 30.0  # the track to the start of that leg at most this far off the final course
 STRAIGHT_MAX_OFF_DEG = 90.0  # and the aircraft heading no further than this from the final course
 # descent="plan": height planning for pilots who descend at real rates
@@ -166,6 +174,8 @@ class Plan:
     straight: bool = False  # straight_in=True: brought straight in, not by way of its stack
     expedite_t: float = -1e9  # when last told to expedite
     resequenced: bool = False  # brought round again after missing the localiser, until it is established
+    rejoin_side: float = 0.0  # overshoot="rejoin": turned back onto the localiser from this side (0: not)
+    rejoin_blocked: bool = False  # ... and the turn back was blocked by the safety check
 
 
 class RulesController(Controller):
@@ -178,7 +188,8 @@ class RulesController(Controller):
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
-                 final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False):
+                 final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False,
+                 overshoot: str = "round"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -370,7 +381,15 @@ class RulesController(Controller):
         its intercept heading. Off (as in every result before 24 Nov 2026), it kept its clearance, so it could catch
         the localiser and glide path anywhere on its way round, at a moment nothing had planned or checked: in
         training session 3 of train48_sim4_ils it did so 160 seconds after its clearance and came down from 5,000 ft
-        onto an aircraft at 4,000 ft turning in behind it (2.7 NM and 862 ft)."""
+        onto an aircraft at 4,000 ft turning in behind it (2.7 NM and 862 ft).
+
+        ``overshoot``: what to do with an aircraft that crosses the final approach line without catching the
+        localiser. "round" brings it round again on its downwind, as in every result before 24 Nov 2026. "rejoin"
+        turns it straight back to intercept from the north side, as a real controller would, when it would still
+        catch the localiser far enough out and low enough (REJOIN_*) and land the spacing minimum ahead of the
+        aircraft behind; otherwise, or if it misses again or the turn back is blocked, it is brought round. Arrivals
+        are brought onto final from the south (the departure routes are to the north), so the overshoot is to the
+        north, on either runway."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -410,6 +429,9 @@ class RulesController(Controller):
         self.final_room = final_room
         self.margin_nm = margin_nm
         self.cancel_missed = cancel_missed
+        if overshoot not in ("round", "rejoin"):
+            raise ValueError(f"overshoot must be round or rejoin, not {overshoot!r}")
+        self.overshoot = overshoot
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -548,11 +570,44 @@ class RulesController(Controller):
         if q.stage in ("downwind", "base", "inbound"):
             legs.append((INTERCEPT_LEG_NM, GS_BASE, icpt))
             final = q.d_join
+        elif q.rejoin_side and not getattr(v, "loc", True):  # turned back onto the localiser from the far side
+            leg, final = self._rejoin_legs(v)
+            legs.append((leg, GS_BASE, (self.runway.course_true - q.rejoin_side * INTERCEPT_DEG) % 360))
         else:
             final = max(v.along, 0.0)
         course = self.runway.course_true
         legs += [(max(final - 4.0, 0.0), 160.0, course), (min(final, 4.0), float(wake.approach_speed(q.actype)), course)]
         return sum(d / self._gs(v, kt, trk) * 3600.0 for d, kt, trk in legs)
+
+    @staticmethod
+    def _rejoin_legs(v) -> tuple[float, float]:
+        """overshoot="rejoin": roughly, the track miles to catch the localiser turned back onto it at INTERCEPT_DEG
+        from where it is (half a mile more for the turn, and a mile on), and how far out it would catch it."""
+        off = abs(v.lateral) + 0.5
+        a = math.radians(INTERCEPT_DEG)
+        return off / math.sin(a) + 1.0, max(v.along - 1.0 - off / math.tan(a), 0.0)
+
+    def _rejoin_heading(self, t: float, p: Plan, v) -> float | None:
+        """overshoot="rejoin": the heading that turns an aircraft through the final approach line on the north side
+        back onto the localiser, or None to bring it round again (see __init__)."""
+        if self.overshoot != "rejoin" or p.side != self.south:  # only from the north side
+            return None
+        leg, catch_nm = self._rejoin_legs(v)
+        if catch_nm < REJOIN_MIN_NM or v.alt_ft > self.runway.glide_path_altitude_ft(catch_nm) + REJOIN_ABOVE_GP_FT:
+            return None
+        hdg = (self.runway.course_true + p.side * INTERCEPT_DEG) % 360
+        course = self.runway.course_true
+        land = t + leg / self._gs(v, GS_BASE, hdg) * 3600.0 + sum(
+            d / self._gs(v, kt, course) * 3600.0
+            for d, kt in ((max(catch_nm - 4.0, 0.0), 160.0), (min(catch_nm, 4.0), float(wake.approach_speed(p.actype)))))
+        behind = [q for q in self.plans.values()
+                  if q is not p and q.stage in ("downwind", "base", "cleared") and q.landing_t >= p.landing_t]
+        if behind:
+            q = min(behind, key=lambda q: q.landing_t)
+            gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(p.actype, q.actype))
+            if q.landing_t - land < gap_nm / self._final_gs(v) * 3600.0:
+                return None
+        return hdg
 
     @staticmethod
     def _corner_saving(from_hdg: float, to_hdg: float, tas_kt: float) -> float:
@@ -1046,11 +1101,20 @@ class RulesController(Controller):
         for p in sorted(self.plans.values(), key=lambda p: p.key):
             v = views[p.cs]
             if p.stage == "cleared":
-                # Crossed to the far side of final without capturing the localiser: bring it round again.
-                if not v.loc and v.lateral * p.side < -1.0:
-                    self._resequence(t, p, "missed the localiser")
-                    if self.cancel_missed and v.cleared:
-                        self._say(p, "cancel_approach", self.rwy)
+                # Crossed to the far side of final without capturing the localiser (or turned back onto it from
+                # there, crossed back): turn it back onto it, or bring it round again.
+                side = p.rejoin_side or p.side
+                first = self.overshoot == "rejoin" and not p.rejoin_side and p.side == self.south
+                if not v.loc and (v.lateral * side < -(REJOIN_THROUGH_NM if first else 1.0) or p.rejoin_blocked):
+                    hdg = self._rejoin_heading(t, p, v) if not (p.rejoin_side or p.rejoin_blocked) else None
+                    if hdg is not None:
+                        p.rejoin_side = -p.side
+                        self._say(p, "heading", self._snap(hdg))
+                        self.notes.append(f"{p.cs} through the localiser: turned back onto it")
+                    else:
+                        self._resequence(t, p, "missed the localiser")
+                        if self.cancel_missed and v.cleared:
+                            self._say(p, "cancel_approach", self.rwy)
                 continue
             if p.resequenced and v.cleared and v.loc:
                 # Re-sequenced, but still cleared for the approach, it captured the localiser on its way round: it is
@@ -1369,6 +1433,7 @@ class RulesController(Controller):
     def _resequence(self, t: float, p: Plan, why: str) -> None:
         p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
         p.resequenced = True
+        p.rejoin_side, p.rejoin_blocked = 0.0, False
         if p.straight:  # round again on the usual downwind
             p.straight, p.side = False, self.south
         self.last_plan_t = -1e9
@@ -1385,7 +1450,9 @@ class RulesController(Controller):
                     p.retry_t = event.get("t", 0) + REISSUE_S
                 elif instr.kind == "heading":
                     p.hdg_cmd = None
-                    if p.stage == "cleared":  # the turn onto the localiser was blocked: back on base, try again
+                    if p.stage == "cleared" and p.rejoin_side:  # the turn back onto it was blocked: bring it round
+                        p.rejoin_blocked = True
+                    elif p.stage == "cleared":  # the turn onto the localiser was blocked: back on base, try again
                         p.stage = "base"
                 elif instr.kind == "speed":
                     p.spd_cmd = None
