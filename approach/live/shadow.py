@@ -45,12 +45,15 @@ from approach.live.spotter import ARRIVAL_P, Entries, Spotter
 
 STEP_S = 10  # the look-ahead decides every step, as in the benchmark
 SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the aircraft land
-# The planner with the four changes of 18 and 19 November (expedite descent, free_speed="fast", straight in,
-# landing in release order; the setting of the second live hour) and slow_room: with the look-ahead, 20.13 minutes per
-# arrival on the 48 new training sessions with 2 go-arounds, against 19.76 with 13 without slow_room and the go-around
-# fixes of 19 November, and 21.85 with 4 with the settings of the 120-session test on the updated simulator.
+# The planner of the latest 120-session test (test120_sim4_margin, 23 Nov 2026): the four changes of 18 and 19
+# November (expedite descent, free_speed="fast", straight in, landing in release order; the setting of the second live
+# hour), slow_room, and the changes of 21 and 22 November (the "holders" stack check, final_room, releasing at
+# "first_near", landings planned half a mile over the minimum). With the look-ahead: 19.8 minutes per arrival on the
+# 120 test sessions with 11 losses of separation and 5 go-arounds, against 20.5, 8 and 12 with the settings before.
+# Planning that close, the planner alone is much less safe: the look-ahead on top is what keeps the spacing.
 PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
-           "slow_room": True}
+           "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
+           "margin_nm": 0.5}
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
 
 
