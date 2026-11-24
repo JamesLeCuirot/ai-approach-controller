@@ -977,11 +977,27 @@ Three losses of separation already match all 48 sessions of `train48_sim4_margin
 
 **Next, on training hours only.**
 
-1. **A released holder flown on its heading, with seen rates** (session 4 of `train48_sim4_seen`): running now (`train48_sim4_leave`, the `leaving-hold` branch).
+1. **A released holder flown on its heading, with seen rates** (session 4 of `train48_sim4_seen`): 5 losses against 3, not merged ([below](#a-released-holder-flown-on-its-heading-24-november)).
 2. **ILS clearances given or reviewed nearer the capture** (session 3 here, session 43 of `train48_sim4_seen`, test session 107). First, what happens when an aircraft goes through the localiser, on the `cancel-missed` branch, queued after the `leaving-hold` run as `train48_sim4_rejoin`. As a real controller would, the planner turns it straight back onto the localiser from the north side at 30° once it is 0.3 NM through, keeping its clearance (`overshoot` "rejoin"). Arrivals are brought onto final from the south, because the departure routes are to the north, so the overshoot is to the north on either runway. It does this only if the aircraft would still catch the localiser at least 6 NM out, no more than 300 ft above the glide path, and land at least the spacing minimum ahead of the aircraft behind. Otherwise, or if it misses again or the safety check blocks the turn back, it is brought round on its downwind as before, now with its approach clearance cancelled (`cancel_missed`, a new instruction in the simulator), so it is cleared again only on its new intercept heading.
 3. **Holding aircraft moving in the check's model** (test sessions 7 and 72).
 4. **The back and forth at the stacks** (test sessions 32 and 74), with a new design.
 5. **A path for an aircraft starting inside its downwind** (4 of the 5 test go-arounds).
+
+### A released holder flown on its heading (24 November)
+
+**The 48 training sessions** flown as `train48_sim4_margin`, with the safety check starting from seen descent rates and flying a holder that has been given a heading on that heading, though it still shows as holding (the `leaving-hold` branch, `--safety seen`; [`runs/lookahead/train48_sim4_leave.json`](../runs/lookahead/train48_sim4_leave.json)):
+
+| | Minutes per arrival | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, check flies a released holder on its heading, seen rates | 19.2 | 753 | 5 | 0 | 1 |
+| Look-ahead, seen rates only (`train48_sim4_seen`) | 19.2 | 753 | 4 | 0 | 2 |
+| Look-ahead, as `train48_sim4_margin` | 19.2 | 753 | 3 | 0 | 2 |
+| Competitor, check flies a released holder on its heading, seen rates | 20.1 | 751 | 80 | 35 | 48 |
+| Competitor, as `train48_sim4_margin` | 20.1 | 751 | 95 | 38 | 37 |
+
+**Two more losses of separation, so not merged.** Session 4's loss, the one the change was for, is gone, and so are the close landing gaps in sessions 24 and 35; session 43 has a new one. Sessions 12 and 29 kept their losses, as in every run since `train48_sim4_margin`. Session 43 has a loss, as with seen rates alone, and sessions 10 and 31 gained one each. The competitor, the planner flying alone under the same check, lost 15 fewer, with 11 more close landing gaps; both are within chance on 48 sessions.
+
+**Three safety-check changes in a row have each fixed the loss they were for and gained others** (seen rates, ILS clearances, and this one). In the two traced before (session 43 with seen rates, session 3 with ILS clearances), the new loss came from a different path, not from the change itself: the look-ahead flies its copies with the same check, so its choices differ from early on. With 3 to 5 losses in 48 sessions, one or two either way is within chance, so these runs can show a change is not clearly better but not that it is worse. Sessions 10 and 31 are being flown again and traced.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
