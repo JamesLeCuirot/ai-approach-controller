@@ -262,3 +262,28 @@ def test_release_first_outside_the_rma_only_slow_and_low_enough():
     assert not c._outside_ok(view(8000.0, 300.0, near_side), p, 11.0)  # too fast
     assert not c._outside_ok(view(8000.0, 240.0, -near_side), p, 11.0)  # on the far side of the final approach course
     assert not c._outside_ok(view(30000.0, 250.0, near_side, vs=0.0), p, 11.0)  # too high for its usual descent
+
+
+def test_cancel_missed_cancels_the_clearance_of_an_aircraft_that_missed_the_localiser():
+    """With cancel_missed, an aircraft cleared for the ILS that crosses to the far side of the final approach line
+    without capturing is told its clearance is cancelled as it is brought round again; without, it keeps it."""
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+    from approach.sim.world import AircraftView
+
+    ap = egkk.load()
+    crs = ap.runways["26L"].course_true
+    for cancel in (False, True):
+        c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", wind_aware=True, stretch=True,
+                            release="eager", descent="plan", height_by="time", cancel_missed=cancel)
+        p = Plan("MISS", "A320", 0.0, c.south, stage="cleared")
+        c.plans = {"MISS": p}
+        lateral = -1.5 * p.side  # 1.5 NM on the far side
+        x, y = ap.centreline_point("26L", 14.0, lateral)
+        v = AircraftView("MISS", "A320", "M", x, y, 4000.0, 180.0, 180.0, 190.0, (crs + 60) % 360, (crs + 60) % 360,
+                         0.0, 0.0, 0.0, "vectoring", "26L", 14.0, lateral, 0.0, (crs + 30) % 360, 4000.0, 180.0,
+                         False, False)
+        out = c.decide(100.0, [v])
+        kinds = [i.kind for i in out if i.callsign == "MISS"]
+        assert p.resequenced and p.stage == "downwind"
+        assert ("cancel_approach" in kinds) == cancel, kinds

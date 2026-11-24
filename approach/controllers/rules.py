@@ -178,7 +178,7 @@ class RulesController(Controller):
                  inbound_descent: str = "stack", lowest_first: str = "holding", release_check: str = "none",
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
-                 final_room: bool = False, margin_nm: float | None = None):
+                 final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -363,7 +363,14 @@ class RulesController(Controller):
 
         ``margin_nm``: the margin added to the spacing minimum when landing slots are planned, in place of
         PLANNING_MARGIN_NM (or FIXED_PATH_MARGIN_NM with fixed paths). None keeps those, as in every result before
-        21 Nov 2026."""
+        21 Nov 2026.
+
+        ``cancel_missed``: an aircraft that crosses the final approach line without catching the localiser is told
+        its approach clearance is cancelled as it is brought round again, and cleared again when it next turns onto
+        its intercept heading. Off (as in every result before 24 Nov 2026), it kept its clearance, so it could catch
+        the localiser and glide path anywhere on its way round, at a moment nothing had planned or checked: in
+        training session 3 of train48_sim4_ils it did so 160 seconds after its clearance and came down from 5,000 ft
+        onto an aircraft at 4,000 ft turning in behind it (2.7 NM and 862 ft)."""
         if speeds not in ("rules", "slot", "none"):
             raise ValueError(f"speeds must be rules, slot or none, not {speeds!r}")
         if release not in ("careful", "eager"):
@@ -402,6 +409,7 @@ class RulesController(Controller):
         self.slow_room = slow_room
         self.final_room = final_room
         self.margin_nm = margin_nm
+        self.cancel_missed = cancel_missed
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -1041,6 +1049,8 @@ class RulesController(Controller):
                 # Crossed to the far side of final without capturing the localiser: bring it round again.
                 if not v.loc and v.lateral * p.side < -1.0:
                     self._resequence(t, p, "missed the localiser")
+                    if self.cancel_missed and v.cleared:
+                        self._say(p, "cancel_approach", self.rwy)
                 continue
             if p.resequenced and v.cleared and v.loc:
                 # Re-sequenced, but still cleared for the approach, it captured the localiser on its way round: it is

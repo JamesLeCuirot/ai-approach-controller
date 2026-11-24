@@ -436,6 +436,8 @@ class World:
             p.hold_fix, p.hold_state = str(instr.value), "to_fix"
         elif instr.kind == "cleared_ils":
             p.cleared = str(instr.value)
+        elif instr.kind == "cancel_approach" and not p.loc:
+            p.cleared = None  # it keeps its heading and level, and won't capture the localiser until cleared again
         elif instr.kind == "expedite" and p.expedite_profile:
             p.expedite = True  # measured pilots only: "bluesky" pilots descend at BlueSky's own rates
 

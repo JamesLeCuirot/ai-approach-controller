@@ -231,3 +231,33 @@ def test_instruction_wording_is_from_where_the_aircraft_is_now(airport):
     assert session.log.events[-1]["text"].endswith("descend altitude 4,000 ft")
     session.instruct(Instruction("W1", "heading", 250.0))  # still turning left towards 180: right from here
     assert "turn right heading" in session.log.events[-1]["text"]
+
+
+def test_cancelled_approach_clearance_is_not_flown(airport):
+    """Cleared for the ILS and then told the clearance is cancelled, the pilot flies its heading through the localiser
+    instead of capturing it; with the clearance kept, the same pilot captures (as scenario ils_capture)."""
+    from approach.sim.world import World
+
+    def fly(cancel: bool):
+        world = World(airport, "26L", seed=5)
+        spawn_at_willo(world, airport, cs="EZY12AB")
+        script = {5: [("heading", 75.0), ("altitude", 4000)], 300: [("altitude", 3000), ("speed", 180)],
+                  420: [("heading", 315.0)], 520: [("heading", 287.0), ("cleared_ils", "26L")]}
+        if cancel:
+            script[530] = [("cancel_approach", "26L")]
+        captured, sides = False, set()
+        for t in range(800):
+            for kind, value in script.get(t, []):
+                world.instruct(Instruction("EZY12AB", kind, value))
+            world.step(1)
+            v = world.views()[0]
+            captured |= bool(v.loc)
+            if t > 520:
+                sides.add(v.lateral > 0)
+        return captured, sides, world.views()[0]
+
+    captured, _, v = fly(cancel=False)
+    assert captured and v.cleared
+    captured, sides, v = fly(cancel=True)
+    assert not captured and v.cleared is None and sides == {True, False}  # it flew on through the localiser
+    assert Instruction("EZY12AB", "cancel_approach", "26L").phrase() == "EZY12AB, cancel approach clearance"
