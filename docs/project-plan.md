@@ -932,6 +932,32 @@ Most of the time gained is in the busiest hours, where closer spacing matters mo
 4. **The ILS clearance reviewed by the safety check** (session 107), as headings and levels are.
 5. **A path for an aircraft starting inside its downwind** (4 of the 5 go-arounds), replacing the early corner cut.
 
+### Seen descent rates with the look-ahead (24 November)
+
+**The 48 training sessions** (753 arrivals) flown as `train48_sim4_margin`, with the safety check starting each aircraft seen descending at the rate it is seen at (the `seen-rates` branch; [`runs/lookahead/train48_sim4_seen.json`](../runs/lookahead/train48_sim4_seen.json)):
+
+| | Minutes per arrival | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, safety check with seen rates | 19.2 | 753 | 4 | 0 | 2 |
+| Look-ahead, as `train48_sim4_margin` | 19.2 | 753 | 3 | 0 | 2 |
+
+**One more loss of separation and nothing better, so not merged.** Sessions 4, 12 and 29 kept their losses, and session 43 gained one. Both sessions were flown again with seen rates and traced:
+
+- *Session 43: a different path, and an ILS clearance nobody checked.* The two runs part about 20 minutes in, when the look-ahead first chooses differently. On this path EZY92KJ and VLG6305, both from WILLO, came along the downwind 3 to 4 NM apart and turned left onto final for 26L together. VLG6305 was cleared for the ILS first and caught the localiser 16.8 NM out. EZY92KJ, on the inside of the turn, was cleared 25 seconds later, crossed the final heading south-west and caught it 13.9 NM out, about 2 NM ahead of VLG6305 and 1,000 ft below. Both were descending to their cleared levels, the one behind slightly quicker (613 against 554 ft/min): 2.0 NM and 897 ft. The safety check doesn't review an ILS clearance or a speed, so nothing in it was checked. It is the same kind as test session 107; the `ils-check` run below tests exactly this.
+- *Session 4: the check's typical pilot.* AUR607Y, an ATR 72, was held by the look-ahead at FL90 in the WILLO hold. VLG6VX, released from TIMBA to 3,000 ft with an expedited descent, passed just north of WILLO heading west, coming down at only 600 to 700 ft/min. With VLG6VX 3.1 NM away and 1,300 ft below, the look-ahead took back AUR607Y's hold at no gain (0.0), and the planner sent it to 3,000 ft on a heading of 280, the same way. It came down at 1,100 to 1,180 ft/min: 2.2 NM and 875 ft, 66 seconds later and well inside the check's two minutes. The check let it through because it flies one typical pilot. It takes AUR607Y at the middle rate for its height (about 1,010 ft/min), and VLG6VX from its seen rate easing back over two minutes to the middle rate for an expedited descent (about 1,100 ft/min). In fact VLG6VX stayed below the slowest tenth of expedited descents, and AUR607Y was quicker than the middle. Starting from the seen rate is the right idea, but easing back to the typical rate over two minutes undoes it, and nothing allows for the aircraft told to descend being quicker than typical.
+
+**So for these convergences, what the check needs is caution, not a better guess.** A descent should be judged with the aircraft told to descend at a quick rate for its height (say the fastest fifth) and the aircraft near it held at the rate it is seen at, not the middle for both. That will block more descents, so its cost in minutes has to be measured with it.
+
+**Taking a move back only with a gain won't work as written** (item 2 above). In `train48_sim4_margin`, 93% of the stack holds the look-ahead took back had a gain under 1 (median 0.17), so requiring MIN_GAIN would keep nearly every hold to the end. But 48 of the 150 were held again within 3 minutes, so the back and forth is real. It needs another design, such as a hold kept for some minimum time once made.
+
+**Next, on training hours only.**
+
+1. **The ILS clearance reviewed by the safety check** (session 43 here, test session 107): running now (`train48_sim4_ils`, the `ils-check` branch).
+2. **A cautious descent check**: the aircraft told to descend at a quick rate for its height and the others at the rate they are seen at (session 4 here; 6 of the 11 test losses).
+3. **Holding aircraft moving in the check's model** (test sessions 7 and 72).
+4. **The back and forth at the stacks** (test sessions 32 and 74), with a new design.
+5. **A path for an aircraft starting inside its downwind** (4 of the 5 test go-arounds).
+
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
 **Seen descent rates.** Session 28's loss of separation (a Dash 8 and an A320neo converging while descending at different rates) suggested the safety check should start each aircraft from the rate it is seen descending at, not the typical rate for its height. On the real tracks of 6 training days (24,485 points in descents), predicting height 60 and 120 seconds ahead, the typical rate was out by 294 and 475 ft on average; starting from the seen rate and easing back towards the typical one over about 2 minutes, by 209 and 388 ft (keeping the seen rate throughout was worse, 240 and 561). With the planner alone on 96 training sessions (seed 2027), the safety check with seen rates made no difference: 151 losses of separation either way, 22.56 minutes per arrival against 22.57, and only 11 sessions came out differently. The check blocks only instructions that would bring a conflict sooner than without them, and these convergences start from clearances that were safe when given. It stays on its own branch.
