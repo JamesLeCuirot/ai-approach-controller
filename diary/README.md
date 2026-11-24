@@ -7,6 +7,7 @@ Videos and screenshots from before 6 November 2026 show an older commit ID: see 
 
 | Date | Milestone | Entry |
 | --- | --- | --- |
+| 2026-11-24 | `stage2-03-live-shadow` | [Stage 2: live traffic in shadow, what it taught the planner, and a stricter safety check](2026-11-24-stage2-03-live-shadow/README.md) |
 | 2026-11-15 | `stage2-02-look-ahead` | [Stage 2: the look-ahead, three simulator bugs, and where the minutes go](2026-11-15-stage2-02-look-ahead/README.md) |
 | 2026-11-11 | `stage2-01-how-aircraft-respond` | [Stage 2 begins: how real aircraft respond, and a simulator that flies like them](2026-11-11-stage2-01-how-aircraft-respond/README.md) |
 | 2026-11-11 | `stage1-08-base-turn-ai` | [Stage 1b: the AI turns aircraft onto base, and stage 1 ends level with the rules](2026-11-11-stage1-08-base-turn-ai/README.md) |

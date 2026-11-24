@@ -49,3 +49,5 @@ date,milestone,scenario,controller,code_version,arrivals,landed,separation_losse
 2026-11-11,stage2-01-how-aircraft-respond,rules_stretch__measured_model_2026-05-30T12,rules_stretch__measured_model,f9cf326,28,28,9,0,2.8,4.9,84.0,22.4,60,8,90,690b0337567c95b5617722c1e4ec340a8641eb154880728fed7aef695efc5e62
 2026-11-15,stage2-02-look-ahead,planner_2026-05-30T12,planner_2026-05-30T12,a366d52,28,28,7,0,3.0,5.6,83.7,21.6,9,4,100,
 2026-11-15,stage2-02-look-ahead,lookahead_2026-05-30T12,lookahead_2026-05-30T12,ddf66b7,28,28,1,0,3.1,4.9,103.8,22.1,23,0,100,
+2026-11-24,stage2-03-live-shadow,planner_2026-05-30T12,planner_2026-05-30T12,790717f,28,28,10,0,2.6,5.0,79.2,24.2,107,3,100,55fce736068cec44862befefbb7cc3bd9851556dcb8d83112d662425f4f70b0e
+2026-11-24,stage2-03-live-shadow,lookahead_2026-05-30T12,lookahead_2026-05-30T12,ed0e2b3,28,28,0,0,3.5,5.7,96.7,24.1,39,0,100,51fa08177d2630936c4bba394406c04400503b0f818bdca3d7bfe7b26ade0445
