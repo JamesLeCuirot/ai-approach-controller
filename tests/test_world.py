@@ -289,3 +289,61 @@ def test_aircraft_through_the_localiser_turned_back_from_the_north_captures_it(a
             captured_t, captured_nm = t, v.along
     assert through_t is not None and captured_t > through_t and captured_nm > 10.0
     assert not views  # landed
+
+
+def test_a_drifting_pilot_keeps_the_spread_and_forgets_its_place_as_real_crews_do():
+    """Drifting pilots (approach.sim.world): each starts exactly where it was drawn, the spread of places stays the
+    measured one, and a place fades as the real ones do (a correlation of normal scores of about 0.35 a minute on,
+    down to the lasting part, 0.07, after ten)."""
+    import math
+    import random
+    from statistics import NormalDist
+
+    import numpy as np
+
+    from approach.sim.world import DRIFT_LASTING, drift_start, drift_step
+
+    nd, rng = NormalDist(), random.Random(5)
+    for u in (0.03, 0.5, 0.91):
+        lasting, z = drift_start(u, rng)
+        assert nd.cdf(math.sqrt(DRIFT_LASTING) * lasting + math.sqrt(1 - DRIFT_LASTING) * z) == pytest.approx(u, abs=1e-9)
+    n = 4000
+    us0 = [rng.random() for _ in range(n)]
+    state = [drift_start(u, rng) for u in us0]
+    at = {}
+    for t in range(5, 605, 5):
+        new = []
+        for lasting, z in state:
+            z, u = drift_step(lasting, z, 5.0, rng)
+            new.append((lasting, z, u))
+        state = [(a, b) for a, b, _ in new]
+        if t in (60, 600):
+            at[t] = np.array([u for _, _, u in new])
+    z0 = np.array([nd.inv_cdf(u) for u in us0])
+    for t, want in ((60, DRIFT_LASTING + (1 - DRIFT_LASTING) * math.exp(-60 / 50)), (600, DRIFT_LASTING)):
+        u = at[t]
+        assert abs(np.mean(u < 0.2) - 0.2) < 0.03 and abs(np.mean(u) - 0.5) < 0.02  # the spread is kept
+        zt = np.array([nd.inv_cdf(min(max(x, 1e-9), 1 - 1e-9)) for x in u])
+        assert np.corrcoef(z0, zt)[0, 1] == pytest.approx(want, abs=0.05)
+
+
+def test_drifting_pilots_start_as_measured_ones_and_then_wander(airport):
+    """Same seed: a drifting pilot is drawn exactly as a measured one (the other draws are left as they were), and
+    its descent rate then wanders, where a measured pilot's place stays put."""
+    from approach.sim.world import World
+
+    pilots = {}
+    for model in ("measured", "drifting"):
+        world = World(airport, "26L", seed=11, pilots=model)
+        spawn_at_willo(world, airport)
+        p = world.pilots["TEST1"]
+        start = (p.descent_u, p.bank_deg, p.decel_kt_s, p.final_slowing_kt_s)
+        world.instruct(Instruction("TEST1", "altitude", 3000))
+        places = set()
+        for _ in range(24):
+            world.step(10)
+            places.add(round(p.descent_u, 3))
+        pilots[model] = (start, places)
+    assert pilots["measured"][0] == pilots["drifting"][0]
+    assert pilots["measured"][1] == {round(pilots["measured"][0][0], 3)}
+    assert len(pilots["drifting"][1]) >= 5 and all(0.0 < u < 1.0 for u in pilots["drifting"][1])

@@ -70,13 +70,15 @@ def make_controller(name: str, airport: Airport, scenario: Scenario, seed: int):
 
 def world_options(controller_name: str) -> tuple[str, str, str]:
     """A controller name can end in options after a double underscore: "__measured" for pilots who fly like real
-    arrivals, "__model" for the safety check's look-ahead from the model of how aircraft respond, or both
-    ("rules_stretch__measured_model"). Returns the controller's own name, the pilots and the look-ahead."""
+    arrivals ("__drifting" for ones whose descent rates also wander as real crews' do), "__model" for the safety
+    check's look-ahead from the model of how aircraft respond, or both ("rules_stretch__measured_model"). Returns the
+    controller's own name, the pilots and the look-ahead."""
     base, _, opts = controller_name.partition("__")
     words = opts.split("_") if opts else []
     if base == "rules_vector" or base.startswith("ai_vector"):  # stage 2's world unless told otherwise
         words = words or ["measured", "model"]
-    return base, "measured" if "measured" in words else "bluesky", "model" if "model" in words else "old"
+    pilots = "drifting" if "drifting" in words else "measured" if "measured" in words else "bluesky"
+    return base, pilots, "model" if "model" in words else "old"
 
 
 def run_session(airport: Airport, scenario: Scenario, controller_name: str, log: SessionLog, seed: int = 1,
