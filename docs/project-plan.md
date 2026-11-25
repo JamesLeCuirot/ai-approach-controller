@@ -1055,7 +1055,29 @@ The competitor, the planner flying alone, does not use copies and is the same in
 
 **Close landing gaps are up**, a lot with the planner alone (60 against 36) and a little with the look-ahead (4 against 2). A crew whose rate changes reaches the final approach earlier or later than planned, and the planner's spacing does not allow for that yet. That is the next thing to look at.
 
-**Merged, as an option** (`pilots="drifting"`; the default is unchanged, so earlier results can be repeated). Shadow mode now flies drifting pilots, and the 120 test sessions are being flown again with them and today's planner (`test120_sim5_drift`). The third live hour is waiting for an adsb.lol key. Without one, the feed allows 500 requests a day for each internet address. This machine shares its address, and none of the 500 were left at 13:53 UTC on 25 November.
+**Merged, as an option** (`pilots="drifting"`; the default is unchanged, so earlier results can be repeated). Shadow mode now flies drifting pilots, and the 120 test sessions are being flown again with them and today's planner (`test120_sim5_drift`). The third live hour was waiting for an adsb.lol key: without one, the feed allows 500 requests a day for each internet address, and this machine shares its address. It was flown that evening from adsb.fi's feed instead ([below](#the-third-live-hour-25-november)).
+
+### The third live hour (25 November)
+
+The look-ahead flew the real Gatwick arrivals of a third hour, 17:09 to 18:09 UTC, with today's settings: drifting pilots, the turn back onto the localiser after an overshoot, and the approach cancelled when it can't be ([`runs/shadow/2026-11-25T1708`](../runs/shadow/2026-11-25T1708/)). Gatwick was landing on runway 08R, towards the east, the first live hour on that end. The forecast was the GFS 12Z run for 17:00. The practice runs were paused for the hour, and the AI was never more than 14 seconds behind the clock.
+
+The hour was recorded from [adsb.fi](https://adsb.fi)'s open data feed rather than adsb.lol's. adsb.lol's keyless allowance, 500 requests a day for each internet address, was used up on this machine's shared address. adsb.fi serves the same fields without a key, one request a second, for personal, non-commercial use ([its terms](https://github.com/adsbfi/opendata)); `python -m approach.live.feed --source adsbfi` records from it. Its terms don't allow its data to be relicensed, so the files that hold its positions (the spotter's judgements, the real controllers' session and the radar replay) are kept locally. The AI's session, the summary and the aircraft-by-aircraft comparison are in the run folder.
+
+| | AI | Real controllers |
+| --- | --- | --- |
+| Arrivals handed over in the hour | 10 | 11 |
+| Landed | 10 | 11 |
+| Losses of separation | 0 | 0 |
+| Go-arounds | 0 | 0 |
+| Minutes per arrival, handover to landing (the 10 both flew) | 17.84 | 15.31 |
+| Track miles per arrival | 66 | 61 (all 11) |
+| Aircraft held in a stack | 3, for under a minute each | 0 |
+
+The gap is 2.5 minutes per arrival, against 2.8 on the second live hour and 5.5 on the first.
+
+- **Spotting.** Of the 170 aircraft that entered the handover region, the spotter called 10 Gatwick arrivals, all of them real. It missed one: RYR956, a Ryanair 737 that took off from Stansted at about 17:43 and flew straight to Gatwick, probably to position for a later flight. It entered the region 40 NM north-east, climbing through 6,200 ft, and the spotter judged it 16% likely to be a Gatwick arrival. Its real crew took 24.0 minutes from there to landing.
+- **Where the 2.5 minutes went.** Two arrivals from the south-west account for 17.2 of the 25.3 extra minutes: AUR8LG, an ATR 72 turboprop, took 22.5 minutes against the real 13.0, and EZY53NC took 19.1 against 11.4. Landing on 08R, the final approach comes in from the west. The real controllers flew both straight north-east from handover, 40 NM south-west, onto the final 10 to 13 NM out: about 41 track miles each. The planner sends every arrival from the south-west to its stack, WILLO, 10 NM south of the airport. From there it turned them west on a downwind and back round onto the final, and held each at WILLO for under a minute on the way. The straight-in path doesn't take them, because it is only for arrivals within 8 NM of the extended centreline, and these were about 22 NM south of it. Real controllers' short cut is a path straight to a base leg from the approach side of the airport, and that is the next thing to try, on the training hours that land on 08R.
+- **The other eight.** Arrivals from the south-east flew much the same path as the real ones, west along the south of the airport and onto a base west of it, and took 0.7 to 2.5 minutes longer. Two were quicker: EZY9096 from the north-west by 0.3 minutes and RYR81UL by 1.6.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
