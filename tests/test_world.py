@@ -351,15 +351,16 @@ def test_drifting_pilots_start_as_measured_ones_and_then_wander(airport):
 
 def test_a_handover_pilot_starts_where_its_real_crew_was(airport):
     """"drifting_handover": an aircraft handed over descending at 2,100 ft/min from FL150 starts fast in the spread
-    and already descending; one handed over level is drawn exactly as a drifting pilot is."""
-    from approach.sim.world import HANDOVER_CLEARED_FT, World, descent_rate_at
+    and, once cleared lower, descends that fast; one handed over level is drawn exactly as a drifting pilot is."""
+    from approach.sim.world import World, descent_rate_at
 
     pos = airport.holds["WILLO"].position
     world = World(airport, "08R", seed=11, pilots="drifting_handover")
     world.spawn("FAST1", "A319", pos.lat - 0.3, pos.lon - 0.4, 30.0, 15000, 270, vs_fpm=-2112)
     p = world.pilots["FAST1"]
-    assert p.descent_u > 0.85 and p.target_alt == HANDOVER_CLEARED_FT
+    assert p.descent_u > 0.85 and p.target_alt == 15000
     assert descent_rate_at(airport.icao, p.descent_profile, 15000) == pytest.approx(2112, abs=20)
+    world.instruct(Instruction("FAST1", "altitude", 8000))
     world.step(20)
     v = {x.cs: x for x in world.views()}["FAST1"]
     assert v.vs_fpm < -1500 and v.alt_ft < 14700

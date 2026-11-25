@@ -86,8 +86,11 @@ PILOT_MODELS = ("bluesky", "measured", "drifting", "drifting_handover")
 # training days, 9% of those handed over level on the approach side more than 8 NM off the final approach line were
 # brought straight in, against 26% at 1,000 to 1,500 ft/min and 53% faster than 2,000 (approach.data.arrivals'
 # handover state, 25 Nov 2026). A simulated pilot used to start level, at a place in the spread drawn independently of
-# its real crew's. This one starts at the place in the usual spread at its height that its real crew's rate puts it
-# (then drifting as the others do), descending to HANDOVER_CLEARED_FT until it is told otherwise.
+# its real crew's. This one starts at the place in the usual spread at its height that its real crew's rate puts it,
+# then drifts as the others do. It still starts level, and descends once the controller clears it lower: the level the
+# real crew was cleared to before handover isn't known, and starting it down to the stacks' lowest level (FL70) brought
+# arrivals down into a stack's holders before the planner had given them its own level (session 33 of the 48 training
+# sessions: 5 losses of separation, and the stack locked up).
 DRIFT_TAU_S = 50.0
 DRIFT_LASTING = 0.07
 DRIFT_EVERY_S = 5.0  # how often a drifting pilot's place moves
@@ -104,7 +107,6 @@ FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
 # 16 November 2026 a pilot descended at one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
 DESCENT_BY_HEIGHT_BOUNDS = (400.0, 2500.0)
 HANDOVER_DESCENT_FPM = 300.0  # "drifting_handover": a real rate at handover this fast or faster is a descent
-HANDOVER_CLEARED_FT = 7000.0  # ... which goes on to this level (the stacks' lowest) until the first instruction
 EXPEDITE_DONE_FT = 200.0  # an expedited descent ends this close above the cleared level
 APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0, "drifting": 5.0, "drifting_handover": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
@@ -401,13 +403,12 @@ class World:
                     p.expedite_profile = expedite_profile(self.airport.icao, u)
                     p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
                     if self.pilot_model == "drifting_handover" and vs_fpm is not None \
-                            and -vs_fpm >= HANDOVER_DESCENT_FPM and alt_ft > HANDOVER_CLEARED_FT + 500.0:
+                            and -vs_fpm >= HANDOVER_DESCENT_FPM:
                         u = place_of(self.airport.icao, -vs_fpm, alt_ft)
                         p.descent_u = u
                         p.descent_profile = descent_profile(self.airport.icao, u)
                         p.expedite_profile = expedite_profile(self.airport.icao, u)
                         p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
-                        p.target_alt = HANDOVER_CLEARED_FT
                     if self.drifting:
                         p.drift_lasting, p.drift_z = drift_start(p.descent_u, self.drift_rng)
                         p.drift_t = self.t
@@ -419,8 +420,6 @@ class World:
             if i >= 0:
                 self.bs.traf.ap.bankdef[i] = math.radians(p.bank_deg)
                 self.bs.traf.ap.vsdef[i] = p.descent_fpm * FPM_TO_MS
-                if p.target_alt < alt_ft - 500.0:  # "drifting_handover": already descending
-                    self.stack(f"ALT {cs} {p.target_alt:.0f}")
             p.spd_set = cas_kt
         self.pilots[cs] = p
 
