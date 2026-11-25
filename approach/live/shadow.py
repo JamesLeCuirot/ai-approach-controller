@@ -51,9 +51,12 @@ SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the a
 # "first_near", landings planned half a mile over the minimum). With the look-ahead: 19.8 minutes per arrival on the
 # 120 test sessions with 11 losses of separation and 5 go-arounds, against 20.5, 8 and 12 with the settings before.
 # Planning that close, the planner alone is much less safe: the look-ahead on top is what keeps the spacing.
+# From 25 November, an aircraft through the localiser is turned back onto it from the north, as a real controller
+# would, or brought round with its approach clearance cancelled (overshoot "rejoin", cancel_missed): on 48 training
+# sessions with the look-ahead, the same 3 losses of separation and 19.3 minutes per arrival against 19.2.
 PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
            "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
-           "margin_nm": 0.5}
+           "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin"}
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
 
 
