@@ -58,6 +58,9 @@ PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straigh
            "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
            "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin"}
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
+# From 25 November, the simulated crews' descent rates wander as real crews' do (approach.sim.world, "drifting"): on 48
+# training sessions with the look-ahead, 2 losses of separation against 3 and 18.5 minutes per arrival against 19.3.
+PILOTS = "drifting"
 
 
 class ShadowSession(LiveSession):
@@ -72,7 +75,7 @@ class ShadowEnv(LookAheadEnv):
     """The look-ahead's world with no recorded hour behind it: arrivals are added live."""
 
     def __init__(self, planner: dict | None = None):
-        super().__init__(hours=[("2024-01-09", 12)], planner=planner)  # the hours are never drawn from
+        super().__init__(hours=[("2024-01-09", 12)], planner=planner, pilots=PILOTS)  # the hours are never drawn from
 
     def start(self, runway: str, wind, wind_label: str, day: str, duration_s: float, pilot_seed: int, title: str):
         self.scheme = wake.scheme_for(day)
