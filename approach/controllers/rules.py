@@ -189,7 +189,7 @@ class RulesController(Controller):
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
                  final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False,
-                 overshoot: str = "round"):
+                 overshoot: str = "round", expedite_rate: str = "p50"):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -344,6 +344,17 @@ class RulesController(Controller):
         separation against 159, 38 go-arounds against 36, all within chance (few arrivals are handed over on the
         final line). Off, as in every result before 19 Nov 2026.
 
+        ``expedite_rate`` (with expedite and height_by="time"): the quantile of the measured rates (real arrivals
+        short of distance, never slower than the usual rate at the same quantile) a descent not yet seen expediting
+        is planned on: "p50", the median, or "p75", a crew quicker than three in four. Once the aircraft has been
+        seen expediting for EXPEDITE_SETTLE_S, the estimate is scaled by its own rate as before, so a slow crew is
+        found out half a minute in and its path lengthened. Planned on the median, an arrival from the south-west
+        landing on 08R is sent to WILLO and back west, where real controllers bring it straight onto the final and
+        its crew comes down at 1,500 ft/min or more. On the 48 training sessions (seed 2028, the planner alone,
+        drifting pilots), "p75" took 18.23 minutes per arrival against 18.68 (quicker in 30 sessions, slower in 12),
+        with 59 losses of separation against 88, 37 go-arounds against 39 and 45 landing gaps inside the minimum
+        against 60. "p50" in every result before 25 Nov 2026.
+
         ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
         already released, rather than in the order of the landing times first estimated for each (``key``). Without
         it, an aircraft that held while one with a later first estimate was released from the other stack is put
@@ -432,6 +443,9 @@ class RulesController(Controller):
         if overshoot not in ("round", "rejoin"):
             raise ValueError(f"overshoot must be round or rejoin, not {overshoot!r}")
         self.overshoot = overshoot
+        if expedite_rate not in ("p50", "p75"):
+            raise ValueError(f"expedite_rate must be p50 or p75, not {expedite_rate!r}")
+        self.expedite_rate = expedite_rate
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -688,8 +702,9 @@ class RulesController(Controller):
         return lose / max(rate, 400.0) * max(v.gs_kt, 150.0) / 60.0 + DESCENT_MARGIN_NM
 
     def _expedite_s(self, v, to_alt: float, p: Plan | None = None) -> float:
-        """Seconds to get down to `to_alt` once expediting: at the median rate real arrivals short of distance reach
-        at each height (never slower than the usual median), plus the margin. Once the aircraft has been expediting
+        """Seconds to get down to `to_alt` once expediting: at the rate real arrivals short of distance reach at each
+        height (never slower than the usual rate), at the quantile ``expedite_rate`` (the median unless set), plus
+        the margin. Once the aircraft has been expediting
         for EXPEDITE_SETTLE_S (told by this planner), scaled by how much faster or slower than that it is seen
         descending, as _descent_s does: planned on the median, a pilot who expedites slowly was released from FL130
         and could not get down in time (19 Nov 2026)."""
@@ -698,7 +713,8 @@ class RulesController(Controller):
         bands, short = descent_by_height(self.airport.icao), expedite_by_height(self.airport.icao)
         if not bands or len(short) != len(bands):
             return self._descent_s(v, to_alt, measured=True)
-        fast = tuple(max(b["p50"], e["p50"]) for (_, b), (_, e) in zip(bands, short))
+        q = self.expedite_rate
+        fast = tuple(max(b[q], e[q]) for (_, b), (_, e) in zip(bands, short))
         scale = 1.0
         if (p is not None and getattr(v, "expedite", False) and v.vs_fpm < -300
                 and self.now - p.expedite_t >= EXPEDITE_SETTLE_S):
