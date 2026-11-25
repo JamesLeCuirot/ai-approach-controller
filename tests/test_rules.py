@@ -262,3 +262,94 @@ def test_release_first_outside_the_rma_only_slow_and_low_enough():
     assert not c._outside_ok(view(8000.0, 300.0, near_side), p, 11.0)  # too fast
     assert not c._outside_ok(view(8000.0, 240.0, -near_side), p, 11.0)  # on the far side of the final approach course
     assert not c._outside_ok(view(30000.0, 250.0, near_side, vs=0.0), p, 11.0)  # too high for its usual descent
+
+
+def test_cancel_missed_cancels_the_clearance_of_an_aircraft_that_missed_the_localiser():
+    """With cancel_missed, an aircraft cleared for the ILS that crosses to the far side of the final approach line
+    without capturing is told its clearance is cancelled as it is brought round again; without, it keeps it."""
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+    from approach.sim.world import AircraftView
+
+    ap = egkk.load()
+    crs = ap.runways["26L"].course_true
+    for cancel in (False, True):
+        c = RulesController(ap, "26L", fixed_paths=True, speeds="slot", wind_aware=True, stretch=True,
+                            release="eager", descent="plan", height_by="time", cancel_missed=cancel)
+        p = Plan("MISS", "A320", 0.0, c.south, stage="cleared")
+        c.plans = {"MISS": p}
+        lateral = -1.5 * p.side  # 1.5 NM on the far side
+        x, y = ap.centreline_point("26L", 14.0, lateral)
+        v = AircraftView("MISS", "A320", "M", x, y, 4000.0, 180.0, 180.0, 190.0, (crs + 60) % 360, (crs + 60) % 360,
+                         0.0, 0.0, 0.0, "vectoring", "26L", 14.0, lateral, 0.0, (crs + 30) % 360, 4000.0, 180.0,
+                         False, False)
+        out = c.decide(100.0, [v])
+        kinds = [i.kind for i in out if i.callsign == "MISS"]
+        assert p.resequenced and p.stage == "downwind"
+        assert ("cancel_approach" in kinds) == cancel, kinds
+
+
+def test_overshoot_rejoin_turns_an_aircraft_through_the_localiser_back_onto_it_from_the_north():
+    """With overshoot="rejoin", an aircraft brought onto final from the south that goes 0.3 NM through the localiser
+    without catching it is turned back at 30 degrees from the north side, keeping its clearance; if it would catch it
+    too close in, too high or too near the aircraft behind, or misses again, or the turn back is blocked, it is
+    brought round (its clearance cancelled with cancel_missed)."""
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController
+    from approach.instructions import Instruction
+    from approach.sim.world import AircraftView
+
+    ap = egkk.load()
+    for rwy in ("26L", "08R"):
+        crs = ap.runways[rwy].course_true
+
+        def setup(along=14.0, through=0.4, alt=3000.0, behind_s=None):
+            c = RulesController(ap, rwy, fixed_paths=True, speeds="slot", wind_aware=True, stretch=True,
+                                release="eager", descent="plan", height_by="time", cancel_missed=True,
+                                overshoot="rejoin")
+            p = Plan("OVER", "A320", 0.0, c.south, stage="cleared")
+            p.landing_t = 400.0
+            c.plans = {"OVER": p}
+            if behind_s is not None:
+                q = Plan("NEXT", "A320", 10.0, c.south, stage="downwind")
+                q.landing_t = 400.0 + behind_s
+                c.plans["NEXT"] = q
+            return c, p, view(c, along, -through * p.side, alt)
+
+        def view(c, along, lateral, alt, hdg=None):
+            x, y = ap.centreline_point(rwy, along, lateral)
+            hdg = (crs - c.south * 30) % 360 if hdg is None else hdg  # its intercept heading from the south
+            return AircraftView("OVER", "A320", "M", x, y, alt, 180.0, 180.0, 190.0, hdg, hdg, 0.0, 0.0, 0.0,
+                                "vectoring", rwy, along, lateral, 0.0, hdg, alt, 180.0, False, False)
+
+        def said(c, v, t=100.0):
+            return {i.kind: i.value for i in c.decide(t, [v]) if i.callsign == "OVER"}
+
+        c, p, v = setup()
+        out = said(c, v)
+        back = (crs + c.south * 30) % 360  # from the north side, 30 degrees the other way
+        assert p.stage == "cleared" and not p.resequenced and p.rejoin_side == -c.south, rwy
+        assert abs((out["heading"] - back + 180) % 360 - 180) <= 2.5 and "cancel_approach" not in out, (rwy, out)
+        north = ap.centreline_point(rwy, 14.0, -c.south)[1] > ap.centreline_point(rwy, 14.0, c.south)[1]
+        assert north  # the far side is the north side, on both runways
+        assert said(c, view(c, 13.0, -0.8 * p.side, 3000.0, hdg=back)) == {}  # on its way back: left alone
+        # it goes through again, back to the south side: brought round, its clearance cancelled
+        out = said(c, view(c, 11.0, 1.2 * p.side, 3000.0, hdg=back), t=160.0)
+        assert p.resequenced and p.stage == "downwind" and "cancel_approach" in out, rwy
+        # brought round at once: too close in, too high
+        for kw in ({"along": 7.0}, {"alt": 4500.0}):
+            c, p, v = setup(**kw)
+            out = said(c, v)
+            assert p.resequenced and "cancel_approach" in out, (rwy, kw)
+        # not turned back if it would land within the spacing minimum of the aircraft behind
+        c, p, v = setup(behind_s=60.0)
+        assert c._rejoin_heading(100.0, p, v) is None, rwy
+        c, p, v = setup(behind_s=400.0)
+        assert c._rejoin_heading(100.0, p, v) is not None, rwy
+        # the turn back blocked by the safety check: brought round
+        c, p, v = setup()
+        said(c, v)
+        c.on_event({"kind": "blocked", "cs": "OVER", "t": 105.0,
+                    "instruction": Instruction("OVER", "heading", back), "reason": "test"})
+        out = said(c, v, t=110.0)
+        assert p.resequenced and "cancel_approach" in out, rwy
