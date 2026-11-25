@@ -45,6 +45,7 @@ import os
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import NormalDist
 from typing import TYPE_CHECKING
 
 from approach import wake
@@ -72,7 +73,18 @@ MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilo
 # Darragh hour, about ten times faster, and it is used for training and the benchmark alike (same physics in both).
 SIM_DT_S = float(os.environ.get("APPROACH_SIM_DT", "0.5"))
 
-PILOT_MODELS = ("bluesky", "measured")
+PILOT_MODELS = ("bluesky", "measured", "drifting")
+# "drifting": measured pilots whose place in the spread of descent rates wanders as real crews' does. Measured from the
+# height real arrivals lose over 60 s windows within their descents, on 12 training days (5,965 descents of 2 minutes
+# or more; approach.data.response, 25 Nov 2026): the correlation of a crew's place (normal scores) between windows 60,
+# 120, 240 and 360 s apart is 0.52, 0.24, 0.10 and 0.12, against 1 for a "measured" pilot, which keeps its place for
+# the whole flight. A place that drifts back to the middle with a time constant of 50 s, plus a lasting part (7% of the
+# spread) for the crew's own habit, fits all six within 0.02. So of the slowest fifth, 39% are still in the slowest
+# fifth 2 minutes later, not all of them.
+DRIFT_TAU_S = 50.0
+DRIFT_LASTING = 0.07
+DRIFT_EVERY_S = 5.0  # how often a drifting pilot's place moves
+_NORMAL = NormalDist()
 FPM_TO_MS = 0.00508
 REAL_DIR = Path(__file__).resolve().parents[2] / "data" / "real"
 # Physical bounds on each measured quantity, for the tails beyond the 10th and 90th percentiles.
@@ -85,7 +97,7 @@ FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
 # 16 November 2026 a pilot descended at one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
 DESCENT_BY_HEIGHT_BOUNDS = (400.0, 2500.0)
 EXPEDITE_DONE_FT = 200.0  # an expedited descent ends this close above the cleared level
-APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0}  # real pilots slow to their approach speed from about 5 NM
+APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0, "drifting": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
 # turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
 # 15-25, 25-45, 45-90 and over 90 degrees bank 13.6, 19.3, 22.4 and 23.7.
@@ -141,6 +153,29 @@ def descent_profile(airport_icao: str, u: float) -> tuple[float, ...]:
     """A pilot's descent rate (ft/min) at the middle of each height band, at cumulative probability u in every band:
     a pilot who descends fast high up descends fast lower down too."""
     return tuple(draw(q, u, DESCENT_BY_HEIGHT_BOUNDS) for _, q in descent_by_height(airport_icao))
+
+
+@functools.lru_cache(maxsize=4096)
+def profiles_at(airport_icao: str, u: float) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """A pilot's usual and expedited descent profiles at cumulative probability u (cached: drifting pilots move)."""
+    return descent_profile(airport_icao, u), expedite_profile(airport_icao, u)
+
+
+def drift_start(u: float, rng: random.Random) -> tuple[float, float]:
+    """A drifting pilot's two parts at a first place u in the spread: the lasting part (the crew's habit) and the part
+    that drifts, as normal scores, drawn so that together they put it at u."""
+    z = _NORMAL.inv_cdf(min(max(u, 1e-6), 1 - 1e-6))
+    lasting = math.sqrt(DRIFT_LASTING) * z + math.sqrt(1.0 - DRIFT_LASTING) * rng.gauss(0.0, 1.0)
+    drifting = (z - math.sqrt(DRIFT_LASTING) * lasting) / math.sqrt(1.0 - DRIFT_LASTING)
+    return lasting, drifting
+
+
+def drift_step(lasting: float, drifting: float, dt: float, rng: random.Random) -> tuple[float, float]:
+    """The drifting part dt seconds on (back towards the middle with time constant DRIFT_TAU_S, the spread kept), and
+    the pilot's place in the spread then."""
+    a = math.exp(-dt / DRIFT_TAU_S)
+    drifting = a * drifting + math.sqrt(1.0 - a * a) * rng.gauss(0.0, 1.0)
+    return drifting, _NORMAL.cdf(math.sqrt(DRIFT_LASTING) * lasting + math.sqrt(1.0 - DRIFT_LASTING) * drifting)
 
 
 def descent_rate_at(airport_icao: str, profile: tuple[float, ...], alt_ft: float) -> float:
@@ -253,6 +288,9 @@ class Pilot:
     descent_profile: tuple[float, ...] = ()  # its rate at the middle of each measured height band
     descent_u: float = 0.5  # where its usual rate lies in the measured spread (its expedited rate lies there too)
     expedite_profile: tuple[float, ...] = ()  # its rate in each band once told to expedite
+    drift_lasting: float = 0.0  # "drifting" pilots: the lasting part of its place in the spread (normal score)
+    drift_z: float = 0.0  # ... and the part that drifts
+    drift_t: float = 0.0  # ... last moved at this time
     expedite: bool = False  # expediting its descent now
     expedite_told: bool = False  # told to expedite (controllers plan with it at once, as with a new level)
     decel_kt_s: float = 0.0
@@ -284,8 +322,10 @@ class World:
         self.runway = airport.runways[runway]
         self.rng = random.Random(seed)
         self.pilot_model = pilots
+        self.measured = pilots in ("measured", "drifting")  # pilots who fly like real arrivals
         # Their own generator, so measured pilots leave the response delays exactly as they were.
         self.pilot_rng = random.Random(seed * 7919 + 17)
+        self.drift_rng = random.Random(seed * 104729 + 31)  # its own too, so the other draws stay as they were
         self.pilot_delay_s = pilot_delay_s
         self.pilots: dict[str, Pilot] = {}
         self._last_hdg: dict[str, float] = {}
@@ -324,7 +364,7 @@ class World:
         self.stack(f"CRE {cs} {actype} {lat:.6f} {lon:.6f} {hdg_true:.1f} {alt_ft:.0f} {cas_kt:.0f}")
         self.bs.sim.step()  # process the command so the aircraft exists
         p = Pilot(cs, actype, self.t, hdg_true, alt_ft, cas_kt)
-        if self.pilot_model == "measured":
+        if self.measured:
             q = response_quantiles(self.airport.icao)
             for name in _BOUNDS:
                 u = self.pilot_rng.random()
@@ -334,6 +374,9 @@ class World:
                     p.descent_profile = descent_profile(self.airport.icao, u)
                     p.expedite_profile = expedite_profile(self.airport.icao, u)
                     p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
+                    if self.pilot_model == "drifting":
+                        p.drift_lasting, p.drift_z = drift_start(u, self.drift_rng)
+                        p.drift_t = self.t
             table = final_slowing_quantiles(self.airport.icao)
             if table:
                 nearest = min(table, key=lambda k: abs(k - p.approach_speed))
@@ -454,7 +497,7 @@ class World:
                 self._apply(p, instr)
             if p.spd_goal is not None:
                 self._speed_tick(p, v)
-            if self.pilot_model == "measured":
+            if self.measured:
                 self._bank_tick(p, v)
                 if p.descent_profile:
                     self._descent_tick(p, v)
@@ -480,6 +523,13 @@ class World:
         while expediting, which lasts until it reaches the level it is cleared to."""
         if p.expedite_told and v.alt_ft <= p.target_alt + EXPEDITE_DONE_FT:
             p.expedite = p.expedite_told = False
+        if self.pilot_model == "drifting":
+            while self.t - p.drift_t >= DRIFT_EVERY_S:
+                p.drift_z, u = drift_step(p.drift_lasting, p.drift_z, DRIFT_EVERY_S, self.drift_rng)
+                p.drift_t += DRIFT_EVERY_S
+                if abs(u - p.descent_u) >= 0.01:
+                    p.descent_u = u
+                    p.descent_profile, p.expedite_profile = profiles_at(self.airport.icao, round(u, 3))
         profile = p.expedite_profile if p.expedite and p.expedite_profile else p.descent_profile
         rate = descent_rate_at(self.airport.icao, profile, v.alt_ft)
         if abs(rate - p.descent_fpm) >= 10.0:
@@ -500,7 +550,7 @@ class World:
 
     def _speed(self, p: Pilot, kt: float) -> None:
         """Set a new speed: at once for BlueSky's pilots, at the pilot's own rate for measured ones."""
-        if self.pilot_model == "measured":
+        if self.measured:
             p.spd_goal = kt
         else:
             self.stack(f"SPD {p.cs} {kt:.0f}")
@@ -571,7 +621,7 @@ class World:
         return (track - math.degrees(math.asin(ratio))) % 360.0
 
     def _turn_radius_nm(self, tas_kt: float, p: Pilot | None = None) -> float:
-        if self.pilot_model == "measured" and p is not None:  # radius = V^2 / (g tan(bank))
+        if self.measured and p is not None:  # radius = V^2 / (g tan(bank))
             v_ms = max(tas_kt, 100.0) * 0.514444
             return v_ms ** 2 / (9.80665 * math.tan(math.radians(p.bank_deg))) / 1852.0
         ref_radius = (TURN_RATE_REF_TAS_KT / 3600.0) / math.radians(TURN_RATE_REF_DEG_S)

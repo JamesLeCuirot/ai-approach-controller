@@ -279,12 +279,13 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
 def redraw_pilots(world, seed: int) -> None:
     """Draw every pilot again from the measured spread, and new response delays: how a copy's crews fly."""
     from approach.sim.world import (_BOUNDS, FINAL_SLOWING_BOUNDS, FPM_TO_MS, descent_by_height, descent_profile,
-                                    expedite_profile,
+                                    drift_start, expedite_profile,
                                     descent_rate_at, draw, final_slowing_quantiles, response_quantiles)
 
     world.rng = random.Random(seed)
     world.pilot_rng = random.Random(seed * 7919 + 17)
-    if world.pilot_model != "measured":
+    world.drift_rng = random.Random(seed * 104729 + 31)
+    if not world.measured:
         return
     q = response_quantiles(world.airport.icao)
     table = final_slowing_quantiles(world.airport.icao)
@@ -300,6 +301,9 @@ def redraw_pilots(world, seed: int) -> None:
                 p.expedite_profile = expedite_profile(world.airport.icao, u)
                 p.descent_fpm = descent_rate_at(world.airport.icao,
                                                 p.expedite_profile if p.expedite else p.descent_profile, alts[cs])
+                if world.pilot_model == "drifting":  # drawn again from the whole spread, then drifting from there
+                    p.drift_lasting, p.drift_z = drift_start(u, world.drift_rng)
+                    p.drift_t = world.t
         if table:
             nearest = min(table, key=lambda k: abs(k - p.approach_speed))
             p.final_slowing_kt_s = draw(table[nearest], world.pilot_rng.random(), FINAL_SLOWING_BOUNDS)
@@ -718,7 +722,9 @@ def _run(args: tuple) -> list[dict]:
     stack_moves = bool(args[11]) if len(args) > 11 else False
     copy_workers = int(args[12]) if len(args) > 12 else 1
     careful_stacks = bool(args[13]) if len(args) > 13 else False
-    env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None)
+    opts = args[-1] if isinstance(args[-1], dict) else {}  # options by name, last
+    pilots = opts.get("pilots", "measured")
+    env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None, pilots=pilots)
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
         from approach.ai.imitate import CopyDriver, load_copy
@@ -797,6 +803,9 @@ def main() -> None:
                          "competitor and the look-ahead alike")
     ap.add_argument("--copy", default="",
                     help="fly the network that copies the look-ahead (a saved approach.ai.imitate model) instead")
+    ap.add_argument("--pilots", default="measured", choices=("measured", "drifting"),
+                    help="how the simulated pilots fly: \"drifting\" pilots' descent rates wander as real crews' do "
+                         "(approach.sim.world), for the competitor, the look-ahead and its copies alike")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     planner = json.loads(args.planner) if args.planner else {}
@@ -821,7 +830,8 @@ def main() -> None:
     # One session a task, handed to whichever process is free (dealt out in a fixed order, one process could be left
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
-              args.go_around_extra, planner, args.stack_moves, args.copy_workers, args.careful_stacks)
+              args.go_around_extra, planner, args.stack_moves, args.copy_workers, args.careful_stacks,
+              {"pilots": args.pilots})
              for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
@@ -847,6 +857,7 @@ def main() -> None:
                "look_every_s": LOOK_EVERY_S, "horizon_s": la.horizon_s, "gap_weight": la.gap_weight,
                "time_weight": args.time_weight, "releases": args.releases, "go_around_extra": args.go_around_extra,
                "planner": planner,
+               **({"pilots": args.pilots} if args.pilots != "measured" else {}),
                "quick_copies": QUICK_COPIES,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},

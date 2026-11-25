@@ -17,6 +17,7 @@ Only the training days are measured, so the test days stay unseen for checking t
 Every track is first put on an even 5 s grid (gaps over 15 s split it).
 
     python -m approach.data.response        # writes data/real/egkk/response.json
+    python -m approach.data.response --drift 12   # how steady a crew's descent rate is (12 training days)
 """
 
 from __future__ import annotations
@@ -351,6 +352,71 @@ def measure(days: list[str], airport) -> dict:
     }
 
 
+DRIFT_WINDOW_S = 60.0
+DRIFT_LAGS_S = (60, 90, 120, 180, 240, 360)
+
+
+def measure_descent_drift(days: list[str], airport) -> dict:
+    """How steady a crew's descent rate is: within real descents (at least 300 ft/min, between 3,500 and 16,000 ft),
+    the crew's place in the spread of descent rates for its height (u, as approach.sim.world draws a pilot's) from
+    the height lost over 60 s windows ending every 30 s, and the correlation of those places, as normal scores,
+    between windows 60 to 360 s apart. Then the drifting pilot that fits them: a place that drifts back to the middle
+    with time constant tau, plus a lasting part, averaged over the same windows (approach.sim.world, "drifting")."""
+    from statistics import NormalDist
+
+    from approach.sim.world import descent_by_height, descent_profile, descent_rate_at
+
+    icao = airport.icao
+    grid = np.linspace(0.0, 1.0, 201)
+    profiles = [descent_profile(icao, float(u)) for u in grid]
+    winds = Winds(icao)
+    w = int(round(DRIFT_WINDOW_S / STEP_S))
+    pairs: dict[int, list[tuple[float, float]]] = {lag: [] for lag in DRIFT_LAGS_S}
+    descents = 0
+    for d in days:
+        for arr in load_day(date.fromisoformat(d))["arrivals"]:
+            for s in _segments(arr["track"], winds, airport):
+                vr = s["vr"]
+                if np.isnan(vr).all():
+                    continue
+                alt = s["alt"]
+                for a, b in _runs(np.convolve(np.nan_to_num(vr), np.ones(3) / 3, mode="same") <= -300):
+                    places = {}
+                    for i in range(a + w, b - w, 6):  # windows inside the descent, ending 60 s or more before it does
+                        mid, rate = 0.5 * (alt[i - w] + alt[i]), (alt[i - w] - alt[i]) * 60.0 / DRIFT_WINDOW_S
+                        if 3500 <= mid <= 16000 and rate > 0:
+                            at = np.maximum.accumulate([descent_rate_at(icao, pr, mid) for pr in profiles])
+                            places[i] = float(np.interp(rate, at, grid))
+                    descents += len(places) >= 5
+                    for i, u in places.items():
+                        for lag in DRIFT_LAGS_S:
+                            j = i + int(lag / STEP_S)
+                            if j in places:
+                                pairs[lag].append((u, places[j]))
+    nd = NormalDist()
+    lags, corr = [], []
+    for lag in DRIFT_LAGS_S:
+        x = np.clip(np.array(pairs[lag]), 0.005, 0.995)
+        if len(x) < 50:
+            continue
+        z = np.vectorize(nd.inv_cdf)(x)
+        lags.append(lag)
+        corr.append(float(np.corrcoef(z[:, 0], z[:, 1])[0, 1]))
+    lag_a, corr_a, wd = np.array(lags, float), np.array(corr), DRIFT_WINDOW_S
+
+    def model(tau: float, lasting: float) -> np.ndarray:
+        var = 2 * tau / wd * (1 - tau / wd * (1 - np.exp(-wd / tau)))
+        cov = tau ** 2 / wd ** 2 * np.exp(-lag_a / tau) * (np.exp(wd / tau) + np.exp(-wd / tau) - 2)
+        return (lasting + (1 - lasting) * cov) / (lasting + (1 - lasting) * var)
+
+    err, tau, lasting = min((float(np.sum((model(t, p) - corr_a) ** 2)), float(t), float(p))
+                            for t in np.arange(10, 600, 5) for p in np.arange(0, 0.4, 0.01))
+    return {"days": len(days), "descents": descents, "pairs": {str(lag): len(pairs[lag]) for lag in lags},
+            "correlation_by_lag_s": {str(lag): round(c, 3) for lag, c in zip(lags, corr)},
+            "fit": {"tau_s": tau, "lasting": round(lasting, 2), "rms": round(float(np.sqrt(err / len(lags))), 3),
+                    "model": {str(lag): round(float(m), 3) for lag, m in zip(lags, model(tau, lasting))}}}
+
+
 def split_days(split: str, airport_icao: str = "egkk") -> list[str]:
     rows = csv.DictReader((REAL_DIR / airport_icao / "days.csv").open())
     return [r["day"] for r in rows if r["split"] == split]
@@ -360,9 +426,18 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Measure how real arrivals turn, descend and change speed")
     ap.add_argument("--split", default="train")
     ap.add_argument("--out", default=str(REAL_DIR / "egkk" / "response.json"))
+    ap.add_argument("--drift", type=int, default=0,
+                    help="instead, measure how steady a crew's descent rate is on this many training days (printed)")
     args = ap.parse_args()
     from approach.airports import egkk
 
+    if args.drift:
+        import random
+
+        days = split_days("train")
+        random.Random(1).shuffle(days)
+        print(json.dumps(measure_descent_drift(days[:args.drift], egkk.load()), indent=1))
+        return
     result = measure(split_days(args.split), egkk.load())
     Path(args.out).write_text(json.dumps(result, indent=1) + "\n")
     print(json.dumps(result, indent=1))
