@@ -1094,6 +1094,46 @@ The planner works out how long an aircraft needs to get down from the median des
 
 **What it says.** With the look-ahead watching, the planner's better estimate shows up mostly as time rather than safety: the look-ahead was already catching most of what the old estimate got wrong. Two go-arounds against none, like the moved losses, is within chance on 48 sessions, but the rule is fewer losses and no worse elsewhere. The go-arounds haven't been traced yet. The option stays on its branch, to be tried again alongside the next change. That change is a planner that plans an expedited descent on a quicker crew (`expedite_rate="p75"`): flying alone, it had 59 losses of separation against 88, and it is being flown with the look-ahead now (`train48_sim5_p75`).
 
+### Why arrivals from the south-west aren't brought straight in, and crews that start where their real crews were (25 November)
+
+**Combining the planner options.** The planner alone on the 48 training sessions with drifting pilots, each option on top of the quicker-crew expedite (`expedite_rate="p75"`), runway by runway (the 11 sessions landing on 08R, and the 37 on 26L):
+
+| Planner alone | Losses of separation | Go-arounds | Gaps inside the minimum | Minutes per arrival (08R / 26L) |
+| --- | --- | --- | --- | --- |
+| Today's planner | 88 | 39 | 60 | 18.68 (20.93 / 18.01) |
+| `p75` | 59 | 37 | 45 | 18.23 (20.63 / 17.52) |
+| `p75` and straight in from further off (`straight_reach="wide"`) | 71 | 45 | 45 | 18.18 (20.53 / 17.48) |
+| `p75` and the seen rate fading | 74 | 35 | 51 | 18.02 (20.92 / 17.15) |
+| all three | 71 | 42 | 51 | 17.89 (20.85 / 17.01) |
+
+Neither addition helped on top of `p75`, and on 08R, where nearly all of the AI's gap to the real controllers is, none of them gained more than half a minute.
+
+**Why the south-west arrivals still go round by WILLO.** Traced on session 14 (08R, a quiet hour): EJU72VD, an A319 handed over 37 NM south-west at FL150, was sent to WILLO, held for 40 seconds, flown west on a downwind and round onto the final: 19.6 minutes. Its real crew took 11.7, flown straight north-north-east onto the final 14 NM out. The straight-in check, with `wide`, saw the path to an 11 NM join take 351 seconds against 529 needed to get down on an expedited descent, so it refused it, and within two minutes, flying towards WILLO, the aircraft was too close for any straight-in join. The real crew had been descending at 2,112 ft/min when it was handed over and came down at 1,600 to 2,400 ft/min all the way to 6,600 ft, a fast crew throughout.
+
+That turns out to be how real controllers choose. On the training days, 82% of the arrivals handed over at FL120 or above were already descending, at a median 1,408 ft/min. Of those handed over on the approach side more than 8 NM off the final approach line, the share brought straight in rises with the rate:
+
+| Descent rate at handover (ft/min) | Arrivals | Brought straight in | Minutes to landing (median) |
+| --- | --- | --- | --- |
+| level (under 300) | 1,005 | 9% | 21 |
+| 300 to 1,000 | 1,270 | 15% | 18 |
+| 1,000 to 1,500 | 1,238 | 26% | 16 |
+| 1,500 to 2,000 | 1,893 | 37% | 14 |
+| over 2,000 | 954 | 53% | 13 |
+
+In the simulator every arrival started level, its crew's place in the spread of descent rates drawn without regard to its real crew's, so the planner never saw what a real controller sees at handover. (The table of descent rates itself was checked as well: real crews brought straight in descend in each height band at about the rates the simulator's expedited descents are drawn from, 1,330 and 1,646 ft/min at the middle of the two upper bands against 1,286 and 1,664, and leaving the final approach out of the measurement changes the lowest band by 4 ft/min. So the table stands.)
+
+**Crews that start where their real crews were** (`pilots="drifting_handover"`, branch `handover-descent`). A simulated crew handed over descending now starts at the place in the usual spread at its height that its real crew's rate puts it, then drifts as the others do; one handed over level is drawn exactly as before. Arrivals carry their real vertical rate at handover, in replayed hours and in shadow mode. A first version also started each such aircraft on its way down to FL70 until the controller spoke: in session 33 that brought arrivals down into the WILLO stack's holders before the planner had given them its own level (5 losses of separation, and the stack locked up). The level a real crew was cleared to before handover isn't in the data, so the aircraft now starts level, as before, and descends at its crew's rate once cleared.
+
+The planner alone on the 48 training sessions:
+
+| Planner alone | Losses of separation | Go-arounds | Gaps inside the minimum | Minutes per arrival (08R / 26L) |
+| --- | --- | --- | --- | --- |
+| Drifting pilots | 88 | 39 | 60 | 18.68 (20.93 / 18.01) |
+| Crews starting where their real crews were | 81 | 29 | 59 | 18.34 (20.57 / 17.68) |
+| ... with `p75` | 81 | 40 | 53 | 18.21 (20.18 / 17.62) |
+
+A change to the simulator, not the controller, measured from real tracks, and the planner did better or the same on every count with it (quicker in 30 sessions, slower in 15). `p75`'s large gain with drifting pilots (59 losses of separation against 88) doesn't carry over into this world (81 against 81, and 40 go-arounds against 29), so much of it was probably chance: the planner alone moves by ten or more losses of separation between runs that differ only in small ways. The look-ahead test of `p75` (`train48_sim5_p75`) is running, and the look-ahead in the new world (`train48_sim5_handover`) follows it; those decide.
+
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
 **Seen descent rates.** Session 28's loss of separation (a Dash 8 and an A320neo converging while descending at different rates) suggested the safety check should start each aircraft from the rate it is seen descending at, not the typical rate for its height. On the real tracks of 6 training days (24,485 points in descents), predicting height 60 and 120 seconds ahead, the typical rate was out by 294 and 475 ft on average; starting from the seen rate and easing back towards the typical one over about 2 minutes, by 209 and 388 ft (keeping the seen rate throughout was worse, 240 and 561). With the planner alone on 96 training sessions (seed 2027), the safety check with seen rates made no difference: 151 losses of separation either way, 22.56 minutes per arrival against 22.57, and only 11 sessions came out differently. The check blocks only instructions that would bring a conflict sooner than without them, and these convergences start from clearances that were safe when given. It stays on its own branch.
