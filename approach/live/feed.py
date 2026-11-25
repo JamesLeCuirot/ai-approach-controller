@@ -1,10 +1,13 @@
-"""adsb.lol's live feed around an airport, recorded in the same form as a day of its open data.
+"""A live ADS-B feed around an airport, recorded in the same form as a day of adsb.lol's open data.
 
-adsb.lol (https://www.adsb.lol) serves every aircraft its receivers can see now, free and without a key, at
+adsb.lol (https://www.adsb.lol) serves every aircraft its receivers can see now at
 api.adsb.lol/v2/point/{lat}/{lon}/{radius NM}. Its data is under the Open Database Licence (ODbL 1.0), as the
-archived days are. A Recorder polls it every few seconds and keeps every aircraft inside the same area as
-approach.data.adsblol (50 NM, below 20,000 ft), with the same point fields, so approach.data.arrivals can find
-the real arrivals in a recording exactly as it does in an archived day.
+archived days are. adsb.fi (https://adsb.fi) serves its receivers' aircraft in the same form, without a key, at
+opendata.adsb.fi/api/v3/lat/{lat}/lon/{lon}/dist/{radius NM}, for personal, non-commercial use, citing adsb.fi
+(its terms: https://github.com/adsbfi/opendata). A Recorder polls one of them every few seconds and keeps every
+aircraft inside the same area as approach.data.adsblol (50 NM, below 20,000 ft), with the same point fields, so
+approach.data.arrivals can find the real arrivals in a recording exactly as it does in an archived day. The
+recording's first line names its source.
 """
 
 from __future__ import annotations
@@ -20,22 +23,33 @@ from pathlib import Path
 from approach.data.adsblol import CEILING_FT, CREDIT, RADIUS_NM
 
 URL = "https://api.adsb.lol/v2/point/{lat:.4f}/{lon:.4f}/{radius:.0f}"
+# Where a recording can come from: the address polled, the credit and licence its data carries, and a key's
+# environment variable and header, if the feed takes one.
+SOURCES = {
+    "adsblol": {"url": URL, "credit": CREDIT, "licence": "ODbL 1.0", "key_env": "ADSBLOL_API_KEY",
+                "key_header": "x-api-key"},
+    "adsbfi": {"url": "https://opendata.adsb.fi/api/v3/lat/{lat:.4f}/lon/{lon:.4f}/dist/{radius:.0f}",
+               "credit": "adsb.fi (https://adsb.fi)", "licence": "adsb.fi open data terms: personal, non-commercial use"},
+}
 LIVE_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "live"
 MAX_AGE_S = 15.0  # a position older than this when polled is skipped
 FIELDS = ["t", "lat", "lon", "alt", "gs", "track", "vrate", "callsign", "flags", "ias"]
 
 
-def poll(lat: float, lon: float, radius_nm: float = RADIUS_NM + 5, timeout: float = 15.0) -> tuple[float, list[dict]]:
-    """The feed now: (time it was served, seconds since 1970; the aircraft as adsb.lol gives them).
+def poll(lat: float, lon: float, radius_nm: float = RADIUS_NM + 5, timeout: float = 15.0,
+         source: str = "adsblol") -> tuple[float, list[dict]]:
+    """The feed now: (time it was served, seconds since 1970; the aircraft as the feed gives them).
 
-    Since November 2026 adsb.lol meters this path: without a key, 500 requests a day per internet address (shared
+    Since November 2026 adsb.lol meters its path: without a key, 500 requests a day per internet address (shared
     by everyone behind it); a free key from adsb.lol raises that (1,000 a day by its request form, 7,200 for those
     who feed it). A key in the environment variable ADSBLOL_API_KEY is sent as ``x-api-key``. Over the quota the
-    feed answers 429 (the recorder logs it and skips the poll)."""
+    feed answers 429 (the recorder logs it and skips the poll). adsb.fi takes no key and allows one request a
+    second."""
+    src = SOURCES[source]
     headers = {"User-Agent": "ai-approach-controller"}
-    if os.environ.get("ADSBLOL_API_KEY"):
-        headers["x-api-key"] = os.environ["ADSBLOL_API_KEY"]
-    req = urllib.request.Request(URL.format(lat=lat, lon=lon, radius=radius_nm), headers=headers)
+    if src.get("key_env") and os.environ.get(src["key_env"]):
+        headers[src["key_header"]] = os.environ[src["key_env"]]
+    req = urllib.request.Request(src["url"].format(lat=lat, lon=lon, radius=radius_nm), headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.loads(r.read())
     return float(d.get("now", time.time() * 1000)) / 1000.0, d.get("ac", [])
@@ -106,10 +120,11 @@ class Recorder:
         return path
 
 
-def record(path: Path, minutes: float, every_s: float = 5.0, airport=None, log=print) -> Path:
-    """Poll for `minutes`, appending each poll's new points to `path` as a line of JSON: {"now": t, "new": [[hex,
-    type, registration, point], ...]}. A reader (approach.live.shadow) follows the file as it grows; read_area
-    turns it back into an archived day's form."""
+def record(path: Path, minutes: float, every_s: float = 5.0, airport=None, log=print, source: str = "adsblol") -> Path:
+    """Poll `source` (a key of SOURCES) for `minutes`, appending each poll's new points to `path` as a line of
+    JSON: {"now": t, "new": [[hex, type, registration, point], ...]}; the first line also has "source" and
+    "licence". A reader (approach.live.shadow) follows the file as it grows; read_area turns it back into an
+    archived day's form."""
     from approach.airports import egkk
 
     airport = airport or egkk.load()
@@ -119,11 +134,12 @@ def record(path: Path, minutes: float, every_s: float = 5.0, airport=None, log=p
     path.parent.mkdir(parents=True, exist_ok=True)
     end = time.time() + minutes * 60
     types: dict[str, tuple] = {}
+    first = not path.exists() or path.stat().st_size == 0
     with open(path, "a", encoding="utf-8") as f:
         while time.time() < end:
             t_poll = time.time()
             try:
-                now, feed = poll(lat0, lon0)
+                now, feed = poll(lat0, lon0, source=source)
             except Exception as e:  # noqa: BLE001  (a dropped poll is skipped, as a receiver gap would be)
                 rec.failed += 1
                 if log and rec.failed % 12 == 1:
@@ -133,16 +149,31 @@ def record(path: Path, minutes: float, every_s: float = 5.0, airport=None, log=p
                     if a.get("hex"):
                         types[a["hex"]] = (a.get("t"), a.get("r"))
                 new = rec.add(now, feed)
-                f.write(json.dumps({"now": now, "new": [[h, *types.get(h, (None, None)), p] for h, p in new]},
-                                   separators=(",", ":")) + "\n")
+                row = {"now": now, "new": [[h, *types.get(h, (None, None)), p] for h, p in new]}
+                if first:
+                    row.update(source=SOURCES[source]["credit"], licence=SOURCES[source]["licence"])
+                    first = False
+                f.write(json.dumps(row, separators=(",", ":")) + "\n")
                 f.flush()
             time.sleep(max(0.0, every_s - (time.time() - t_poll)))
     return path
 
 
+def source_of(path: Path) -> tuple[str, str]:
+    """A recording's (credit, licence): from its first line, or adsb.lol's for a recording made before sources
+    were named."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.loads(f.readline())
+    except (OSError, ValueError):
+        d = {}
+    return d.get("source", CREDIT), d.get("licence", SOURCES["adsblol"]["licence"])
+
+
 def read_area(path: Path, lat0: float, lon0: float, start: float | None = None) -> dict:
-    """A recording (record's file) as an archived day (approach.data.adsblol.filter_day)."""
+    """A recording (record's file) as an archived day (approach.data.adsblol.filter_day), with its licence."""
     aircraft: dict[str, dict] = {}
+    credit, licence = source_of(path)
     with open(path, encoding="utf-8") as f:
         for line in f:
             try:
@@ -153,7 +184,7 @@ def read_area(path: Path, lat0: float, lon0: float, start: float | None = None) 
                 ac = aircraft.setdefault(hexid, {"hex": hexid, "type": actype, "reg": reg, "points": []})
                 ac["points"].append(p)
     first = start or min((ac["points"][0][0] for ac in aircraft.values()), default=time.time())
-    return {"day": time.strftime("%Y-%m-%d", time.gmtime(first)), "source": CREDIT, "instance": "live",
+    return {"day": time.strftime("%Y-%m-%d", time.gmtime(first)), "source": credit, "licence": licence, "instance": "live",
             "aircraft_read": len(aircraft), "centre": [lat0, lon0], "radius_nm": RADIUS_NM, "ceiling_ft": CEILING_FT,
             "fields": FIELDS, "aircraft": list(aircraft.values())}
 
@@ -161,12 +192,14 @@ def read_area(path: Path, lat0: float, lon0: float, start: float | None = None) 
 def main() -> None:
     import argparse
 
-    ap = argparse.ArgumentParser(description="Record adsb.lol's live feed around Gatwick")
+    ap = argparse.ArgumentParser(description="Record a live ADS-B feed around Gatwick")
     ap.add_argument("--out", required=True)
     ap.add_argument("--minutes", type=float, default=60.0)
     ap.add_argument("--every", type=float, default=5.0, help="seconds between polls")
+    ap.add_argument("--source", choices=sorted(SOURCES), default="adsblol",
+                    help="adsblol (500 requests a day without a key) or adsbfi (no key; personal, non-commercial use)")
     args = ap.parse_args()
-    record(Path(args.out), args.minutes, args.every)
+    record(Path(args.out), args.minutes, args.every, source=args.source)
 
 
 if __name__ == "__main__":

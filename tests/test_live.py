@@ -43,6 +43,29 @@ def test_recorder_keeps_the_area_and_reads_back(tmp_path, airport):
     path.write_text(json.dumps({"now": 100.0, "new": [["a1", "A320", "G-ABCD", rec.aircraft["a1"]["points"][0]]]}) + "\n")
     area = read_area(path, ref.lat, ref.lon)
     assert area["aircraft"][0]["hex"] == "a1" and area["aircraft"][0]["type"] == "A320"
+    assert area["licence"] == "ODbL 1.0"  # a recording that names no source is adsb.lol's
+
+
+def test_recording_names_its_source(tmp_path, airport, monkeypatch):
+    from approach.live import feed
+
+    ref = airport.reference
+    a = {"hex": "a1", "flight": "EZY1", "lat": ref.lat + 0.2, "lon": ref.lon, "alt_baro": 9000, "gs": 250,
+         "track": 0, "seen_pos": 0, "t": "A320", "r": "G-ABCD"}
+    asked = []
+
+    def fake_poll(lat, lon, source="adsblol"):
+        asked.append(source)
+        a["seen_pos"] = 0
+        return 100.0 + len(asked) * 5, [{**a, "lat": a["lat"] + 0.01 * len(asked)}]
+
+    monkeypatch.setattr(feed, "poll", fake_poll)
+    path = feed.record(tmp_path / "rec.jsonl", minutes=0.0005, every_s=0.0, airport=airport, log=None, source="adsbfi")
+    assert asked and set(asked) == {"adsbfi"}
+    assert feed.source_of(path) == (feed.SOURCES["adsbfi"]["credit"], feed.SOURCES["adsbfi"]["licence"])
+    area = feed.read_area(path, ref.lat, ref.lon)
+    assert area["source"].startswith("adsb.fi") and "non-commercial" in area["licence"]
+    assert "adsb.fi" in feed.SOURCES["adsbfi"]["url"] and "{lat" in feed.SOURCES["adsbfi"]["url"]
 
 
 def test_entries_judge_an_aircraft_once_as_it_enters(airport):

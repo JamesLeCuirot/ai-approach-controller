@@ -3,7 +3,8 @@ controllers control the real ones.
 
 Three parts run side by side:
 
-* the recorder (approach.live.feed) polls adsb.lol's live feed every 5 seconds and appends what it sees to a file;
+* the recorder (approach.live.feed) polls a live ADS-B feed (adsb.lol's, or adsb.fi's) every 5 seconds and appends
+  what it sees to a file;
 * this runner follows that file. When an aircraft enters the handover region (40 NM, 15,000 ft), the spotter
   (approach.live.spotter) judges whether it is a Gatwick arrival; if so it is handed to the simulator where it
   really is, at its real height, speed and track, as in the benchmark's sessions. The simulator keeps pace with
@@ -41,6 +42,7 @@ from approach.airports import egkk
 from approach.scenarios import Arrival, Scenario
 from approach.session import SessionLog, map_for_replay
 from approach.sim.live import LiveSession
+from approach.live.feed import source_of
 from approach.live.spotter import ARRIVAL_P, Entries, Spotter
 
 STEP_S = 10  # the look-ahead decides every step, as in the benchmark
@@ -221,7 +223,8 @@ def run(feed: Path, out: Path, minutes: float, copy_workers: int = 2, seed: int 
         time.sleep(0.5)
 
     sim_log = env.session.log if finished else env.session.finish()
-    sim_log.meta.update({"t0_epoch": t0, "window_s": minutes * 60, "source": "adsb.lol (https://www.adsb.lol), ODbL 1.0",
+    credit, licence = source_of(feed)
+    sim_log.meta.update({"t0_epoch": t0, "window_s": minutes * 60, "source": f"{credit}, {licence}",
                          "winds": wind.source, "most_behind_clock_s": round(behind_max)})
     sim_log.save(out / "shadow_session.json")
     summary = {"t0_epoch": t0, "start_utc": f"{now_utc:%Y-%m-%d %H:%M:%S}", "minutes": minutes, "runway": runway,
@@ -257,7 +260,7 @@ def compare(feed: Path, out: Path, log=print) -> dict:
         qnh = qnh_by_hour(datetime.fromtimestamp(t0, tz=timezone.utc).date(), airport.icao)
     except Exception:  # noqa: BLE001
         qnh = {}
-    day = {"day": area["day"], "airport": airport.icao, "source": area["source"], "licence": "ODbL 1.0",
+    day = {"day": area["day"], "airport": airport.icao, "source": area["source"], "licence": area["licence"],
            "instance": "live", "handover": {"radius_nm": HANDOVER_RADIUS_NM, "ceiling_ft": HANDOVER_CEILING_FT},
            "qnh_hpa_by_hour": {str(h): q for h, q in sorted(qnh.items())}, "arrivals": arrivals}
     real_log = real_sessions.real_session(day, airport, t0, t0 + window,
