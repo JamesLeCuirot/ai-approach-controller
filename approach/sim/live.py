@@ -87,7 +87,7 @@ class LiveSession:
             level = f"FL{a.level_ft // 100}" if a.level_ft > airport.transition_altitude_ft else f"{a.level_ft:,} ft"
             if a.lat is not None:
                 hdg, cas = _real_entry(a, world.wind)
-                world.spawn(a.callsign, a.actype, a.lat, a.lon, hdg, a.level_ft, cas)
+                world.spawn(a.callsign, a.actype, a.lat, a.lon, hdg, a.level_ft, cas, vs_fpm=a.vrate_fpm)
                 x, y = airport.grid.to_xy(a.lat, a.lon)
                 where = f"{(x * x + y * y) ** 0.5:.0f} NM {_compass(x, y)}"
                 log.add_event(t, "takeover", a.callsign, f"{a.callsign} ({a.actype}) handed over {where}, {level}, "

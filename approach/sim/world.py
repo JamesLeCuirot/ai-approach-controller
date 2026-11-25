@@ -73,7 +73,7 @@ MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilo
 # Darragh hour, about ten times faster, and it is used for training and the benchmark alike (same physics in both).
 SIM_DT_S = float(os.environ.get("APPROACH_SIM_DT", "0.5"))
 
-PILOT_MODELS = ("bluesky", "measured", "drifting")
+PILOT_MODELS = ("bluesky", "measured", "drifting", "drifting_handover")
 # "drifting": measured pilots whose place in the spread of descent rates wanders as real crews' does. Measured from the
 # height real arrivals lose over 60 s windows within their descents, on 12 training days (5,965 descents of 2 minutes
 # or more; approach.data.response, 25 Nov 2026): the correlation of a crew's place (normal scores) between windows 60,
@@ -81,6 +81,13 @@ PILOT_MODELS = ("bluesky", "measured", "drifting")
 # the whole flight. A place that drifts back to the middle with a time constant of 50 s, plus a lasting part (7% of the
 # spread) for the crew's own habit, fits all six within 0.02. So of the slowest fifth, 39% are still in the slowest
 # fifth 2 minutes later, not all of them.
+# "drifting_handover": drifting pilots that start where their real crews were at handover. 82% of real arrivals handed
+# over at FL120 or above are already descending (a median 1,408 ft/min), and how fast tells a controller a lot: on the
+# training days, 9% of those handed over level on the approach side more than 8 NM off the final approach line were
+# brought straight in, against 26% at 1,000 to 1,500 ft/min and 53% faster than 2,000 (approach.data.arrivals'
+# handover state, 25 Nov 2026). A simulated pilot used to start level, at a place in the spread drawn independently of
+# its real crew's. This one starts at the place in the usual spread at its height that its real crew's rate puts it
+# (then drifting as the others do), descending to HANDOVER_CLEARED_FT until it is told otherwise.
 DRIFT_TAU_S = 50.0
 DRIFT_LASTING = 0.07
 DRIFT_EVERY_S = 5.0  # how often a drifting pilot's place moves
@@ -96,8 +103,10 @@ FINAL_SLOWING_BOUNDS = (0.05, 1.2)  # kt/s
 # above, the fastest tenth near 2,000 high up). Each pilot keeps its place in the spread at every height. Before
 # 16 November 2026 a pilot descended at one rate, drawn from the 3,500 to 11,000 ft measurements, at every height.
 DESCENT_BY_HEIGHT_BOUNDS = (400.0, 2500.0)
+HANDOVER_DESCENT_FPM = 300.0  # "drifting_handover": a real rate at handover this fast or faster is a descent
+HANDOVER_CLEARED_FT = 7000.0  # ... which goes on to this level (the stacks' lowest) until the first instruction
 EXPEDITE_DONE_FT = 200.0  # an expedited descent ends this close above the cleared level
-APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0, "drifting": 5.0}  # real pilots slow to their approach speed from about 5 NM
+APPROACH_SPEED_FROM_NM = {"bluesky": 4.0, "measured": 5.0, "drifting": 5.0, "drifting_handover": 5.0}  # real pilots slow to their approach speed from about 5 NM
 # Degrees of bank per degree of heading still to turn, up to the pilot's limit. Measured on a 5 s grid as the real
 # turns are, simulated turns of 20, 35, 60 and 120 degrees then bank 14, 19, 22.5 and 23 degrees; real ones of
 # 15-25, 25-45, 45-90 and over 90 degrees bank 13.6, 19.3, 22.4 and 23.7.
@@ -168,6 +177,19 @@ def drift_start(u: float, rng: random.Random) -> tuple[float, float]:
     lasting = math.sqrt(DRIFT_LASTING) * z + math.sqrt(1.0 - DRIFT_LASTING) * rng.gauss(0.0, 1.0)
     drifting = (z - math.sqrt(DRIFT_LASTING) * lasting) / math.sqrt(1.0 - DRIFT_LASTING)
     return lasting, drifting
+
+
+def place_of(airport_icao: str, rate_fpm: float, alt_ft: float) -> float:
+    """The place u in the usual spread of descent rates at a height (descent_profile) of a pilot descending at
+    rate_fpm there: the inverse of descent_rate_at(descent_profile(u)), clipped to [0.005, 0.995]."""
+    lo, hi = 0.005, 0.995
+    for _ in range(30):
+        mid = (lo + hi) / 2.0
+        if descent_rate_at(airport_icao, descent_profile(airport_icao, mid), alt_ft) < rate_fpm:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
 
 
 def drift_step(lasting: float, drifting: float, dt: float, rng: random.Random) -> tuple[float, float]:
@@ -322,7 +344,8 @@ class World:
         self.runway = airport.runways[runway]
         self.rng = random.Random(seed)
         self.pilot_model = pilots
-        self.measured = pilots in ("measured", "drifting")  # pilots who fly like real arrivals
+        self.measured = pilots in ("measured", "drifting", "drifting_handover")  # pilots who fly like real arrivals
+        self.drifting = pilots in ("drifting", "drifting_handover")
         # Their own generator, so measured pilots leave the response delays exactly as they were.
         self.pilot_rng = random.Random(seed * 7919 + 17)
         self.drift_rng = random.Random(seed * 104729 + 31)  # its own too, so the other draws stay as they were
@@ -356,7 +379,10 @@ class World:
         self.wind = wind
 
     # ---- traffic -----------------------------------------------------------------
-    def spawn(self, cs: str, actype: str, lat: float, lon: float, hdg_true: float, alt_ft: float, cas_kt: float) -> None:
+    def spawn(self, cs: str, actype: str, lat: float, lon: float, hdg_true: float, alt_ft: float, cas_kt: float,
+              vs_fpm: float | None = None) -> None:
+        """A new aircraft; ``vs_fpm`` is its real vertical rate at handover, if known (used by "drifting_handover"
+        pilots only)."""
         if cs in self.pilots:
             # BlueSky keeps the aircraft already flying and the new pilot would take it over (once, a holding
             # aircraft lost its hold and flew off 139 NM): two aircraft in the air need two names.
@@ -374,8 +400,16 @@ class World:
                     p.descent_profile = descent_profile(self.airport.icao, u)
                     p.expedite_profile = expedite_profile(self.airport.icao, u)
                     p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
-                    if self.pilot_model == "drifting":
-                        p.drift_lasting, p.drift_z = drift_start(u, self.drift_rng)
+                    if self.pilot_model == "drifting_handover" and vs_fpm is not None \
+                            and -vs_fpm >= HANDOVER_DESCENT_FPM and alt_ft > HANDOVER_CLEARED_FT + 500.0:
+                        u = place_of(self.airport.icao, -vs_fpm, alt_ft)
+                        p.descent_u = u
+                        p.descent_profile = descent_profile(self.airport.icao, u)
+                        p.expedite_profile = expedite_profile(self.airport.icao, u)
+                        p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
+                        p.target_alt = HANDOVER_CLEARED_FT
+                    if self.drifting:
+                        p.drift_lasting, p.drift_z = drift_start(p.descent_u, self.drift_rng)
                         p.drift_t = self.t
             table = final_slowing_quantiles(self.airport.icao)
             if table:
@@ -385,6 +419,8 @@ class World:
             if i >= 0:
                 self.bs.traf.ap.bankdef[i] = math.radians(p.bank_deg)
                 self.bs.traf.ap.vsdef[i] = p.descent_fpm * FPM_TO_MS
+                if p.target_alt < alt_ft - 500.0:  # "drifting_handover": already descending
+                    self.stack(f"ALT {cs} {p.target_alt:.0f}")
             p.spd_set = cas_kt
         self.pilots[cs] = p
 
@@ -523,7 +559,7 @@ class World:
         while expediting, which lasts until it reaches the level it is cleared to."""
         if p.expedite_told and v.alt_ft <= p.target_alt + EXPEDITE_DONE_FT:
             p.expedite = p.expedite_told = False
-        if self.pilot_model == "drifting":
+        if self.drifting:
             while self.t - p.drift_t >= DRIFT_EVERY_S:
                 p.drift_z, u = drift_step(p.drift_lasting, p.drift_z, DRIFT_EVERY_S, self.drift_rng)
                 p.drift_t += DRIFT_EVERY_S

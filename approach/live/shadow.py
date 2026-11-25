@@ -106,7 +106,7 @@ class ShadowEnv(LookAheadEnv):
         s = self.session
         a = Arrival(callsign=callsign, actype=actype, fix=fix, release_s=max(float(at_s), float(s.t)),
                     level_ft=int(round(state["alt"] / 100.0) * 100), speed_kt=0, lat=state["lat"], lon=state["lon"],
-                    track=state["track"], gs_kt=state["gs"])
+                    track=state["track"], gs_kt=state["gs"], vrate_fpm=state.get("vrate"))
         later = s.pending[s.released:]  # keep the ones still to come in time order
         k = bisect.bisect_right([p.release_s for p in later], a.release_s)
         s.pending.insert(s.released + k, a)

@@ -301,7 +301,7 @@ def redraw_pilots(world, seed: int) -> None:
                 p.expedite_profile = expedite_profile(world.airport.icao, u)
                 p.descent_fpm = descent_rate_at(world.airport.icao,
                                                 p.expedite_profile if p.expedite else p.descent_profile, alts[cs])
-                if world.pilot_model == "drifting":  # drawn again from the whole spread, then drifting from there
+                if world.pilot_model in ("drifting", "drifting_handover"):  # drawn again from the whole spread, then drifting
                     p.drift_lasting, p.drift_z = drift_start(u, world.drift_rng)
                     p.drift_t = world.t
         if table:
@@ -803,9 +803,10 @@ def main() -> None:
                          "competitor and the look-ahead alike")
     ap.add_argument("--copy", default="",
                     help="fly the network that copies the look-ahead (a saved approach.ai.imitate model) instead")
-    ap.add_argument("--pilots", default="measured", choices=("measured", "drifting"),
+    ap.add_argument("--pilots", default="measured", choices=("measured", "drifting", "drifting_handover"),
                     help="how the simulated pilots fly: \"drifting\" pilots' descent rates wander as real crews' do "
-                         "(approach.sim.world), for the competitor, the look-ahead and its copies alike")
+                         "(approach.sim.world), for the competitor, the look-ahead and its copies alike; "
+                         "\"drifting_handover\" ones start where their real crews were at handover")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     planner = json.loads(args.planner) if args.planner else {}

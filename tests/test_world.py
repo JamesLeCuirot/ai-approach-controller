@@ -347,3 +347,27 @@ def test_drifting_pilots_start_as_measured_ones_and_then_wander(airport):
     assert pilots["measured"][0] == pilots["drifting"][0]
     assert pilots["measured"][1] == {round(pilots["measured"][0][0], 3)}
     assert len(pilots["drifting"][1]) >= 5 and all(0.0 < u < 1.0 for u in pilots["drifting"][1])
+
+
+def test_a_handover_pilot_starts_where_its_real_crew_was(airport):
+    """"drifting_handover": an aircraft handed over descending at 2,100 ft/min from FL150 starts fast in the spread
+    and already descending; one handed over level is drawn exactly as a drifting pilot is."""
+    from approach.sim.world import HANDOVER_CLEARED_FT, World, descent_rate_at
+
+    pos = airport.holds["WILLO"].position
+    world = World(airport, "08R", seed=11, pilots="drifting_handover")
+    world.spawn("FAST1", "A319", pos.lat - 0.3, pos.lon - 0.4, 30.0, 15000, 270, vs_fpm=-2112)
+    p = world.pilots["FAST1"]
+    assert p.descent_u > 0.85 and p.target_alt == HANDOVER_CLEARED_FT
+    assert descent_rate_at(airport.icao, p.descent_profile, 15000) == pytest.approx(2112, abs=20)
+    world.step(20)
+    v = {x.cs: x for x in world.views()}["FAST1"]
+    assert v.vs_fpm < -1500 and v.alt_ft < 14700
+
+    level = {}
+    for model in ("drifting", "drifting_handover"):
+        w = World(airport, "08R", seed=11, pilots=model)
+        w.spawn("LEVEL1", "A320", pos.lat - 0.3, pos.lon - 0.4, 30.0, 15000, 270, vs_fpm=-100)
+        q = w.pilots["LEVEL1"]
+        level[model] = (q.descent_u, q.target_alt, q.drift_lasting, q.drift_z)
+    assert level["drifting"] == level["drifting_handover"] and level["drifting"][1] == 15000

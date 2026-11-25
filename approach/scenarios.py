@@ -20,6 +20,7 @@ class Arrival:
     lon: float | None = None
     track: float | None = None  # true track over the ground
     gs_kt: float | None = None  # ground speed
+    vrate_fpm: float | None = None  # vertical rate at handover (ft/min, negative descending), if known
 
 
 @dataclass
