@@ -1,0 +1,5 @@
+# This hour was recorded from adsb.fi's feed, which is for personal, non-commercial use and may not be
+# relicensed: the files holding its positions (each aircraft's entry point, the real tracks) stay local.
+judged.json
+real_session.json
+replay.html
