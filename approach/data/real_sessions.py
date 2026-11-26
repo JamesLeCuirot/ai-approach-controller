@@ -196,7 +196,7 @@ def real_scenario(day: dict, airport: Airport, start: float, end: float, name: s
         out.append(Arrival(
             callsign=callsign, actype=a["type"], fix=nearest.fix, release_s=round(h["t"] - start, 1),
             level_ft=int(round(h["alt"] / 100.0) * 100), speed_kt=0,
-            lat=h["lat"], lon=h["lon"], track=h["track"], gs_kt=h["gs"],
+            lat=h["lat"], lon=h["lon"], track=h["track"], gs_kt=h["gs"], vrate_fpm=h.get("vrate"),
         ))
     last = max((a["landed_t"] for a in arrivals), default=end)
     hour = datetime.fromtimestamp(start + 1800, tz=timezone.utc).strftime("%Y-%m-%dT%H")
@@ -234,6 +234,8 @@ def controller_title(kind: str) -> str:
         extra = [w for w, on in (("pilots who fly like real arrivals", pilots == "measured"),
                                  ("pilots who fly like real arrivals, their descent rates wandering as real crews' do",
                                   pilots == "drifting"),
+                                 ("pilots who fly like real arrivals, starting at their real crews' descent rates at "
+                                  "handover and wandering as real crews' do", pilots == "drifting_handover"),
                                  ("the new look-ahead", lookahead == "model")) if on]
         return controller_title(base) + (f", with {' and '.join(extra)}" if extra else "")
     names = {"rules": "Rules controller", "rules_speed": "Speed-only rules controller", "ai_speed": "Speed AI (final)"}

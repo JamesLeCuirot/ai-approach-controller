@@ -77,7 +77,8 @@ def world_options(controller_name: str) -> tuple[str, str, str]:
     words = opts.split("_") if opts else []
     if base == "rules_vector" or base.startswith("ai_vector"):  # stage 2's world unless told otherwise
         words = words or ["measured", "model"]
-    pilots = "drifting" if "drifting" in words else "measured" if "measured" in words else "bluesky"
+    pilots = ("drifting_handover" if "handover" in words else "drifting" if "drifting" in words
+              else "measured" if "measured" in words else "bluesky")
     return base, pilots, "model" if "model" in words else "old"
 
 

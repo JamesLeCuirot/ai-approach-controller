@@ -65,7 +65,10 @@ PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straigh
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
 # From 25 November, the simulated crews' descent rates wander as real crews' do (approach.sim.world, "drifting"): on 48
 # training sessions with the look-ahead, 2 losses of separation against 3 and 18.5 minutes per arrival against 19.3.
-PILOTS = "drifting"
+# From 26 November, each crew handed over descending starts at the place in the spread its real rate puts it
+# ("drifting_handover"): on 12 training days a crew's rate at handover tells its place over the next minute as well
+# in the simulator as in the real tracks (correlation 0.80 against 0.71, then 0.36 against 0.30 a minute later).
+PILOTS = "drifting_handover"
 
 
 class ShadowSession(LiveSession):
@@ -109,7 +112,7 @@ class ShadowEnv(LookAheadEnv):
         s = self.session
         a = Arrival(callsign=callsign, actype=actype, fix=fix, release_s=max(float(at_s), float(s.t)),
                     level_ft=int(round(state["alt"] / 100.0) * 100), speed_kt=0, lat=state["lat"], lon=state["lon"],
-                    track=state["track"], gs_kt=state["gs"])
+                    track=state["track"], gs_kt=state["gs"], vrate_fpm=state.get("vrate"))
         later = s.pending[s.released:]  # keep the ones still to come in time order
         k = bisect.bisect_right([p.release_s for p in later], a.release_s)
         s.pending.insert(s.released + k, a)
