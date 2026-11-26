@@ -56,9 +56,12 @@ SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the a
 # From 25 November, an aircraft through the localiser is turned back onto it from the north, as a real controller
 # would, or brought round with its approach clearance cancelled (overshoot "rejoin", cancel_missed): on 48 training
 # sessions with the look-ahead, the same 3 losses of separation and 19.3 minutes per arrival against 19.2.
+# From 26 November, an expedited descent not yet seen is planned on a crew quicker than three in four (expedite_rate
+# "p75"): on 48 training sessions with the look-ahead and drifting pilots, no losses of separation against 2, 3 close
+# landing gaps against 4 and 17.8 minutes per arrival against 18.5.
 PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
            "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
-           "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin"}
+           "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin", "expedite_rate": "p75"}
 LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
 # From 25 November, the simulated crews' descent rates wander as real crews' do (approach.sim.world, "drifting"): on 48
 # training sessions with the look-ahead, 2 losses of separation against 3 and 18.5 minutes per arrival against 19.3.

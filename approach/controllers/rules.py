@@ -353,7 +353,9 @@ class RulesController(Controller):
         its crew comes down at 1,500 ft/min or more. On the 48 training sessions (seed 2028, the planner alone,
         drifting pilots), "p75" took 18.23 minutes per arrival against 18.68 (quicker in 30 sessions, slower in 12),
         with 59 losses of separation against 88, 37 go-arounds against 39 and 45 landing gaps inside the minimum
-        against 60. "p50" in every result before 25 Nov 2026.
+        against 60. With the look-ahead on the same sessions: no losses of separation against 2, 3 close landing gaps
+        against 4, 17.8 minutes per arrival against 18.5 (train48_sim5_p75). "p50" in every result before 25 Nov
+        2026.
 
         ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
         already released, rather than in the order of the landing times first estimated for each (``key``). Without
