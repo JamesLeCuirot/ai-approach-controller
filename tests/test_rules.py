@@ -127,6 +127,32 @@ def test_stack_check_holders_keeps_arrivals_above_a_holder_kept_high():
         assert c._free_level(me, views["ME"], views, 8000.0) == free
 
 
+def test_expedite_rate_p75_plans_an_expedited_descent_on_a_quicker_crew():
+    """With expedite_rate="p75", an expedited descent not yet seen is planned on the 75th percentile of the measured
+    rates (quicker than the median, so less time); once seen expediting, the crew's own rate decides either way."""
+    from types import SimpleNamespace
+
+    import pytest
+
+    from approach.airports import egkk
+    from approach.controllers.rules import EXPEDITE_SETTLE_S, Plan, RulesController
+
+    ap = egkk.load()
+    v = SimpleNamespace(cs="X", alt_ft=15000.0, vs_fpm=0.0, expedite=False)
+    c50 = RulesController(ap, "26L", height_by="time", expedite=True)
+    c75 = RulesController(ap, "26L", height_by="time", expedite=True, expedite_rate="p75")
+    t50, t75 = c50._expedite_s(v, 3000.0), c75._expedite_s(v, 3000.0)
+    assert t75 < 0.9 * t50
+    seen = SimpleNamespace(cs="X", alt_ft=15000.0, vs_fpm=-1500.0, expedite=True)
+    p = Plan("X", "A320", 0.0, 1.0)
+    p.expedite_t = 0.0
+    for c in (c50, c75):
+        c.now = EXPEDITE_SETTLE_S + 1.0
+    assert c75._expedite_s(seen, 3000.0, p) == pytest.approx(c50._expedite_s(seen, 3000.0, p), rel=0.05)
+    with pytest.raises(ValueError):
+        RulesController(ap, "26L", expedite_rate="p90")
+
+
 def test_straight_in_brings_an_aircraft_on_the_final_line_straight_in():
     """With straight_in, an aircraft handed over far out near the extended centreline, heading the way of the final,
     is planned straight in (its leg along the course on its own side, inside the RMA) rather than sent to its stack;
