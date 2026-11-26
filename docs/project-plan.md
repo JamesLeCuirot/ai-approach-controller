@@ -1149,6 +1149,32 @@ The same 48 training sessions as `train48_sim5_drift` (drifting pilots), with th
 
 **What it says.** Planning on a quicker crew lets the planner take the shorter path more often. When the crew turns out slower, it is found out half a minute into the descent and its path lengthened, and the look-ahead catches what that leaves. The real controllers on the same 48 hours, scored with the same code, took 17.7 minutes per arrival, with no losses of separation and 3 go-arounds: 18.7 on 08R and 17.3 on 26L. So on these hours the look-ahead is now within 0.1 minutes per arrival of them overall, and on 26L a little quicker. On 08R the gain was smaller (0.4 minutes per arrival, against 0.7 on 26L), and the gap there is still 1.5 minutes. These are practice hours, which the controller's settings were chosen on, so the 120 test sessions are the fair measure. The crews that start where their real crews were (`train48_sim5_handover`, with today's planner as before, compared with `train48_sim5_drift`) are being flown now. After that, the 120 test sessions are flown with whatever has been merged.
 
+### Crews that start where their real crews were, with the look-ahead (26 November)
+
+The same 48 training sessions as `train48_sim5_drift`, with the same planner (before `p75`), and crews that start where their real crews were at handover (`--pilots drifting_handover`, [above](#why-arrivals-from-the-south-west-arent-brought-straight-in-and-crews-that-start-where-their-real-crews-were-25-november); [`runs/lookahead/train48_sim5_handover.json`](../runs/lookahead/train48_sim5_handover.json)):
+
+| | Minutes per arrival (08R / 26L) | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, crews starting where their real crews were | 18.3 (20.5 / 17.6) | 753 | 7 | 4 | 1 |
+| Look-ahead, drifting pilots (`train48_sim5_drift`) | 18.5 (20.6 / 17.8) | 753 | 2 | 0 | 4 |
+| Competitor, crews starting where their real crews were | 19.0 (21.2 / 18.3) | 751 | 81 | 29 | 59 |
+| Competitor, drifting pilots | 19.5 (21.6 / 18.8) | 751 | 88 | 39 | 60 |
+
+**The planner alone did better in the new world and the look-ahead worse.** Session 35, a busy evening on 26L, had 3 of the look-ahead's losses of separation and 2 of its go-arounds (the planner alone had 14 losses there, against 9 with drifting pilots). Sessions 3, 6, 13 and 17 had one loss each, and sessions 21 and 29 a go-around each. Sessions 13 and 21 had a loss each before. No landing gap was inside the wake turbulence spacing as scored at the runway, against 2. Five more losses of separation is within chance on these sessions (the 95% range is 7.0, wide because so many came in one session), and four more go-arounds only just (4.7). Arrivals were 0.11 minutes quicker, also within chance (0.27).
+
+**Is the new world closer to the real one?** It rests on a crew's rate at handover telling where it lies in the spread of descent rates for the next few minutes. That was measured on 12 training days (3,118 arrivals handed over descending; `place_of` on the handover reading against the place from the height lost over each 60 s window after it, as long as the crew was still descending), as the correlation of the two places as normal scores:
+
+| Window after handover | 0 to 60 s | 60 to 120 s | 120 to 180 s | 180 to 240 s | 300 to 360 s |
+| --- | --- | --- | --- | --- | --- |
+| Real crews | 0.71 | 0.30 | 0.19 | 0.15 | 0.11 |
+| Simulated crews started at the same places | 0.80 | 0.36 | 0.20 | 0.14 | 0.12 |
+
+So the rate at handover tells about as much in the simulator as in the real tracks, a little more in the first minute (one ADS-B reading is noisier than a minute's height loss), and very little after two minutes in either.
+
+**Merged as an option** (`a386084`), and shadow mode now uses it: in shadow mode the arrivals are real ones, and their real rates at handover are what a controller sees. Being the closer world, it is the one the look-ahead has to do well in, so its weaker result there is taken as a weakness to find, not a reason to keep the old world. The 120 test sessions will be flown in it.
+
+**What the look-ahead doesn't know.** In its copies every crew is drawn again from the whole spread at every look, so a crew handed over coming down fast, or seen coming down slowly on radar, is flown as anyone in most copies. The `known-copies` branch (`--known-copies`) starts each crew in the copies from what a controller has seen of it: the rate it was last seen descending at on radar, or its rate at handover, moved on from there as a drifting crew's would be since (half of it gone in about 35 seconds, all but its 7% lasting part within a few minutes). The [earlier version](#copies-that-start-each-crew-at-its-seen-descent-rate-25-november), with steady pilots and a two-minute easing, made no clear difference; this one follows the measured drift. It is being flown on the same 48 sessions (`train48_sim5_known`), to be compared with `train48_sim5_handover`. The look-ahead's events in the new world are being flown again to see what happened in each: session 3's loss of separation was an aircraft that overshot the final approach line, was brought round and told to climb to 6,000 ft, and climbed back into an arrival coming down behind it, the known weak spot of the path flown after an overshoot rather than anything to do with the crews.
+
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
 **Seen descent rates.** Session 28's loss of separation (a Dash 8 and an A320neo converging while descending at different rates) suggested the safety check should start each aircraft from the rate it is seen descending at, not the typical rate for its height. On the real tracks of 6 training days (24,485 points in descents), predicting height 60 and 120 seconds ahead, the typical rate was out by 294 and 475 ft on average; starting from the seen rate and easing back towards the typical one over about 2 minutes, by 209 and 388 ft (keeping the seen rate throughout was worse, 240 and 561). With the planner alone on 96 training sessions (seed 2027), the safety check with seen rates made no difference: 151 losses of separation either way, 22.56 minutes per arrival against 22.57, and only 11 sessions came out differently. The check blocks only instructions that would bring a conflict sooner than without them, and these convergences start from clearances that were safe when given. It stays on its own branch.
