@@ -62,7 +62,10 @@ SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the a
 PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
            "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
            "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin", "expedite_rate": "p75"}
-LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True}
+# From 26 November, the look-ahead's copies start each crew from what has been seen of it (its rate on radar or at
+# handover, moved on as a drifting crew's would be since): on 48 training sessions, 2 losses of separation against 7
+# and 3 go-arounds against 4, with the same minutes per arrival.
+LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves": True, "known_copies": True}
 # From 25 November, the simulated crews' descent rates wander as real crews' do (approach.sim.world, "drifting"): on 48
 # training sessions with the look-ahead, 2 losses of separation against 3 and 18.5 minutes per arrival against 19.3.
 # From 26 November, each crew handed over descending starts at the place in the spread its real rate puts it

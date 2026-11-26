@@ -278,9 +278,14 @@ def apply_move(env: VectorEnv, move: tuple | None) -> np.ndarray:
 
 
 def redraw_pilots(world, seed: int) -> None:
-    """Draw every pilot again from the measured spread, and new response delays: how a copy's crews fly."""
+    """Draw every pilot again from the measured spread, and new response delays: how a copy's crews fly.
+
+    With drifting pilots, a crew in ``world.known_places`` (set by a LookAhead with known_copies: the place in the
+    spread it was last seen at, and when) is drawn from where that puts it now, as a drifting crew moves on from a
+    known place (approach.sim.world.drift_start, then drift_step over the time since), instead of from the whole
+    spread."""
     from approach.sim.world import (_BOUNDS, FINAL_SLOWING_BOUNDS, FPM_TO_MS, descent_by_height, descent_profile,
-                                    drift_start, expedite_profile,
+                                    drift_start, drift_step, expedite_profile,
                                     descent_rate_at, draw, final_slowing_quantiles, response_quantiles)
 
     world.rng = random.Random(seed)
@@ -292,18 +297,28 @@ def redraw_pilots(world, seed: int) -> None:
     table = final_slowing_quantiles(world.airport.icao)
     by_height = bool(descent_by_height(world.airport.icao))
     alts = {v.cs: v.alt_ft for v in world.views()} if by_height else {}
+    known = (getattr(world, "known_places", None) or {}) if world.pilot_model in ("drifting", "drifting_handover") \
+        else {}
     for cs, p in world.pilots.items():
         for name in _BOUNDS:
             u = world.pilot_rng.random()
             setattr(p, name, draw(q[name], u, _BOUNDS[name]))
             if name == "descent_fpm" and by_height and cs in alts:
+                start = None
+                if cs in known:  # from the place it was last seen at, moved on as a drifting crew's would be
+                    u_seen, t_seen = known[cs]
+                    lasting, z = drift_start(u_seen, world.drift_rng)
+                    u = u_seen
+                    if world.t > t_seen:
+                        z, u = drift_step(lasting, z, world.t - t_seen, world.drift_rng)
+                    start = (lasting, z)
                 p.descent_u = u
                 p.descent_profile = descent_profile(world.airport.icao, u)
                 p.expedite_profile = expedite_profile(world.airport.icao, u)
                 p.descent_fpm = descent_rate_at(world.airport.icao,
                                                 p.expedite_profile if p.expedite else p.descent_profile, alts[cs])
-                if world.pilot_model in ("drifting", "drifting_handover"):  # drawn again from the whole spread, then drifting
-                    p.drift_lasting, p.drift_z = drift_start(u, world.drift_rng)
+                if world.pilot_model in ("drifting", "drifting_handover"):  # drawn again, then drifting
+                    p.drift_lasting, p.drift_z = start if start else drift_start(u, world.drift_rng)
                     p.drift_t = world.t
         if table:
             nearest = min(table, key=lambda k: abs(k - p.approach_speed))
@@ -470,7 +485,8 @@ class LookAhead:
 
     def __init__(self, workers: int = 1, draws: int = DRAWS, min_gain: float = MIN_GAIN, seed: int = 0,
                  moves: str = "small", time_weight: float = 0.0, releases: bool = False,
-                 go_around_extra: float = 0.0, stack_moves: bool = False, careful_stacks: bool = False):
+                 go_around_extra: float = 0.0, stack_moves: bool = False, careful_stacks: bool = False,
+                 known_copies: bool = False):
         """``time_weight`` (efficient look-ahead): each aircraft-minute in the sector during the copies, and each
         minute the planner still expects aircraft to need at their end, costs this much in the score (a loss of
         separation costs 5). ``releases``: also try taking the lowest aircraft of each stack off it now.
@@ -478,13 +494,18 @@ class LookAhead:
         of those below, and bringing an aircraft on its way to a stack straight in (release_now), with every
         new move judged over STACK_MOVES_HORIZON_S. ``careful_stacks``: holding an aircraft at another level in its
         stack, and taking that back, are made only where every copy shows no new trouble, as the efficiency moves
-        are (CAREFUL_STACK_MOVES)."""
+        are (CAREFUL_STACK_MOVES). ``known_copies`` (with drifting pilots): in the copies, each crew starts from what a
+        controller has seen of its descent, the rate it was last seen descending at on radar or, with
+        "drifting_handover" pilots, its rate at handover, moved on as a drifting crew's would be since
+        (redraw_pilots); without it every crew is drawn from the whole spread at every look."""
         if moves not in ("small", "wide"):
             raise ValueError("moves must be small or wide")
         self.workers, self.draws, self.min_gain, self.moves = workers, draws, min_gain, moves
         self.time_weight, self.releases, self.go_around_extra = time_weight, releases, go_around_extra
         self.stack_moves = stack_moves and releases
         self.careful_stacks = careful_stacks
+        self.known_copies = known_copies
+        self.last_seen: dict[str, tuple[float, float]] = {}  # known_copies: cs -> (place seen descending, when)
         self.release_horizon_s = RELEASE_HORIZON_S
         self.horizon_s = HORIZON_WIDE_S if moves == "wide" else HORIZON_S
         self.gap_weight = GAP_WEIGHT if moves == "wide" else 0.0
@@ -499,6 +520,27 @@ class LookAhead:
         self.last_look = -1e9
         self.made = {}
         self.release_tried = {}
+        self.last_seen = {}
+
+    def know(self, world) -> None:
+        """known_copies: note where each aircraft seen descending lies in the spread now, and give the world each
+        aircraft's latest known place and when (world.known_places, read by redraw_pilots in the copies): from radar,
+        or, with "drifting_handover" pilots, from its rate at handover if that is later."""
+        from approach.response import seen_descent_u
+
+        views = world.views()
+        for v, u in zip(views, seen_descent_u(views, world.airport.icao)):
+            if np.isfinite(u):
+                self.last_seen[v.cs] = (float(u), world.t)
+        known = {}
+        for v in views:
+            recs = [self.last_seen.get(v.cs)]
+            if world.pilot_model == "drifting_handover":
+                recs.append(getattr(world, "handover_seen", {}).get(v.cs))
+            recs = [r for r in recs if r is not None]
+            if recs:
+                known[v.cs] = max(recs, key=lambda r: r[1])
+        world.known_places = known
 
     def score(self, copy: dict) -> float:
         time = copy.get("aircraft_minutes", 0.0) + copy.get("remaining_minutes", 0.0)
@@ -593,6 +635,8 @@ class LookAhead:
         """Fly the copies with nothing changed: their pilot seeds, results, and the aircraft that ran into trouble
         in any of them. Also keeps the share of the copies each aircraft ran into trouble in (last_involved)."""
         self.last_involved = {}
+        if self.known_copies:
+            self.know(env.session.world)
         seeds = [self.rng.randrange(1 << 30) for _ in range(self.draws)]
         self.last_base = fly_copies(env, [(s, None) for s in seeds], self.workers, self.horizon_s)  # one per seed
         base = [b for b in self.last_base if "error" not in b]
@@ -750,7 +794,8 @@ def _run(args: tuple) -> list[dict]:
             else:
                 la = LookAhead(workers=copy_workers, draws=draws, min_gain=min_gain, seed=s["pilot_seed"], moves=moves,
                                time_weight=time_weight, releases=releases, go_around_extra=go_around_extra,
-                               stack_moves=stack_moves, careful_stacks=careful_stacks)
+                               stack_moves=stack_moves, careful_stacks=careful_stacks,
+                               known_copies=bool(opts.get("known_copies")))
             row, secs = fly_session(env, options, la)
             rows.append({**meta, "controller": "ai", **row, "wall_s": round(secs),
                          "looks": la.stats["looks"], "looks_with_a_problem": la.stats["looks_with_a_problem"],
@@ -800,6 +845,9 @@ def main() -> None:
     ap.add_argument("--careful-stacks", action="store_true",
                     help="hold an aircraft at another level in its stack, or take that back, only where every copy "
                          "shows no new trouble (as for the releases)")
+    ap.add_argument("--known-copies", action="store_true",
+                    help="with drifting pilots: in the copies, each crew starts from the rate it was last seen "
+                         "descending at (or its rate at handover, with drifting_handover pilots)")
     ap.add_argument("--planner", default="",
                     help='changes to the planner (vector.PLANNER_2), as JSON, e.g. \'{"height_by": "time"}\': for the '
                          "competitor and the look-ahead alike")
@@ -837,7 +885,7 @@ def main() -> None:
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
               args.go_around_extra, planner, args.stack_moves, args.copy_workers, args.careful_stacks,
-              {"pilots": args.pilots, "go_arounds": args.go_arounds})
+              {"pilots": args.pilots, "go_arounds": args.go_arounds, "known_copies": args.known_copies})
              for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
@@ -873,6 +921,7 @@ def main() -> None:
                "releases_vetoed": sum(int(r.get("vetoed") or 0) for r in ai),
                "release_horizon_s": la.release_horizon_s, "stack_moves": la.stack_moves,
                **({"careful_stacks": True} if la.careful_stacks else {}),
+               **({"known_copies": True} if args.known_copies else {}),
                **({"stack_moves_horizon_s": STACK_MOVES_HORIZON_S, "stack_moves_retry_s": RELEASE_RETRY_S}
                   if la.stack_moves else {}),
                "seconds_per_look": round(sum(float(r["look_s"]) for r in ai) / looks, 1),

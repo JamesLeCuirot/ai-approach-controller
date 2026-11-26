@@ -21,6 +21,7 @@ test days (scripts/response_check.py).
 
 from __future__ import annotations
 
+import functools
 import math
 import random
 from dataclasses import dataclass
@@ -77,6 +78,43 @@ def state_from_views(views) -> State:
         gs=np.array([bool(v.gs) for v in views]), holding=np.array([v.phase == "holding" for v in views]),
         expedite=np.array([bool(getattr(v, "expedite", False)) for v in views]),
     )
+
+
+# An aircraft is seen descending at its own rate when it descends at least this fast and is still this far above the
+# level it is cleared to (it slows down as it levels off), and isn't on the glide path or going around.
+SEEN_MIN_FPM = 300.0
+SEEN_ABOVE_FT = 500.0
+_U_GRID = np.linspace(0.0, 1.0, 201)
+
+
+@functools.lru_cache(maxsize=None)
+def _profiles(airport_icao: str) -> tuple[np.ndarray, np.ndarray]:
+    """The usual and expedited descent profiles (rate at each band's middle) at each u of _U_GRID."""
+    usual = np.array([descent_profile(airport_icao, float(u)) for u in _U_GRID])
+    fast = np.array([expedite_profile(airport_icao, float(u)) for u in _U_GRID])
+    return usual, fast
+
+
+def seen_descent_u(views, airport_icao: str) -> np.ndarray:
+    """Where each aircraft's descent rate lies in the measured spread (0 the slowest, 1 the fastest), from the
+    vertical speed it is seen descending at now and its height (approach.sim.world.descent_profile; the expedited
+    spread for one told to expedite). NaN where it isn't seen descending at its own rate. A controller sees each
+    aircraft's vertical speed on radar, and the live feed carries it."""
+    bands = descent_by_height(airport_icao)
+    out = np.full(len(views), np.nan)
+    if len(bands) < 2:
+        return out
+    mids = tuple(m for m, _ in bands)
+    usual, fast = _profiles(airport_icao)
+    for k, v in enumerate(views):
+        rate = -float(v.vs_fpm)
+        if (rate < SEEN_MIN_FPM or v.alt_ft < v.target_alt + SEEN_ABOVE_FT or v.gs
+                or getattr(v, "phase", "") == "go_around"):
+            continue
+        profile = fast if getattr(v, "expedite", False) else usual
+        at = np.maximum.accumulate(_rate_by_height(mids, profile, np.full((len(_U_GRID), 1), float(v.alt_ft)))[:, 0])
+        out[k] = float(np.clip(np.interp(rate, at, _U_GRID), 0.005, 0.995))
+    return out
 
 
 @dataclass

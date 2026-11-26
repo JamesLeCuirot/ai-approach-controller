@@ -364,6 +364,9 @@ class World:
         self.drift_rng = random.Random(seed * 104729 + 31)  # its own too, so the other draws stay as they were
         self.pilot_delay_s = pilot_delay_s
         self.pilots: dict[str, Pilot] = {}
+        # What a controller saw of each aircraft handed over descending: the place in the usual spread at its height
+        # that its rate then puts it at, and when (any measured pilots; approach.ai.lookahead's known copies use it).
+        self.handover_seen: dict[str, tuple[float, float]] = {}
         self._last_hdg: dict[str, float] = {}
         self.t = 0.0
         self.last_landing_t = -1e9
@@ -413,9 +416,10 @@ class World:
                     p.descent_profile = descent_profile(self.airport.icao, u)
                     p.expedite_profile = expedite_profile(self.airport.icao, u)
                     p.descent_fpm = descent_rate_at(self.airport.icao, p.descent_profile, alt_ft)
-                    if self.pilot_model == "drifting_handover" and vs_fpm is not None \
-                            and -vs_fpm >= HANDOVER_DESCENT_FPM:
-                        u = place_of(self.airport.icao, -vs_fpm, alt_ft)
+                    if vs_fpm is not None and -vs_fpm >= HANDOVER_DESCENT_FPM:
+                        self.handover_seen[cs] = (place_of(self.airport.icao, -vs_fpm, alt_ft), self.t)
+                    if self.pilot_model == "drifting_handover" and cs in self.handover_seen:
+                        u = self.handover_seen[cs][0]
                         p.descent_u = u
                         p.descent_profile = descent_profile(self.airport.icao, u)
                         p.expedite_profile = expedite_profile(self.airport.icao, u)

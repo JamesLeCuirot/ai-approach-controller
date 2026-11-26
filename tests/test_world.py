@@ -397,3 +397,34 @@ def test_a_go_around_from_above_3000_ft_never_comes_down_with_no_descent(airport
         world.step(60)
         alt[mode] = world.views()[0].alt_ft
     assert alt["published"] < 4500 and alt["no_descent"] == pytest.approx(5000, abs=60)
+
+
+def test_known_copies_draw_a_crew_from_where_it_was_last_seen(airport):
+    """The look-ahead's copies (known_copies): a crew handed over descending fast is drawn fast in nearly every copy
+    just after, and from the whole spread once long enough has passed for a drifting crew to have wandered off."""
+    import statistics
+
+    from approach.ai.lookahead import redraw_pilots
+    from approach.sim.world import World
+
+    pos = airport.holds["WILLO"].position
+    world = World(airport, "08R", seed=11, pilots="drifting_handover")
+    world.spawn("FAST1", "A319", pos.lat - 0.3, pos.lon - 0.4, 30.0, 15000, 270, vs_fpm=-2112)
+    u_seen, t_seen = world.handover_seen["FAST1"]
+    assert u_seen > 0.85 and t_seen == world.t
+
+    def places(since_s: float) -> list[float]:
+        world.known_places = {"FAST1": (u_seen, world.t - since_s)}
+        out = []
+        for seed in range(200):
+            redraw_pilots(world, seed)
+            out.append(world.pilots["FAST1"].descent_u)
+        return out
+
+    just_after, long_after = places(0.0), places(900.0)
+    assert min(just_after) == pytest.approx(u_seen) == max(just_after)
+    assert statistics.mean(places(20.0)) > 0.75
+    assert 0.4 < statistics.mean(long_after) < 0.6
+    world.known_places = {}
+    redraw_pilots(world, 3)
+    assert world.pilots["FAST1"].descent_u != pytest.approx(u_seen)
