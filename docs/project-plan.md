@@ -1223,7 +1223,38 @@ Session 35 of the trace [above](#crews-that-start-where-their-real-crews-were-wi
 
 **One session changed, and only in what the look-ahead foresaw.** The planner alone flew all 48 sessions exactly as before, so none of its go-arounds was changed by the fix. The look-ahead flew 47 the same. In session 43, a morning on 26L, neither run had a go-around: the difference was in the look-ahead's copies, where an aircraft sent round from above 3,000 ft no longer came down into the one ahead. 31 minutes in, the copies no longer showed a problem that before had made the look-ahead turn AUR600A 10 degrees left, and from there the session went another way, with arrivals 1.8 minutes quicker on average (17.7 minutes against 19.5). Over the 48 sessions that is 0.05 minutes per arrival quicker, within chance (the 95% range is 0.09).
 
-**What it says.** The fault mattered little on these sessions: it only arises when the tower sends an aircraft round high on the final, which is rare with the look-ahead. With it fixed, the look-ahead's copies no longer foresee trouble that a real crew wouldn't cause. Everything merged so far (crews that start where their real crews were, copies that start each crew from what has been seen of it, expedited descents planned on a quicker crew and this fix) is now being flown on the 120 test sessions (`test120_sim5_handover`), which are only ever reported, never tuned on.
+**What it says.** The fault mattered little on these sessions: it only arises when the tower sends an aircraft round high on the final, which is rare with the look-ahead. With it fixed, the look-ahead's copies no longer foresee trouble that a real crew wouldn't cause. Everything merged so far (crews that start where their real crews were, copies that start each crew from what has been seen of it, expedited descents planned on a quicker crew and this fix) is now being flown on the 120 test sessions (`test120_sim5_handover`), which are only ever reported, never tuned on ([below](#the-test-with-everything-merged-since-23-november-27-november)).
+
+### The test with everything merged since 23 November (27 November)
+
+**The 120 test sessions** (1,785 arrivals), flown only to report, never tuned on, with everything merged since the [last test](#the-test-with-the-planner-changes-of-21-and-22-november). In the planner: turning an aircraft back onto the localiser after an overshoot, and planning an expedited descent on a quicker crew (`expedite_rate` p75). In the look-ahead: copies that start each crew from what has been seen of it. In the simulator: crews that start where their real crews were and drift as real crews do, and go-arounds that no longer come down into the aircraft ahead ([`runs/lookahead/test120_sim5_handover.json`](../runs/lookahead/test120_sim5_handover.json)). The test with drifting pilots started on 25 November (`test120_sim5_drift`) was stopped after 9 sessions in favour of this one.
+
+| | Minutes per arrival (08R / 26L) | Landed | Losses of separation (away from the stacks) | Go-arounds | Gaps inside the minimum | Wake infringements |
+| --- | --- | --- | --- | --- | --- | --- |
+| Look-ahead, 27 November | **18.0** (19.4 / 17.0) | 1,785 | 5 (3) | **4** | 0 | 2 |
+| The planner under it, alone | 19.3 | 1,778 | 164 (113) | 65 | 112 | 8 |
+| Real controllers | 17.8 (17.4 / 18.0) | 1,776 | 4 (4) | 14 | 0 | 0 |
+| *23 November:* look-ahead | 19.8 (21.2 / 18.7) | 1,785 | 11 (6) | 5 | 2 | 0 |
+| *23 November:* the planner under it, alone | 20.1 | 1,779 | 172 (98) | 64 | 84 | 8 |
+
+- **Against the 23 November test** it is 1.74 minutes per arrival quicker (1.35 to 2.12, beyond chance), quicker in 100 of the 116 sessions with arrivals and slower in 14. Its losses of separation fell from 11 to 5 (14 fewer to 2 more), 2 of them at the stacks against 5, and its go-arounds from 5 to 4 (7 fewer to 5 more), both within chance. It had no gaps inside the minimum, against 2. Measured at every moment on the final, two pairs were briefly inside the wake turbulence spacing (sessions 9 and 59), against none; as scored at the runway, neither test had one. The simulator changed as well as the controller, so not all of this is the controller's: the planner alone was 0.8 minutes per arrival quicker than on 23 November too (beyond chance).
+- **Against the real controllers** the gap is now 0.3 minutes per arrival (0.6 quicker to 1.2 slower, within chance), against 2.0 on 23 November. It was quicker than them in 31 sessions and slower in 85, but quicker by more where it was quicker: on 26L it took 17.0 minutes per arrival against their 18.0, and on 08R 19.4 against their 17.4. Its 5 losses of separation against their 4 are within chance (6 fewer to 8 more), and its 4 go-arounds against their 14 are within chance too, just (21 fewer to 1 more).
+- **The planner alone.** The look-ahead on top takes away 159 of its 164 losses of separation and 61 of its 65 go-arounds (both beyond chance), and is 1.2 minutes per arrival quicker. It changed the plan 1,110 times against 1,509 on 23 November, released aircraft early from a stack 96 times (96), took 10 off a stack above the lowest (16) and brought 50 straight in (74).
+
+**By traffic level** (minutes per arrival, each session weighted by its arrivals):
+
+| Arrivals in the session | Sessions | Look-ahead | 23 November | Planner alone | Real controllers | Gap to the real controllers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 to 6 | 15 | 15.65 | 16.08 | 15.69 | 13.47 | 2.2 |
+| 7 to 12 | 20 | 17.06 | 18.52 | 17.30 | 15.88 | 1.2 |
+| 13 to 18 | 42 | 17.25 | 18.80 | 18.21 | 16.31 | 0.9 |
+| 19 or more | 39 | 19.04 | 21.06 | 20.59 | 19.58 | -0.5 |
+
+In the busiest hours the look-ahead is now half a minute per arrival quicker than the real controllers. The time gained since 23 November is spread across every traffic level, most of it in the busier hours. In the quietest hours it is still 2.2 minutes slower, which is how each aircraft is flown from handover to the runway when nothing is in its way.
+
+**The events.** Losses of separation in sessions 29 (08R), 83 (26L, twice, where there was also a go-around), 99 and 107 (08R, both at a stack); go-arounds in sessions 20, 83, 102 and 113. Session 107 had a loss in the 23 November test as well; the others are new, and 17 of that test's 18 losses, go-arounds and close landing gaps are gone. They will be traced, for diagnosis only, as before.
+
+**What it says.** On hours none of its settings were chosen on, the look-ahead is now level with the real controllers on time overall and on losses of separation, both within chance, with fewer go-arounds than they had. What is left is the easterly runway, 08R, where it is still 2 minutes per arrival slower than them and had 3 of its 5 losses, and the quiet hours. The world it was tested in is closer to the real one than before, but it is still a simulator: the crews, the other traffic and what the controllers would have done are modelled, not real. The fourth live hour, on 27 November from 14:12 UTC on runway 08R, is being flown now.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
