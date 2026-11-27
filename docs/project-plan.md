@@ -1254,7 +1254,36 @@ In the busiest hours the look-ahead is now half a minute per arrival quicker tha
 
 **The events.** Losses of separation in sessions 29 (08R), 83 (26L, twice, where there was also a go-around), 99 and 107 (08R, both at a stack); go-arounds in sessions 20, 83, 102 and 113. Session 107 had a loss in the 23 November test as well; the others are new, and 17 of that test's 18 losses, go-arounds and close landing gaps are gone. They will be traced, for diagnosis only, as before.
 
-**What it says.** On hours none of its settings were chosen on, the look-ahead is now level with the real controllers on time overall and on losses of separation, both within chance, with fewer go-arounds than they had. What is left is the easterly runway, 08R, where it is still 2 minutes per arrival slower than them and had 3 of its 5 losses, and the quiet hours. The world it was tested in is closer to the real one than before, but it is still a simulator: the crews, the other traffic and what the controllers would have done are modelled, not real. The fourth live hour, on 27 November from 14:12 UTC on runway 08R, is being flown now.
+**What it says.** On hours none of its settings were chosen on, the look-ahead is now level with the real controllers on time overall and on losses of separation, both within chance, with fewer go-arounds than they had. What is left is the easterly runway, 08R, where it is still 2 minutes per arrival slower than them and had 3 of its 5 losses, and the quiet hours. The world it was tested in is closer to the real one than before, but it is still a simulator: the crews, the other traffic and what the controllers would have done are modelled, not real. The fourth live hour, on 27 November from 14:12 UTC on runway 08R, is being flown now ([below](#the-fourth-live-hour-27-november)).
+
+### The fourth live hour (27 November)
+
+The look-ahead flew the real Gatwick arrivals of a fourth hour, 14:12 to 15:12 UTC, with everything merged ([`runs/shadow/2026-11-27T1411`](../runs/shadow/2026-11-27T1411/)): crews that start where their real crews were and drift as real crews do, the look-ahead's copies starting each crew from what has been seen of it, expedited descents planned on a quicker crew, and go-arounds that don't come down. Gatwick was landing on runway 08R, towards the east, as on the third hour. The forecast was the GFS 06Z run for 14:00. Nothing else was running, and the AI was never more than 23 seconds behind the clock. The hour was recorded from [adsb.fi](https://adsb.fi)'s open data feed, as on the third hour, so the files holding its positions are kept locally ([above](#the-third-live-hour-25-november)).
+
+| | AI | Real controllers |
+| --- | --- | --- |
+| Arrivals handed over in the hour | 19 | 19 |
+| Landed | 19 | 19 |
+| Losses of separation | 0 | 0 |
+| Go-arounds | 0 | 0 |
+| Minutes per arrival, handover to landing | 17.89 | 14.86 |
+| Track miles per arrival | 69 | 59 |
+| Landing spacing, mean (closest) | 5.1 NM (3.5) | 5.8 NM (3.3) |
+| Aircraft held in a stack | 5, for 15 seconds to 2.6 minutes each | 0 |
+
+The gap is 3.0 minutes per arrival, against 2.5 on the third hour, a quieter one (10 arrivals). The spotter called all 19 arrivals among the 178 aircraft that entered the handover region, with no misses and nothing called that wasn't one. The look-ahead looked 142 times, found a problem in 7 and changed the plan 9 times.
+
+- **Where the 3.0 minutes went.** By where each arrival was handed over:
+
+  | Handed over | Arrivals | Sent to | Held | Extra minutes in all | Real controllers' minutes per arrival |
+  | --- | --- | --- | --- | --- | --- |
+  | South-west | 7 | WILLO | 4 | 31.2 | 13.7 |
+  | North-west | 3 | WILLO | 1 | 14.7 | 14.3 |
+  | South-east and east | 9 | TIMBA, or straight in | 0 | 11.8 | 16.0 |
+
+  Arrivals from the west account for 46 of the 58 extra minutes. Landing on 08R, the final approach comes in from the west, on their side of the airport. The planner sends every one of them to WILLO, 10 NM south of the airport, then west on a downwind and round onto the final 12 NM out. The real controllers brought them in from the west much more directly: the south-west arrivals took them 13.7 minutes on average, the quickest of any direction. TOM473, handed over 37 NM south-west at FL149, took the AI 21.4 minutes against 12.8: it was held at WILLO for 2.6 minutes. EZY23HL took 17.9 against 10.6, and two of the north-west arrivals sent south to WILLO, EZY32AB and EZY57EZ, took 23.1 against 16.4 and 17.2 against 11.6.
+- **From the south-east and east** the AI flew much the same path as the real controllers, west along the south of the airport and onto a base: 1.3 minutes per arrival slower on average, and ABY258 0.1 minutes quicker.
+- **The same as the third hour, and as the test.** The third hour's gap was also mostly arrivals from the south-west going round by WILLO, and in the 120 test sessions 08R is where the AI is 2 minutes per arrival behind the real controllers. A path from the west straight to a base leg or a short downwind, for the crews coming down quickly enough, as real controllers choose ([above](#why-arrivals-from-the-south-west-arent-brought-straight-in-and-crews-that-start-where-their-real-crews-were-25-november)), is the next thing to build, on the training hours that land on 08R.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
