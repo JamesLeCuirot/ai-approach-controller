@@ -55,6 +55,7 @@ import numpy as np
 from approach.ai.vector import FEATURES_2, N_MAX, OFFSETS, PLANNED, VectorController, VectorEnv
 from approach.geo import distance_xy
 from approach.instructions import Instruction
+from approach.sim.world import GO_AROUNDS
 
 LOOK_EVERY_S = 30
 HORIZON_S = 300
@@ -768,7 +769,8 @@ def _run(args: tuple) -> list[dict]:
     careful_stacks = bool(args[13]) if len(args) > 13 else False
     opts = args[-1] if isinstance(args[-1], dict) else {}  # options by name, last
     pilots = opts.get("pilots", "measured")
-    env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None, pilots=pilots)
+    env = LookAheadEnv(hours=[s["hour"] for s in sessions], planner=planner or None, pilots=pilots,
+                       go_arounds=opts.get("go_arounds", "published"))
     policy = None
     if copy:  # the network that copies the look-ahead (approach.ai.imitate) flies instead
         from approach.ai.imitate import CopyDriver, load_copy
@@ -855,6 +857,9 @@ def main() -> None:
                     help="how the simulated pilots fly: \"drifting\" pilots' descent rates wander as real crews' do "
                          "(approach.sim.world), for the competitor, the look-ahead and its copies alike; "
                          "\"drifting_handover\" ones start where their real crews were at handover")
+    ap.add_argument("--go-arounds", default="published", choices=GO_AROUNDS,
+                    help="how the simulated go-arounds are flown: \"no_descent\" ones sent round from above 3,000 ft "
+                         "level off instead of coming down to it (approach.sim.world)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     planner = json.loads(args.planner) if args.planner else {}
@@ -880,7 +885,7 @@ def main() -> None:
     # with several busy hours while the others sat idle).
     tasks = [([s], args.draws, args.min_gain, not saved, args.moves, args.copy, parts, args.time_weight, args.releases,
               args.go_around_extra, planner, args.stack_moves, args.copy_workers, args.careful_stacks,
-              {"pilots": args.pilots, "known_copies": args.known_copies})
+              {"pilots": args.pilots, "go_arounds": args.go_arounds, "known_copies": args.known_copies})
              for s in sessions]
     with Pool(args.workers) as pool:
         rows = [r for part in pool.map(_run, tasks, chunksize=1) for r in part]
@@ -907,6 +912,7 @@ def main() -> None:
                "time_weight": args.time_weight, "releases": args.releases, "go_around_extra": args.go_around_extra,
                "planner": planner,
                **({"pilots": args.pilots} if args.pilots != "measured" else {}),
+               **({"go_arounds": args.go_arounds} if args.go_arounds != "published" else {}),
                "quick_copies": QUICK_COPIES,
                "changes": sum(int(r["changes"]) for r in ai), "back_to_plan": sum(int(r["back_to_plan"]) for r in ai),
                **{f"moves_{k}": sum(int(r.get(f"moves_{k}") or 0) for r in ai) for k in MOVE_KINDS},

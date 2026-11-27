@@ -74,6 +74,13 @@ MAX_CAPTURE_TRACK_DEG = 70.0  # steepest track across the localiser the autopilo
 SIM_DT_S = float(os.environ.get("APPROACH_SIM_DT", "0.5"))
 
 PILOT_MODELS = ("bluesky", "measured", "drifting", "drifting_handover")
+# How a go-around is flown. "published" (every result before 26 Nov 2026): the published missed approach, straight
+# ahead to 3,000 ft, whatever height the aircraft is at, so one sent round from higher (the tower sends a follower round
+# when it closes within 2 NM of the aircraft ahead anywhere on the final approach) came down to 3,000 ft towards the
+# aircraft ahead of it. "no_descent": the same path, but from above 3,000 ft it levels off at the whole thousand feet
+# at or above it (within 200 ft counts as at it), as a crew sent round would never go down into the aircraft ahead.
+GO_AROUNDS = ("published", "no_descent")
+MISSED_APPROACH_FT = 3000
 # "drifting": measured pilots whose place in the spread of descent rates wanders as real crews' does. Measured from the
 # height real arrivals lose over 60 s windows within their descents, on 12 training days (5,965 descents of 2 minutes
 # or more; approach.data.response, 25 Nov 2026): the correlation of a crew's place (normal scores) between windows 60,
@@ -335,9 +342,13 @@ class Pilot:
 
 class World:
     def __init__(self, airport: Airport, runway: str, seed: int = 1, pilot_delay_s: tuple[float, float] = (3.0, 6.0),
-                 wind: "WindProfile | None" = None, sim_dt: float | None = None, pilots: str = "bluesky"):
+                 wind: "WindProfile | None" = None, sim_dt: float | None = None, pilots: str = "bluesky",
+                 go_arounds: str = "published"):
         if pilots not in PILOT_MODELS:
             raise ValueError(f"pilots must be one of {PILOT_MODELS}")
+        if go_arounds not in GO_AROUNDS:
+            raise ValueError(f"go_arounds must be one of {GO_AROUNDS}")
+        self.go_arounds = go_arounds
         self.bs = _bluesky(sim_dt or SIM_DT_S)
         from bluesky import stack
 
@@ -726,12 +737,19 @@ class World:
             return []
         p.phase, p.reason, p.cleared, p.loc, p.gs, p.go_around_stage = "go_around", reason, None, False, False, 1
         p.pending.clear()
-        p.target_hdg, p.target_alt, p.target_spd = self.runway.course_true, 3000, 200
+        level = self.go_around_level(v.alt_ft)
+        p.target_hdg, p.target_alt, p.target_spd = self.runway.course_true, level, 200
         self._hdg(p.cs, self.runway.course_true)
         self.stack(f"VS {p.cs} 2000")
-        self.stack(f"ALT {p.cs} 3000")
+        self.stack(f"ALT {p.cs} {level}")
         self._speed(p, 200)
         return [{"kind": "go_around", "cs": p.cs, "reason": reason, "text": f"{p.cs} going around: {reason}"}]
+
+    def go_around_level(self, alt_ft: float) -> int:
+        """The level a go-around from this height climbs (or, with go_arounds="published", comes down) to."""
+        if self.go_arounds == "published" or alt_ft <= MISSED_APPROACH_FT:
+            return MISSED_APPROACH_FT
+        return max(MISSED_APPROACH_FT, 1000 * math.ceil((alt_ft - 200.0) / 1000.0))
 
     def _go_around_tick(self, p: Pilot, v: AircraftView) -> list[dict]:
         # Published missed approach: straight ahead to 3,000 ft, then heading 178 (magnetic)

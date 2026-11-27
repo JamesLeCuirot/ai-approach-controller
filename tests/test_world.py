@@ -374,6 +374,31 @@ def test_a_handover_pilot_starts_where_its_real_crew_was(airport):
     assert level["drifting"] == level["drifting_handover"] and level["drifting"][1] == 15000
 
 
+def test_a_go_around_from_above_3000_ft_never_comes_down_with_no_descent(airport):
+    """Sent round at 5,000 ft (as the tower sends a follower round when it closes within 2 NM of the one ahead,
+    anywhere on the final), a "published" go-around comes down to 3,000 ft; a "no_descent" one levels off at
+    5,000 ft. From below 3,000 ft both climb to it."""
+    from approach.sim.world import World
+
+    w = World(airport, "26L", seed=5, go_arounds="no_descent")
+    assert [w.go_around_level(a) for a in (1500, 3000, 3150, 3250, 4082, 4980)] == [3000, 3000, 3000, 4000, 4000, 5000]
+    assert World(airport, "26L", seed=5).go_around_level(4980) == 3000
+    with pytest.raises(ValueError):
+        World(airport, "26L", go_arounds="down")
+    alt = {}
+    for mode in ("published", "no_descent"):
+        world = World(airport, "26L", seed=5, go_arounds=mode)
+        hold = airport.holds["WILLO"]
+        world.spawn("EZY12AB", "A320", hold.position.lat, hold.position.lon,
+                    airport.magnetic_to_true(hold.inbound_course_mag), 5000, 200)
+        world.step(10)
+        events = world._start_go_around(world.pilots["EZY12AB"], world.views()[0], "too close to the aircraft ahead")
+        assert events[0]["kind"] == "go_around"
+        world.step(60)
+        alt[mode] = world.views()[0].alt_ft
+    assert alt["published"] < 4500 and alt["no_descent"] == pytest.approx(5000, abs=60)
+
+
 def test_known_copies_draw_a_crew_from_where_it_was_last_seen(airport):
     """The look-ahead's copies (known_copies): a crew handed over descending fast is drawn fast in nearly every copy
     just after, and from the whole spread once long enough has passed for a drifting crew to have wandered off."""

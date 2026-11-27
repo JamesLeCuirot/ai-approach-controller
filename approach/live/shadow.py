@@ -72,6 +72,9 @@ LOOKAHEAD = {"moves": "wide", "time_weight": 0.1, "releases": True, "stack_moves
 # ("drifting_handover"): on 12 training days a crew's rate at handover tells its place over the next minute as well
 # in the simulator as in the real tracks (correlation 0.80 against 0.71, then 0.36 against 0.30 a minute later).
 PILOTS = "drifting_handover"
+# From 26 November, a simulated go-around sent round from above 3,000 ft levels off instead of coming down to the
+# published missed approach's 3,000 ft into the aircraft ahead (approach.sim.world.GO_AROUNDS).
+GO_AROUNDS = "no_descent"
 
 
 class ShadowSession(LiveSession):
@@ -86,7 +89,8 @@ class ShadowEnv(LookAheadEnv):
     """The look-ahead's world with no recorded hour behind it: arrivals are added live."""
 
     def __init__(self, planner: dict | None = None):
-        super().__init__(hours=[("2024-01-09", 12)], planner=planner, pilots=PILOTS)  # the hours are never drawn from
+        super().__init__(hours=[("2024-01-09", 12)], planner=planner, pilots=PILOTS,  # the hours are never drawn from
+                         go_arounds=GO_AROUNDS)
 
     def start(self, runway: str, wind, wind_label: str, day: str, duration_s: float, pilot_seed: int, title: str):
         self.scheme = wake.scheme_for(day)
@@ -99,7 +103,8 @@ class ShadowEnv(LookAheadEnv):
                          map=map_for_replay(self.airport, runway, egkk.DISPLAY_FIXES))
         with wake.scheme(self.scheme):
             self.session = ShadowSession(self.airport, scenario, in_session, log, seed=pilot_seed, wind=wind,
-                                         frames=True, pilots=self.pilots, lookahead=self.lookahead)
+                                         frames=True, pilots=self.pilots, lookahead=self.lookahead,
+                                         go_arounds=self.go_arounds)
         self.in_conflict, self.wake_flagged, self.gaps = set(), set(), []
         self.counts = {"landed": 0, "go_arounds": 0, "separation_losses": 0, "losses_at_stack": 0,
                        "losses_out_of_reach": 0, "wake_infringements": 0, "instructions": 0, "blocked": 0,
