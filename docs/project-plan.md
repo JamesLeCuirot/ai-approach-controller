@@ -1260,7 +1260,7 @@ In the busiest hours the look-ahead is now half a minute per arrival quicker tha
 - *Session 107 (08R): a descent the check had just blocked.* RYR99ZZ's descent was blocked for coming within 2.8 NM and 960 ft of EZY48PQ, released from TIMBA below it; it was cleared down 20 seconds later and they met at 2.4 NM and 885 ft. As in the 23 November test, the check took the lower aircraft to come down at the typical rate.
 - *The go-arounds in sessions 20, 102 and 113.* In 20 and 113 the aircraft was turned onto the final approach line late and high (at 11.5 and 8.3 NM, the glide path caught from above, in 113 after its descent had been blocked for traffic) and was unstable at 1,000 ft. In 102 the aircraft, cleared for the approach, took nearly five minutes to catch the localiser, only 2.2 NM out, and passed the threshold without landing.
 
-The first of these to try on the training hours is the safety check flying holding aircraft round their racetracks (session 99, and session 17 of the training hours); it is being flown on the 48 training sessions now (`train48_sim5_holds`).
+The first of these to try on the training hours is the safety check flying holding aircraft round their racetracks (session 99, and session 17 of the training hours), [below](#the-safety-check-flying-holding-aircraft-round-their-racetracks-27-november).
 
 **What it says.** On hours none of its settings were chosen on, the look-ahead is now level with the real controllers on time overall and on losses of separation, both within chance, with fewer go-arounds than they had. What is left is the easterly runway, 08R, where it is still 2 minutes per arrival slower than them and had 3 of its 5 losses, and the quiet hours. The world it was tested in is closer to the real one than before, but it is still a simulator: the crews, the other traffic and what the controllers would have done are modelled, not real. The fourth live hour, on 27 November from 14:12 UTC on runway 08R, is being flown now ([below](#the-fourth-live-hour-27-november)).
 
@@ -1309,6 +1309,19 @@ On 08R, the 70 arrivals the planner held and the real controllers didn't account
 **What was tried** (the planner alone, the same 48 sessions; minutes per arrival on 08R, against 21.42 now): straight in from further off the final line (21.54); judging a crew brought straight in by the rate it is seen descending at, rather than at most 1,100 ft/min (21.42; with the wider reach, 21.43); releasing from the stacks by whichever aircraft could land soonest, or skipping one that can't go (22.76 and 22.75); a shortest final of 10, 9.5 or 9 NM rather than 11 (21.48 each); expedited descents planned on a quicker crew (21.05, with 39 go-arounds against 29); and the 08R RMA widened by the cells real arrivals use below 7,000 ft (21.42, as its downwind points must still be 1 NM inside it). None closed the gap; none is merged. A crew handed over coming down fast is not much help: in the simulator, as in the real tracks, its rate fades to the usual one within a minute or two, so a path straight in from the south-west is too short to lose the height.
 
 **What it would take.** Bringing arrivals from the west towards the downwind directly, as real controllers do, means vectoring through airspace outside the RMA as the sector file draws it, which the AI's safety check never allows. Whether the drawing is the real limit on easterlies, or real controllers have more room there (by agreement with the neighbouring sectors), is a question for someone who knows Gatwick's procedures. Until then the strict RMA stays, and the gap on 08R with it.
+
+### The safety check flying holding aircraft round their racetracks (27 November)
+
+In the safety check's look-ahead (the response model) a holding aircraft stayed where it was, though a hold reaches up to about 8 NM from its fix. With the option `--check model+holds` (branch `holders-fly`; `ResponseModel(holders="fly")`) each holding aircraft near a published hold flies it as the simulated pilots do: in to the fix, a turn the published way, a one-minute leg out (a minute and a half above FL140), a turn back. Its leg is told from its heading and its distance from the fix. One given a heading flies that heading. The same 48 training sessions as `train48_sim5_ga` ([`runs/lookahead/train48_sim5_holds.json`](../runs/lookahead/train48_sim5_holds.json)):
+
+| | Minutes per arrival (08R / 26L) | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, holders flying their racetracks | 18.35 (20.67 / 17.62) | 753 | 2 | 3 | 0 |
+| Look-ahead, as `train48_sim5_ga` | 18.29 (20.44 / 17.61) | 753 | 2 | 3 | 1 |
+| Competitor, holders flying their racetracks | 19.0 (21.1 / 18.4) | 751 | 81 (12 at the stacks) | 30 | 57 |
+| Competitor, as `train48_sim5_ga` | 19.0 (21.2 / 18.3) | 751 | 81 (15 at the stacks) | 29 | 59 |
+
+**The same losses of separation, so not merged.** With the look-ahead, the same 2 losses and 3 go-arounds, and session 9's close landing gap gone; 0.07 minutes per arrival slower, within chance (the 95% range is 0.15), the most on 08R. With the planner alone, 3 fewer losses at the stacks but the same 81 in all. On these sessions the look-ahead's copies, which fly the holds, already catch most of what the check now sees. It stays on its branch, for when the stacks are busier.
 
 ### Session 28, and the planner's losses away from the stacks (21 November)
 
