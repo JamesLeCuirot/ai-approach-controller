@@ -379,3 +379,69 @@ def test_overshoot_rejoin_turns_an_aircraft_through_the_localiser_back_onto_it_f
                     "instruction": Instruction("OVER", "heading", back), "reason": "test"})
         out = said(c, v, t=110.0)
         assert p.resequenced and "cancel_approach" in out, rwy
+
+
+def _fd_view(ap, runway, along, lateral, hdg, alt=5000.0, cas=220.0):
+    from types import SimpleNamespace
+
+    x, y = ap.centreline_point(runway, along, lateral)
+    return SimpleNamespace(cs="FD1", actype="A320", x=x, y=y, alt_ft=alt, vs_fpm=0.0, gs_kt=cas * 1.08,
+                           tas_kt=cas * 1.08, cas_kt=cas, hdg=hdg, trk=hdg, wind_e_kt=0.0, wind_n_kt=0.0, along=along,
+                           lateral=lateral, target_alt=alt, target_spd=cas, expedite=False, loc=False)
+
+
+def test_downwind_fresh_shortens_a_lengthened_downwind_again():
+    """With downwind="fresh" a downwind lengthened earlier is shortened again once nothing asks for it: to the final
+    it would have if it turned base now (an aircraft flying out along the downwind), never below what the look-ahead
+    asked for; "kept" (as before) never shortens it."""
+    import pytest
+
+    from approach.airports import egkk
+    from approach.controllers.rules import D_JOIN_FIXED_NM, Plan, RulesController
+
+    ap = egkk.load()
+    out = (ap.runways["26L"].course_true + 180.0) % 360.0
+    kw = dict(fixed_paths=True, speeds="slot", wind_aware=True, stretch=True, release="eager", descent="plan",
+              height_by="time")
+    kept, fresh = RulesController(ap, "26L", **kw), RulesController(ap, "26L", downwind="fresh", **kw)
+    v = _fd_view(ap, "26L", 15.0, 6.0 * fresh.south, out)  # flying out along the downwind, past the 11 NM turn point
+    p = Plan("FD1", "A320", 0.0, fresh.south, stage="downwind", d_join=14.5)
+    now = fresh.final_if_turned_now(v, p)
+    assert D_JOIN_FIXED_NM < now < 14.5
+    assert kept._stretched_join(0.0, v, p, None, None) == 14.5
+    assert fresh._stretched_join(0.0, v, p, None, None) == pytest.approx(now)
+    p.min_join = 14.0
+    assert fresh._stretched_join(0.0, v, p, None, None) == 14.0
+    p.min_join = 0.0
+    inbound = _fd_view(ap, "26L", 20.0, 12.0 * fresh.south, (out + 150.0) % 360.0)  # on its way to the turn point
+    assert fresh._stretched_join(0.0, inbound, p, None, None) == D_JOIN_FIXED_NM
+    with pytest.raises(ValueError):
+        RulesController(ap, "26L", downwind="short", **kw)
+
+
+def test_eta_speeds_counts_the_first_turn_and_the_room_to_slow_down():
+    """With eta="speeds" an aircraft pointing away from its turn point is over a minute later than one at the same
+    place pointing at it (the straight-line estimate gives both the same), and flying the slowest speed of each
+    stage's band takes longer than the standard speeds: the room speed has to take a delay."""
+    import pytest
+
+    from approach.airports import egkk
+    from approach.controllers.rules import Plan, RulesController, bearing_xy
+
+    ap = egkk.load()
+    kw = dict(fixed_paths=True, speeds="slot", wind_aware=True, stretch=True, release="eager", descent="plan",
+              height_by="time")
+    legs, spd = RulesController(ap, "08R", **kw), RulesController(ap, "08R", eta="speeds", **kw)
+    p = Plan("FD1", "A320", 0.0, spd.south, stage="downwind")
+    here = _fd_view(ap, "08R", 0.0, 10.0 * spd.south, 0.0)
+    to_d = bearing_xy(here.x, here.y, *spd._points(p)["D"])
+    at_it = _fd_view(ap, "08R", 0.0, 10.0 * spd.south, to_d)
+    away = _fd_view(ap, "08R", 0.0, 10.0 * spd.south, (to_d + 180.0) % 360.0)
+    assert legs._eta(away, p) == pytest.approx(legs._eta(at_it, p))
+    assert spd._eta(away, p) - spd._eta(at_it, p) > 60.0
+    assert 40.0 < spd._eta_speeds(at_it, p, slowest=True) - spd._eta_speeds(at_it, p) < 150.0
+    assert abs(spd._eta(at_it, p) - legs._eta(at_it, p)) < 60.0
+    with pytest.raises(ValueError):
+        RulesController(ap, "08R", eta="fast", **kw)
+    with pytest.raises(ValueError):
+        RulesController(ap, "08R", release_share=0.8, **kw)

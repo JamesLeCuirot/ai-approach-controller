@@ -199,7 +199,8 @@ class RulesController(Controller):
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
                  final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False,
                  overshoot: str = "round", expedite_rate: str = "p50", downwind: str = "kept",
-                 absorb_s: float | None = None, eta: str = "legs", release_absorb_s: float | None = None):
+                 absorb_s: float | None = None, eta: str = "legs", release_absorb_s: float | None = None,
+                 release_share: float | None = None):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -476,6 +477,9 @@ class RulesController(Controller):
             raise ValueError(f"eta must be legs or speeds, not {eta!r}")
         self.eta = eta
         self.release_absorb_s = SPEED_ABSORB_S if release_absorb_s is None else float(release_absorb_s)
+        if release_share is not None and eta != "speeds":
+            raise ValueError("release_share needs eta=\"speeds\"")
+        self.release_share = release_share
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -605,15 +609,20 @@ class RulesController(Controller):
         delta = math.radians(abs(heading_difference(to_hdg, v.hdg)))
         return radius * (delta - math.sin(delta))
 
-    def _eta_speeds(self, v, p: Plan, d_join: float | None = None) -> float:
-        """eta="speeds": seconds from now to touchdown on the planned path, at the speeds the aircraft will fly."""
+    def _eta_speeds(self, v, p: Plan, d_join: float | None = None, slowest: bool = False) -> float:
+        """eta="speeds": seconds from now to touchdown on the planned path, at the speeds the aircraft will fly
+        (``slowest``: at the slowest speed of each stage's band instead of its standard one)."""
         q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
         pts = self._points(q)
         icpt = self._intercept_heading(q)
         base_hdg = bearing_xy(*pts["D"], *pts["B"])
         course = self.runway.course_true
-        given = float(speed.STANDARD_KT.get(q.stage, 220))  # the standard speed of its stage
-        on_final = float(speed.STANDARD_KT["cleared"])
+        kt = ({k: float(lo) for k, (lo, _) in speed.BANDS_KT.items()} if slowest
+              else {k: float(x) for k, x in speed.STANDARD_KT.items()})
+        given = kt.get(q.stage, kt["downwind"])  # the standard speed of its stage
+        if q.stage == "inbound":
+            given = kt["downwind"]  # on the way from where it is to the turn point: as on a downwind
+        on_final = kt["cleared"]
         legs = []  # (distance, indicated airspeed, height for the true airspeed, track)
         if q.stage in ("downwind", "inbound"):
             to_d = bearing_xy(v.x, v.y, *pts["D"])
@@ -621,7 +630,7 @@ class RulesController(Controller):
             legs += [(distance_xy(v.x, v.y, *pts["D"]) - self._corner_saving(to_d, base_hdg, max(v.tas_kt, 200.0))
                       + self._first_turn_nm(v, to_d), given, (v.alt_ft + low) / 2.0, to_d),
                      (distance_xy(*pts["D"], *pts["B"]) - self._corner_saving(base_hdg, icpt, GS_BASE),
-                      float(speed.STANDARD_KT["base"]), min(v.alt_ft, ETA_BASE_FT), base_hdg)]
+                      kt["base"], min(v.alt_ft, ETA_BASE_FT), base_hdg)]
         elif q.stage == "base":
             to_b = bearing_xy(v.x, v.y, *pts["B"])
             legs.append((distance_xy(v.x, v.y, *pts["B"]) - self._corner_saving(to_b, icpt, GS_BASE)
@@ -996,8 +1005,12 @@ class RulesController(Controller):
                 if self.fixed_paths:
                     probe.d_join = D_JOIN_FIXED_NM
                     reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
+                    absorb = self.release_absorb_s
+                    if self.release_share is not None:  # this share of what slowing down on its own path can take
+                        absorb = self.release_share * (self._eta_speeds(v, probe, reach, slowest=True)
+                                                       - self._eta_speeds(v, probe, reach))
                     can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v, waiting_ahead == 0)
-                              and t + self._eta(v, probe, reach) + self.release_absorb_s >= need)
+                              and t + self._eta(v, probe, reach) + absorb >= need)
                     height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
                     can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, waiting_ahead == 0)
