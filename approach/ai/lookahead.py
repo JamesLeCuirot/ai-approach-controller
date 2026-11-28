@@ -217,6 +217,7 @@ class LookAheadController(VectorController):
         if p is None or p.stage != "downwind" or p.d_join + nm > self.rules.max_join(p.side) + 1e-6:
             return False
         p.d_join += nm  # the planner never shortens a downwind, so this holds
+        p.min_join = p.d_join  # ... and with downwind="fresh", not below this
         self.rules.last_plan_t = -1e9
         return True
 

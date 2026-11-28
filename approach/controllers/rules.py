@@ -79,6 +79,14 @@ FINAL_ROOM_MARGIN_NM = 0.5
 INTERCEPT_DEG = 30.0
 INTERCEPT_LEG_NM = 3.0
 DOWNWIND_OFFSET_NM = 6.0
+# eta="speeds": the time to touchdown follows the indicated airspeeds the aircraft will fly from the speed it has now
+# (the standard speed of each stage, 160 kt from 7 NM and its approach speed from 5 NM), each reached at a typical
+# pilot's rate of slowing down or speeding up (real arrivals: 0.64 kt/s slowing level, 0.47 descending; 0.40
+# speeding up), as true airspeeds at the heights of the path. The standard speeds, not the one it has been given:
+# the speed given is chosen from this estimate, so an estimate that followed it would chase its own tail.
+ETA_SLOW_KT_S, ETA_FASTER_KT_S = 0.5, 0.4
+ETA_BASE_FT, ETA_FINAL_FT = 3500.0, (2800.0, 2000.0, 900.0)  # typical heights on base and on the three parts of final
+DOWNWIND_OUT_DEG = 60.0  # downwind="fresh": an aircraft heading within this of the outbound course is on its downwind
 # Spacing between landings. Gatwick's guide uses 6 NM to leave room for one departure between arrivals, or 8 NM
 # for two. With no departures in the simulator yet, arrivals are spaced to the radar minimum (or the wake minimum if
 # larger), plus a margin because the timing is not exact.
@@ -176,6 +184,7 @@ class Plan:
     resequenced: bool = False  # brought round again after missing the localiser, until it is established
     rejoin_side: float = 0.0  # overshoot="rejoin": turned back onto the localiser from this side (0: not)
     rejoin_blocked: bool = False  # ... and the turn back was blocked by the safety check
+    min_join: float = 0.0  # downwind="fresh": the shortest final the look-ahead has asked for (extend_downwind)
 
 
 class RulesController(Controller):
@@ -189,7 +198,8 @@ class RulesController(Controller):
                  free_speed: str = "standard", release_where: str = "rma", expedite: bool = False,
                  straight_in: bool = False, released_order: bool = False, slow_room: bool = False,
                  final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False,
-                 overshoot: str = "round", expedite_rate: str = "p50"):
+                 overshoot: str = "round", expedite_rate: str = "p50", downwind: str = "kept",
+                 absorb_s: float | None = None, eta: str = "legs", release_absorb_s: float | None = None):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -357,6 +367,16 @@ class RulesController(Controller):
         against 4, 17.8 minutes per arrival against 18.5 (train48_sim5_p75). "p50" in every result before 25 Nov
         2026.
 
+        ``downwind`` (with stretch): "kept" (every result before 28 Nov 2026), a downwind once lengthened is never
+        shortened again, so the base turn point is always ahead; "fresh", its length is decided afresh at each
+        look, shorter again once its slot allows (never shorter than turning base now would give, nor than the
+        look-ahead has asked for). On the 37 training sessions landing on 26L (the planner alone), aircraft whose
+        downwind had been lengthened turned base with a median 31 seconds more to spare than their slot asked for
+        (a quarter over two minutes): the aircraft ahead lands a median half a minute sooner than first estimated,
+        and a final lengthened to lose height early on stays long after the height has gone. ``absorb_s`` is how
+        much of an aircraft's delay speed is left to take before its downwind is lengthened (SPEED_ABSORB_S, 90 s,
+        unless given).
+
         ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
         already released, rather than in the order of the landing times first estimated for each (``key``). Without
         it, an aircraft that held while one with a later first estimate was released from the other stack is put
@@ -448,6 +468,14 @@ class RulesController(Controller):
         if expedite_rate not in ("p50", "p75"):
             raise ValueError(f"expedite_rate must be p50 or p75, not {expedite_rate!r}")
         self.expedite_rate = expedite_rate
+        if downwind not in ("kept", "fresh"):
+            raise ValueError(f"downwind must be kept or fresh, not {downwind!r}")
+        self.downwind = downwind
+        self.absorb_s = SPEED_ABSORB_S if absorb_s is None else float(absorb_s)
+        if eta not in ("legs", "speeds"):
+            raise ValueError(f"eta must be legs or speeds, not {eta!r}")
+        self.eta = eta
+        self.release_absorb_s = SPEED_ABSORB_S if release_absorb_s is None else float(release_absorb_s)
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -566,8 +594,76 @@ class RulesController(Controller):
         """Ground speed on final, for turning a gap in miles into a gap in time."""
         return self._gs(v, 150.0, self.runway.course_true)
 
+    @staticmethod
+    def _first_turn_nm(v, to_hdg: float) -> float:
+        """eta="speeds": the miles lost turning from the aircraft's heading onto the way it is to go: the arc flown
+        less the progress it makes, r (d - sin d). Nothing for a small turn; about 5 NM (over a minute) for an
+        aircraft in a hold pointing the other way, which the straight-line distance leaves out: an aircraft released
+        from WILLO as it flew away from the turn point was taken to be 39 s early, slowed down, and a minute later
+        found to be 26 s late (training session 4, 08R)."""
+        radius = 1.97 * (max(v.tas_kt, 120.0) / 247.0) ** 2
+        delta = math.radians(abs(heading_difference(to_hdg, v.hdg)))
+        return radius * (delta - math.sin(delta))
+
+    def _eta_speeds(self, v, p: Plan, d_join: float | None = None) -> float:
+        """eta="speeds": seconds from now to touchdown on the planned path, at the speeds the aircraft will fly."""
+        q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
+        pts = self._points(q)
+        icpt = self._intercept_heading(q)
+        base_hdg = bearing_xy(*pts["D"], *pts["B"])
+        course = self.runway.course_true
+        given = float(speed.STANDARD_KT.get(q.stage, 220))  # the standard speed of its stage
+        on_final = float(speed.STANDARD_KT["cleared"])
+        legs = []  # (distance, indicated airspeed, height for the true airspeed, track)
+        if q.stage in ("downwind", "inbound"):
+            to_d = bearing_xy(v.x, v.y, *pts["D"])
+            low = min(v.alt_ft, 4000.0)
+            legs += [(distance_xy(v.x, v.y, *pts["D"]) - self._corner_saving(to_d, base_hdg, max(v.tas_kt, 200.0))
+                      + self._first_turn_nm(v, to_d), given, (v.alt_ft + low) / 2.0, to_d),
+                     (distance_xy(*pts["D"], *pts["B"]) - self._corner_saving(base_hdg, icpt, GS_BASE),
+                      float(speed.STANDARD_KT["base"]), min(v.alt_ft, ETA_BASE_FT), base_hdg)]
+        elif q.stage == "base":
+            to_b = bearing_xy(v.x, v.y, *pts["B"])
+            legs.append((distance_xy(v.x, v.y, *pts["B"]) - self._corner_saving(to_b, icpt, GS_BASE)
+                         + self._first_turn_nm(v, to_b), given, min(v.alt_ft, ETA_BASE_FT), to_b))
+        if q.stage in ("downwind", "base", "inbound"):
+            legs.append((INTERCEPT_LEG_NM, on_final, min(v.alt_ft, float(JOIN_ALT_FT) + 300.0), icpt))
+            final = q.d_join
+        elif q.rejoin_side and not getattr(v, "loc", True):  # turned back onto the localiser from the far side
+            leg, final = self._rejoin_legs(v)
+            on_final = given
+            legs.append((leg, given, min(v.alt_ft, ETA_BASE_FT), (course - q.rejoin_side * INTERCEPT_DEG) % 360))
+        else:
+            final, on_final = max(v.along, 0.0), given
+        free = speed.FINAL_FREE_NM
+        legs += [(max(final - free, 0.0), on_final, min(v.alt_ft, ETA_FINAL_FT[0]), course),
+                 (min(max(final - 5.0, 0.0), free - 5.0), 160.0, min(v.alt_ft, ETA_FINAL_FT[1]), course),
+                 (min(final, 5.0), float(wake.approach_speed(q.actype)), min(v.alt_ft, ETA_FINAL_FT[2]), course)]
+        t, cas = 0.0, float(v.cas_kt)
+        for dist, target, alt, trk in legs:
+            if dist <= 0:
+                continue
+            k = (max(1.0 - 6.8756e-6 * alt, 0.2)) ** -2.12795  # true over indicated airspeed at that height
+            g1 = self._gs(v, target * k, trk)
+            if abs(cas - target) < 1.0:
+                t, cas = t + dist / g1 * 3600.0, target
+                continue
+            g0 = self._gs(v, cas * k, trk)
+            change_s = abs(cas - target) / (ETA_SLOW_KT_S if target < cas else ETA_FASTER_KT_S)
+            if (g0 + g1) / 2.0 * change_s / 3600.0 >= dist:  # still changing speed at the end of the leg
+                a = (g1 - g0) / change_s
+                took = (dist * 3600.0 / g0 if abs(a) < 1e-9
+                        else (-g0 + math.sqrt(max(g0 * g0 + 2.0 * a * dist * 3600.0, 0.0))) / a)
+                t, cas = t + took, cas + (target - cas) * took / change_s
+            else:
+                t += change_s + (dist - (g0 + g1) / 2.0 * change_s / 3600.0) / g1 * 3600.0
+                cas = target
+        return t
+
     def _eta(self, v, p: Plan, d_join: float | None = None) -> float:
         """Seconds from now to touchdown on the planned path."""
+        if self.eta == "speeds":
+            return self._eta_speeds(v, p, d_join)
         q = Plan(**{**vars(p), "d_join": d_join if d_join is not None else p.d_join})
         pts = self._points(q)
         legs = []  # (distance, airspeed, track)
@@ -901,7 +997,7 @@ class RulesController(Controller):
                     probe.d_join = D_JOIN_FIXED_NM
                     reach = longest if (self.stretch and self.release == "eager") else D_JOIN_FIXED_NM
                     can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v, waiting_ahead == 0)
-                              and t + self._eta(v, probe, reach) + SPEED_ABSORB_S >= need)
+                              and t + self._eta(v, probe, reach) + self.release_absorb_s >= need)
                     height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
                     can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, waiting_ahead == 0)
@@ -1054,11 +1150,14 @@ class RulesController(Controller):
     def _stretched_join(self, t: float, v, p: Plan, prev_t: float | None, prev_type: str | None) -> float:
         """The final length for an aircraft on the downwind: the fixed one, or longer if it has more delay to lose
         than speed alone can absorb. Never shorter than already planned, so the base turn point is always ahead."""
-        d = max(p.d_join, D_JOIN_FIXED_NM)
+        if self.downwind == "fresh":  # decided afresh at each look: shorter again once the slot allows it
+            d = max(D_JOIN_FIXED_NM, p.min_join, min(p.d_join, self._shortest_join_now(v, p)))
+        else:
+            d = max(p.d_join, D_JOIN_FIXED_NM)
         if prev_t is None:
             return d
         gap_nm = max(TARGET_SPACING_NM, wake.separation_nm(prev_type, p.actype)) + self._margin()
-        want = prev_t + gap_nm / self._final_gs(v) * 3600.0 - SPEED_ABSORB_S  # speed takes the rest
+        want = prev_t + gap_nm / self._final_gs(v) * 3600.0 - self.absorb_s  # speed takes the rest
         if t + self._eta(v, p, d) >= want:
             return d
         lo, hi = d, max(d, self.max_join(p.side))
@@ -1071,6 +1170,15 @@ class RulesController(Controller):
             else:
                 hi = mid
         return hi
+
+    def _shortest_join_now(self, v, p: Plan) -> float:
+        """downwind="fresh": the shortest final still open to an aircraft on the downwind: the one it would have if it
+        turned base now, once it is flying out along the downwind (within DOWNWIND_OUT_DEG of the outbound course);
+        before that, on its way to the turn point from elsewhere, the fixed one."""
+        outbound = (self.runway.course_true + 180.0) % 360.0
+        if abs(heading_difference(v.hdg, outbound)) > DOWNWIND_OUT_DEG:
+            return D_JOIN_FIXED_NM
+        return self.final_if_turned_now(v, p)
 
     # ---- instructions ----------------------------------------------------------
     def _say(self, p: Plan, kind: str, value) -> None:
@@ -1451,7 +1559,7 @@ class RulesController(Controller):
     def _resequence(self, t: float, p: Plan, why: str) -> None:
         p.stage, p.key, p.hdg_cmd, p.alt_cmd = "downwind", t + 300.0, None, None
         p.resequenced = True
-        p.rejoin_side, p.rejoin_blocked = 0.0, False
+        p.rejoin_side, p.rejoin_blocked, p.min_join = 0.0, False, 0.0
         if p.straight:  # round again on the usual downwind
             p.straight, p.side = False, self.south
         self.last_plan_t = -1e9
