@@ -1310,6 +1310,21 @@ On 08R, the 70 arrivals the planner held and the real controllers didn't account
 
 **What it would take.** Bringing arrivals from the west towards the downwind directly, as real controllers do, means vectoring through airspace outside the RMA as the sector file draws it, which the AI's safety check never allows. Whether the drawing is the real limit on easterlies, or real controllers have more room there (by agreement with the neighbouring sectors), is a question for someone who knows Gatwick's procedures. Until then the strict RMA stays, and the gap on 08R with it.
 
+### Where the minutes go on 26L (28 November)
+
+The planner alone on the 37 training sessions landing on 26L, each arrival against its real crew, both measured to the point where it is established on the localiser (within 0.3 NM of the centreline and 10 degrees of the course), for the arrivals neither held:
+
+| Handed over | Arrivals | Minutes (AI / real) | To established | On final | Established, NM out | Track miles |
+| --- | --- | --- | --- | --- | --- | --- |
+| South-west | 167 | 18.8 / 16.9 | 13.3 / 12.7 | 5.6 / 4.2 | 12.6 / 9.9 | 71 / 67 |
+| South-east | 108 | 15.8 / 14.1 | 9.3 / 9.9 | 6.5 / 4.2 | 14.2 / 9.9 | 50 / 48 |
+| East | 90 | 14.5 / 14.2 | 8.2 / 9.1 | 6.3 / 5.1 | 14.1 / 12.8 | 45 / 47 |
+| North-west | 55 | 20.9 / 21.2 | 14.6 / 17.0 | 6.3 / 4.2 | 11.1 / 9.8 | 80 / 84 |
+
+**The AI reaches the final as soon as the real controllers do, but further out.** Its speeds and track miles up to the final are much the same; the extra time is the extra 3 to 4 NM of final, flown at final approach speed. It is the slot that sets that: on 73% of the aircraft flown by a downwind, the planner stretched the downwind beyond the shortest final (11 NM) to land behind the aircraft ahead, to a median 13.5 NM; their height asked for a longer final than the slot in 2%. A shortest final of 9.5 NM changed nothing (the slot sets the join, not the minimum). The landings themselves are no further apart than the real ones (a median 158 seconds against 160; the AI's are under 90 seconds in 11% of gaps against 2%, as Gatwick's real arrivals leave room for departures).
+
+**The stretch is mostly a buffer.** After what each pair needed (3 NM or the wake spacing, and the half-mile margin, at 140 kt), the aircraft stretched to a 13 to 15 NM final landed with a median 58 seconds to spare, more than a minute in 49%, but 10 seconds or less in a quarter. The planner's time to touchdown is a little long, more so later on (aircraft cleared for the approach land a median 6% sooner than it estimates; downwind 2%). Correcting it by those amounts, so the aircraft behind is planned on the earlier landing, made the planner alone slower and less safe, not quicker: 19.15 to 19.42 minutes per arrival against 19.07, and up to 42 go-arounds against 29. So the spare time is mostly what the planner needs for how differently crews fly the final; real controllers close the gaps with speed on the final as each one develops, which the planner's fixed path can't. Something that closes the gap on the final as it develops (a final director's speed and turn timing against the aircraft ahead) is what would save it.
+
 ### The safety check flying holding aircraft round their racetracks (27 November)
 
 In the safety check's look-ahead (the response model) a holding aircraft stayed where it was, though a hold reaches up to about 8 NM from its fix. With the option `--check model+holds` (branch `holders-fly`; `ResponseModel(holders="fly")`) each holding aircraft near a published hold flies it as the simulated pilots do: in to the fix, a turn the published way, a one-minute leg out (a minute and a half above FL140), a turn back. Its leg is told from its heading and its distance from the fix. One given a heading flies that heading. The same 48 training sessions as `train48_sim5_ga` ([`runs/lookahead/train48_sim5_holds.json`](../runs/lookahead/train48_sim5_holds.json)):
