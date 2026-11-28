@@ -1364,6 +1364,47 @@ With the earliest place, all of the room gave 36 losses, 18 go-arounds and 17.54
 
 **What it says.** On these 48 hours the AI now takes less time per arrival than the real controllers did (17.35 minutes against 17.7), level with them on 08R (18.75 against 18.7) and quicker on 26L (16.9 against 17.3), with no losses of separation either side. Two cautions. The real controllers also left room on the runway for departures, which the simulator doesn't have, so some of their time is not the AI's to save. And these are the hours the changes were chosen on: the 120 test sessions, flown next with these settings, are the fair measure. The gap on 08R was mostly the landing order, not the airspace: whether the AI may use more room west of the airport on easterlies is still an open question, but it no longer holds anything up.
 
+### The fifth live hour (28 November)
+
+The look-ahead flew the real Gatwick arrivals of a fifth hour, 16:05 to 17:05 UTC, with the final director ([`runs/shadow/2026-11-28T1605`](../runs/shadow/2026-11-28T1605/)), starting on runway 08R. The forecast was the GFS 12Z run for 16:00. Nothing else was running, and the AI was never more than 16 seconds behind the clock. Recorded from [adsb.fi](https://adsb.fi)'s open data feed, as the third and fourth hours were (the files holding its positions stay local).
+
+**Gatwick changed runway during the hour.** The real arrivals landed on 08R until 16:38 and on 26L from 16:51. Shadow mode chooses its runway at the start and kept to 08R, so only the first six arrivals are like for like:
+
+| | AI | Real controllers |
+| --- | --- | --- |
+| Arrivals handed over in the hour | 12 | 13 |
+| Landed | 12 | 13 |
+| Losses of separation | 0 | 0 |
+| Go-arounds | 1 | 0 |
+| Minutes per arrival, the six both landed on 08R | 15.4 | 11.9 |
+| Minutes per arrival, the six the real controllers landed on 26L | 17.1 | 16.2 |
+| Minutes per arrival, all twelve | 16.26 | 14.05 |
+
+The spotter called 12 of the 13 real arrivals among the 105 aircraft that entered the handover region, and nothing that wasn't one; it gave the thirteenth, EZY32FE from the south-west, a 24% chance. The look-ahead looked 144 times, found a problem in 14 and changed the plan 6 times. No aircraft was held for more than 20 seconds.
+
+- **The route from the south-west is still the gap on 08R in a quiet hour.** The four arrivals handed over 40 NM south-west (EFW8ZT, EZY27JM, EXS55GC, TOM1WA) took the real controllers 9.3 to 10.0 minutes each: straight towards the final, down from FL130 at about 1,500 ft/min. The AI took 13.5 to 15.7: east to WILLO at 220 kt, descending at about 800 ft/min to 7,000 ft, then back west on a downwind. Those four are 18.5 of the 21.2 extra minutes on the six comparable arrivals; the two from the east and south-east took 0.4 and 2.3 minutes longer than their real crews. EFW8ZT was the first arrival of the hour with nothing ahead of it, so this is the path, not the queue: the final director took the waiting out ([above](#a-final-director-for-the-planner-28-november)), and on the busier practice hours that brought 08R level with the real controllers on average, but with nothing to wait for there is nothing for it to save. A path from the south-west straight to the base leg passes outside the RMA as the sector file draws it and needs a quicker descent ([above](#why-the-ai-is-slower-on-08r-27-november)); whether the AI may use that airspace is still the open question, and it matters again.
+- **The go-around was a planner fault.** RYR9DA, handed over 40 NM north-west with one other aircraft in the sky, was taken ahead of it in the landing order and turned off its way to WILLO 13 NM north of the final approach line, towards the end of a downwind that is south of it. It would have had to reverse there. The planner starts a big turn early, so it turned the aircraft onto base and then onto the final as it crossed the line, 13.4 NM out, still at 247 kt and 4,600 ft, with the speed and height of an aircraft still 15 track miles from its base leg. It slowed to 178 kt by 1,000 ft and went round. Re-flown offline with the planner alone, the same. Before the final director an aircraft from there waited behind the one ahead until it was south of the line; taking the earliest place in the order made the fault easy to meet. The planner's estimate of its landing was also about four minutes early: the corner it expected to cut at the downwind's end was worth 19 NM at that speed. A fix is being tested ([below](#not-turning-an-aircraft-in-where-it-would-have-to-reverse-28-november)).
+- **A runway change is something shadow mode can't yet follow.** For the last six arrivals the AI and the real controllers were landing in opposite directions, so their times say little: the AI was quicker for the two from the south-west and for TOM8101, which was really held 8 minutes at TIMBA while the runway changed, and slower for the other three.
+
+### Not turning an aircraft in where it would have to reverse (28 November)
+
+The fault behind the [fifth live hour](#the-fifth-live-hour-28-november)'s go-around: the planner turned an aircraft off its way to its stack wherever its place in the landing order came up, even where the end of its downwind lay behind it, so that it would have to reverse there.
+
+**The rule** (`release_turn=120`, branch `release-turn`). An aircraft on its way to its stack is turned towards its downwind's end only from where the turn it would then make there, onto the base leg, is no more than 120 degrees. Until then it keeps on towards its stack, and its time to touchdown is reckoned by way of the first place on that line it can be turned in from, not straight across. An aircraft already holding leaves as before: from each stack the turn is between 20 and 93 degrees. The look-ahead's own early releases keep to the same rule.
+
+**What real controllers do.** On the practice days, by where each real arrival was handed over and which side it joined the final approach from (the side it was on 3 NM of track before it was established):
+
+| Landing on | Handed over | Arrivals | Joined from the south |
+| --- | --- | --- | --- |
+| 08R | South of the line | 4,235 | 99 to 100% |
+| 08R | North-west of the airport | 489 | 83% |
+| 26L | South of the line | 9,987 | 100% |
+| 26L | North-west of the airport | 1,148 | 99% |
+
+So crossing to the south is what real controllers nearly always do, and the rule keeps the planner to it. One in six of the arrivals from the north-west landing on 08R did join from the north, on a base leg the planner doesn't have, and they were quick (13 to 14 minutes from handover against 18 to 20 round by the south). That would be a path to add, if the airspace allows it.
+
+**The live hour again, and the planner alone.** Re-flown offline with the rule and the planner alone, RYR9DA crossed to the south, was turned onto its downwind 6 NM south of the line and landed with no go-around. On the 48 training sessions the planner alone had the same 37 losses of separation, 10 go-arounds against 14 and 23 close landing gaps against 25, and took 17.65 minutes per arrival against 17.52 (08R 18.92 against 18.46, 26L 17.24 against 17.22). It changes more sessions than the live fault suggests (32 of 48): arrivals from the north-west landing on 26L were being turned in with a turn of about 140 degrees at the downwind's end, cut short the same way. The look-ahead is flying the same 48 sessions with it now (`train48_sim5_turn`); the 120 test sessions wait for that.
+
 ### The safety check flying holding aircraft round their racetracks (27 November)
 
 In the safety check's look-ahead (the response model) a holding aircraft stayed where it was, though a hold reaches up to about 8 NM from its fix. With the option `--check model+holds` (branch `holders-fly`; `ResponseModel(holders="fly")`) each holding aircraft near a published hold flies it as the simulated pilots do: in to the fix, a turn the published way, a one-minute leg out (a minute and a half above FL140), a turn back. Its leg is told from its heading and its distance from the fix. One given a heading flies that heading. The same 48 training sessions as `train48_sim5_ga` ([`runs/lookahead/train48_sim5_holds.json`](../runs/lookahead/train48_sim5_holds.json)):
