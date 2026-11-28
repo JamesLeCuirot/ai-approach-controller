@@ -381,6 +381,16 @@ class RulesController(Controller):
         much of an aircraft's delay speed is left to take before its downwind is lengthened (SPEED_ABSORB_S, 90 s,
         unless given).
 
+        ``eta``: "legs" (every result before 28 Nov 2026), the time to touchdown at one fixed speed for each leg;
+        "speeds", from the speeds the aircraft will fly (see ``_eta_speeds``). ``release_share`` (with "speeds"): an
+        aircraft leaves its stack when this share of what slowing down can take on its own path covers the wait for
+        its slot, rather than a flat ``release_absorb_s`` (90 s). ``fill``: an aircraft not yet released takes the
+        earliest place in the landing order that delays nobody (see ``_line_place``), rather than a place behind
+        every aircraft released. With all of these (downwind "fresh", absorb_s 20, eta "speeds", release_share 0.8,
+        fill) on 48 training sessions: the planner alone 37 losses of separation against 81, 14 go-arounds against
+        29 and 17.5 minutes per arrival against 19.0 (08R 18.5 against 21.2); with the look-ahead no losses against
+        2, 1 go-around against 3 and 17.35 minutes against 18.29 (train48_sim5_director).
+
         ``released_order``: an aircraft released from its stack (or on its way to it) lands behind every aircraft
         already released, rather than in the order of the landing times first estimated for each (``key``). Without
         it, an aircraft that held while one with a later first estimate was released from the other stack is put

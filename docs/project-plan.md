@@ -1325,6 +1325,45 @@ The planner alone on the 37 training sessions landing on 26L, each arrival again
 
 **The stretch is mostly a buffer.** After what each pair needed (3 NM or the wake spacing, and the half-mile margin, at 140 kt), the aircraft stretched to a 13 to 15 NM final landed with a median 58 seconds to spare, more than a minute in 49%, but 10 seconds or less in a quarter. The planner's time to touchdown is a little long, more so later on (aircraft cleared for the approach land a median 6% sooner than it estimates; downwind 2%). Correcting it by those amounts, so the aircraft behind is planned on the earlier landing, made the planner alone slower and less safe, not quicker: 19.15 to 19.42 minutes per arrival against 19.07, and up to 42 go-arounds against 29. So the spare time is mostly what the planner needs for how differently crews fly the final; real controllers close the gaps with speed on the final as each one develops, which the planner's fixed path can't. Something that closes the gap on the final as it develops (a final director's speed and turn timing against the aircraft ahead) is what would save it.
 
+### A final director for the planner (28 November)
+
+The two sections above left the gap on 08R to more airspace and the gap on 26L to a final director. Tracing the planner aircraft by aircraft on the training sessions found four faults in how it times and orders the landings. Fixing them closed both gaps, with the RMA as strict as before.
+
+**1. A downwind once lengthened was never shortened.** The planner lengthens an aircraft's downwind when it has more delay to lose than speed can take, and kept the longer final after the reason had gone: the aircraft ahead landing sooner than first estimated, or the height lost. On the 26L sessions, aircraft whose downwind had been lengthened turned base with a median 31 seconds more to spare than their slot asked for, a quarter of them over two minutes. Now (`downwind="fresh"`) the length is decided afresh at each look: shorter again once the slot allows, never shorter than turning base at once would give, nor than the look-ahead has asked for. Speed is left 20 seconds of the delay to take before the downwind is lengthened, where it was left 90 (`absorb_s`).
+
+**2. The time to touchdown was estimated at one fixed speed for each leg.** It left out the time an aircraft takes to slow down, the extra true airspeed at height, and the turn onto the first leg. On the 26L sessions an aircraft landed a median 31 seconds sooner than estimated at its base turn, and the aircraft ahead of it 28 seconds sooner than its slot. The new estimate (`eta="speeds"`) follows the speeds the aircraft will fly from the speed it has now: the standard speed of each stage, 160 kt from 7 NM and its approach speed from 5 NM, each reached at a typical pilot's rate, as true airspeeds at the heights of the path. It counts the miles lost in the first turn, about 5 NM for an aircraft in a hold pointing the other way. With it the two medians are 7 and 11 seconds. Scaling the old estimate by its measured error had made the planner worse ([above](#where-the-minutes-go-on-26l-28-november)); the error depends on the speeds flown, so the estimate has to follow them.
+
+**3. An aircraft left its stack by a flat allowance.** It was released once slowing down could take the wait for its slot, taken as 90 seconds whatever its path. On a long path slowing down takes more than that, on a short one less. Now (`release_share=0.8`) it leaves when four-fifths of what slowing down can take on its own path covers the wait.
+
+**4. Every released aircraft landed ahead of every waiting one.** An aircraft released from TIMBA is 30 NM from 08R's turn point. In training session 17 the aircraft holding at WILLO, 14 NM from it, waited behind an aircraft ten minutes from landing while the runway stood empty for four. Now (`fill=True`) a waiting aircraft takes the earliest place in the landing order that delays nobody: where it can land its gap behind the one before, and its gap and 15 seconds ahead of the one after (or no more than half of what a released aircraft still on its downwind can take by slowing down). It never goes ahead of an aircraft on base or cleared for the approach, nor of one ahead of it in its own stack. This was most of the gap on 08R, where the stacks are furthest apart in time from the turn point.
+
+**The planner alone** on the 48 training sessions (crews starting where their real crews were, go-arounds that don't come down), each change on top of the one before:
+
+| Planner | Losses of separation | Go-arounds | Gaps inside the minimum | Minutes per arrival (08R / 26L) |
+| --- | --- | --- | --- | --- |
+| As before | 81 | 29 | 59 | 19.07 (21.42 / 18.32) |
+| Downwind decided afresh, 20 s left to speed | 57 | 25 | 47 | 18.59 (21.42 / 17.69) |
+| ... and the estimate from the speeds flown | 48 | 14 | 35 | 18.52 (21.78 / 17.48) |
+| ... and leaving the stack by the aircraft's own room (all of it) | 44 | 17 | 23 | 18.38 (21.50 / 17.38) |
+| ... and the earliest place that delays nobody (four-fifths of the room) | 37 | 14 | 25 | 17.52 (18.46 / 17.22) |
+| Real controllers, the same hours | 0 | 3 | | 17.7 (18.7 / 17.3) |
+
+With the earliest place, all of the room gave 36 losses, 18 go-arounds and 17.54 minutes, and 1.2 times it 50, 23 and 17.66; the earliest place with only the new estimate gave 49, 21 and 17.84. Session 17 alone went from 23.4 minutes per arrival to 19.4, and from 4 losses to 2.
+
+**With the look-ahead**, the same 48 training sessions as `train48_sim5_ga` ([`runs/lookahead/train48_sim5_director.json`](../runs/lookahead/train48_sim5_director.json)):
+
+| | Minutes per arrival (08R / 26L) | Landed | Losses of separation | Go-arounds | Gaps inside the minimum |
+| --- | --- | --- | --- | --- | --- |
+| Look-ahead, final director | 17.35 (18.75 / 16.90) | 753 | 0 | 1 | 0 |
+| Look-ahead, as `train48_sim5_ga` | 18.29 (20.44 / 17.61) | 753 | 2 | 3 | 1 |
+| Competitor, final director | 17.5 (18.5 / 17.2) | 753 | 37 (11 at the stacks) | 14 | 25 |
+| Competitor, as `train48_sim5_ga` | 19.0 (21.2 / 18.3) | 751 | 81 (15 at the stacks) | 29 | 59 |
+| Real controllers, the same hours | 17.7 (18.7 / 17.3) | | 0 | 3 | |
+
+**Merged.** Fewer losses of separation and no worse on any count: none against 2, 1 go-around against 3 (in session 43, where there was none before), no close landing gap against 1, and no wake infringement on the runway against 1, each within chance on its own. It is 0.94 minutes per arrival quicker, beyond chance (the 95% range is 0.38): quicker in 39 sessions and slower in 4, by 0.3 at most. The options are off unless asked for, so earlier results can be repeated; shadow mode uses them from now on.
+
+**What it says.** On these 48 hours the AI now takes less time per arrival than the real controllers did (17.35 minutes against 17.7), level with them on 08R (18.75 against 18.7) and quicker on 26L (16.9 against 17.3), with no losses of separation either side. Two cautions. The real controllers also left room on the runway for departures, which the simulator doesn't have, so some of their time is not the AI's to save. And these are the hours the changes were chosen on: the 120 test sessions, flown next with these settings, are the fair measure. The gap on 08R was mostly the landing order, not the airspace: whether the AI may use more room west of the airport on easterlies is still an open question, but it no longer holds anything up.
+
 ### The safety check flying holding aircraft round their racetracks (27 November)
 
 In the safety check's look-ahead (the response model) a holding aircraft stayed where it was, though a hold reaches up to about 8 NM from its fix. With the option `--check model+holds` (branch `holders-fly`; `ResponseModel(holders="fly")`) each holding aircraft near a published hold flies it as the simulated pilots do: in to the fix, a turn the published way, a one-minute leg out (a minute and a half above FL140), a turn back. Its leg is told from its heading and its distance from the fix. One given a heading flies that heading. The same 48 training sessions as `train48_sim5_ga` ([`runs/lookahead/train48_sim5_holds.json`](../runs/lookahead/train48_sim5_holds.json)):

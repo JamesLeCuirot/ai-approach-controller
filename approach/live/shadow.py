@@ -59,9 +59,15 @@ SETTLE_MIN = 40.0  # after the last handover, how long to keep going while the a
 # From 26 November, an expedited descent not yet seen is planned on a crew quicker than three in four (expedite_rate
 # "p75"): on 48 training sessions with the look-ahead and drifting pilots, no losses of separation against 2, 3 close
 # landing gaps against 4 and 17.8 minutes per arrival against 18.5.
+# From 28 November, the final director: a downwind's length decided afresh at each look (downwind "fresh", speed left
+# 20 s of the delay), the time to touchdown from the speeds the aircraft will fly (eta "speeds"), leaving the stack by
+# the room slowing down has on the aircraft's own path (release_share 0.8), and a waiting aircraft taking the earliest
+# place in the landing order that delays nobody (fill). On 48 training sessions with the look-ahead: no losses of
+# separation against 2, 1 go-around against 3 and 17.35 minutes per arrival against 18.29.
 PLANNER = {"height_by": "time", "free_speed": "fast", "expedite": True, "straight_in": True, "released_order": True,
            "slow_room": True, "stack_check": "holders", "final_room": True, "release_where": "first_near",
-           "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin", "expedite_rate": "p75"}
+           "margin_nm": 0.5, "cancel_missed": True, "overshoot": "rejoin", "expedite_rate": "p75",
+           "downwind": "fresh", "absorb_s": 20, "eta": "speeds", "release_share": 0.8, "fill": True}
 # From 26 November, the look-ahead's copies start each crew from what has been seen of it (its rate on radar or at
 # handover, moved on as a drifting crew's would be since): on 48 training sessions, 2 losses of separation against 7
 # and 3 go-arounds against 4, with the same minutes per arrival.
