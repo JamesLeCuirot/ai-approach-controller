@@ -86,6 +86,9 @@ DOWNWIND_OFFSET_NM = 6.0
 # the speed given is chosen from this estimate, so an estimate that followed it would chase its own tail.
 ETA_SLOW_KT_S, ETA_FASTER_KT_S = 0.5, 0.4
 ETA_BASE_FT, ETA_FINAL_FT = 3500.0, (2800.0, 2000.0, 900.0)  # typical heights on base and on the three parts of final
+# fill=True: an aircraft takes a place ahead of another only with this much to spare, and may take up to this share
+# of what a released aircraft on its downwind can still lose by slowing down
+FILL_MARGIN_S, FILL_ROOM_SHARE = 15.0, 0.5
 DOWNWIND_OUT_DEG = 60.0  # downwind="fresh": an aircraft heading within this of the outbound course is on its downwind
 # Spacing between landings. Gatwick's guide uses 6 NM to leave room for one departure between arrivals, or 8 NM
 # for two. With no departures in the simulator yet, arrivals are spaced to the radar minimum (or the wake minimum if
@@ -200,7 +203,7 @@ class RulesController(Controller):
                  final_room: bool = False, margin_nm: float | None = None, cancel_missed: bool = False,
                  overshoot: str = "round", expedite_rate: str = "p50", downwind: str = "kept",
                  absorb_s: float | None = None, eta: str = "legs", release_absorb_s: float | None = None,
-                 release_share: float | None = None):
+                 release_share: float | None = None, fill: bool = False):
         """``wind_aware`` times every leg with the wind at the aircraft (from stage 1b's competitor on); off, the
         timing is for still air, as in stage 0 and stage 1a, whose results it keeps.
 
@@ -480,6 +483,7 @@ class RulesController(Controller):
         if release_share is not None and eta != "speeds":
             raise ValueError("release_share needs eta=\"speeds\"")
         self.release_share = release_share
+        self.fill = fill
         self.sequence = sequence
         self.height_by = height_by
         self.inbound_speed = inbound_speed
@@ -991,8 +995,20 @@ class RulesController(Controller):
         prev_t, prev_type = None, None
         stacks_seen: set[str] = set()
         waiting_ahead = 0  # aircraft on their way in or holding, not released in this replan, ahead of this one
+        line: list[list] = []  # fill: the landing order laid out so far, each [time, type, plan, released, room]
+        placed = None  # fill: the aircraft just dealt with and its place, added to the line before the next
         for p in order:
             v = views[p.cs]
+            nobody_waiting = waiting_ahead == 0
+            if self.fill:
+                if placed is not None:
+                    self._line_add(line, views, *placed)
+                place = len(line)
+                if p.stage == "inbound":  # the earliest place it can take without delaying anyone
+                    place = self._line_place(line, t, views, p)
+                    prev_t, prev_type = (line[place - 1][0], line[place - 1][1]) if place else (None, None)
+                    nobody_waiting = all(e[3] for e in line[:place])
+                placed = (p, place)
             if p.stage == "inbound":
                 # Off the hold only when inside the RMA and the slot can be made with a downwind inside it.
                 side = self._side(v)
@@ -1009,11 +1025,11 @@ class RulesController(Controller):
                     if self.release_share is not None:  # this share of what slowing down on its own path can take
                         absorb = self.release_share * (self._eta_speeds(v, probe, reach, slowest=True)
                                                        - self._eta_speeds(v, probe, reach))
-                    can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v, waiting_ahead == 0)
+                    can_go = (longest >= D_JOIN_FIXED_NM and self._may_release_at(v, nobody_waiting)
                               and t + self._eta(v, probe, reach) + absorb >= need)
                     height_reach = longest if self.stretch else D_JOIN_FIXED_NM
                 else:
-                    can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, waiting_ahead == 0)
+                    can_go = (longest >= D_JOIN_MIN_NM and self._may_release_at(v, nobody_waiting)
                               and t + self._eta(v, probe, longest) >= need)
                     height_reach = longest
                 if (can_go and self.release_where == "first" and not self._inside(v.x, v.y)
@@ -1039,6 +1055,12 @@ class RulesController(Controller):
                 if can_go:
                     if self.released_order:
                         self.behind_released(p, views)
+                    if self.fill:  # ahead of the released aircraft it has been placed in front of
+                        after = next((e[2] for e in line[place:] if e[3]), None)
+                        if after is not None:
+                            before = max((e[2].key for e in line[:place] if e[3] and e[2].stage == "downwind"),
+                                         default=after.key - 1.0)
+                            p.key = (min(before, after.key - 1e-3) + after.key) / 2.0
                     p.stage, p.side, p.holding = "downwind", side, False
                     p.level = level
                     p.alt_cmd = None
@@ -1183,6 +1205,53 @@ class RulesController(Controller):
             else:
                 hi = mid
         return hi
+
+    def _gap_s(self, lead_type: str, p: Plan, v) -> float:
+        """Seconds an aircraft must land behind one of that type: the spacing and the margin, at its speed on final."""
+        return ((max(TARGET_SPACING_NM, wake.separation_nm(lead_type, p.actype)) + self._margin())
+                / self._final_gs(v) * 3600.0)
+
+    def _line_place(self, line: list[list], t: float, views: dict, p: Plan) -> int:
+        """fill=True: the place in the landing order laid out so far for an aircraft not yet released: the earliest
+        where it can land the gap behind the one before it and the gap (and FILL_MARGIN_S) ahead of the one after,
+        so that nobody is delayed, or no more than a released aircraft still on its downwind can take by slowing
+        down. Never ahead of an aircraft on base or cleared for the approach, nor of one ahead of it in its own stack
+        (one already holding passes one still on its way to the stack). Otherwise last.
+
+        Without it the order is: everyone released, then the rest first come first served. An aircraft released
+        from TIMBA is 30 NM from 08R's turn point, so the aircraft holding at WILLO, 14 NM from it, waited behind an
+        aircraft ten minutes from landing while the runway stood empty for four (training session 17)."""
+        v = views[p.cs]
+        probe = Plan(**{**vars(p), "side": self._side(v), "stage": "downwind"})
+        soon = t + self._eta(v, probe, D_JOIN_FIXED_NM if self.fixed_paths else D_JOIN_MIN_NM)
+        start = 0
+        for i, (_, _, q, released, _) in enumerate(line):
+            if (released and q.stage != "downwind") or (
+                    not released and q.hold_fix == p.hold_fix and (q.holding or not p.holding)):
+                start = i + 1
+        for i in range(start, len(line)):
+            when, _, q, _, room = line[i]
+            lands = soon if i == 0 else max(line[i - 1][0] + self._gap_s(line[i - 1][1], p, v), soon)
+            if lands + self._gap_s(p.actype, q, views[q.cs]) + FILL_MARGIN_S <= when + room:
+                return i
+        return len(line)
+
+    def _line_add(self, line: list[list], views: dict, p: Plan, place: int) -> None:
+        """fill=True: put an aircraft that has been dealt with into the landing order at its place; those behind it
+        move back if it takes some of their gap."""
+        released = p.stage != "inbound"
+        room = 0.0
+        if released and p.stage == "downwind" and self.eta == "speeds" and not p.straight:
+            v = views[p.cs]
+            room = max(0.0, FILL_ROOM_SHARE * (self._eta_speeds(v, p, slowest=True) - self._eta_speeds(v, p))
+                       - (p.slot_t - p.landing_t))
+        line.insert(place, [p.slot_t if released else p.landing_t, p.actype, p, released, room])
+        for j in range(place + 1, len(line)):
+            push = line[j - 1][0] + self._gap_s(line[j - 1][1], line[j][2], views[line[j][2].cs]) - line[j][0]
+            if push <= 0:
+                break
+            line[j][0] += push
+            line[j][4] = max(0.0, line[j][4] - push)
 
     def _shortest_join_now(self, v, p: Plan) -> float:
         """downwind="fresh": the shortest final still open to an aircraft on the downwind: the one it would have if it

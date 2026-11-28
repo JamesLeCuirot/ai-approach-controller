@@ -445,3 +445,34 @@ def test_eta_speeds_counts_the_first_turn_and_the_room_to_slow_down():
         RulesController(ap, "08R", eta="fast", **kw)
     with pytest.raises(ValueError):
         RulesController(ap, "08R", release_share=0.8, **kw)
+
+
+def test_fill_gives_a_waiting_aircraft_the_earliest_place_that_delays_nobody():
+    """With fill=True an aircraft holding takes a place ahead of a released aircraft still far away on its downwind
+    when it can land the gap ahead of it; not when there isn't room, never ahead of one on base, and never ahead of
+    an aircraft holding ahead of it in its own stack."""
+    from approach.airports import egkk
+    from approach.controllers.rules import D_JOIN_FIXED_NM, Plan, RulesController
+
+    ap = egkk.load()
+    c = RulesController(ap, "08R", fixed_paths=True, speeds="slot", wind_aware=True, stretch=True, release="eager",
+                        descent="plan", height_by="time", eta="speeds", fill=True)
+    here = _fd_view(ap, "08R", 0.0, 10.0 * c.south, 270.0, alt=7000.0)
+    views = {cs: here for cs in ("FD1", "BASE", "FAR", "SAME")}
+    p = Plan("FD1", "A320", 0.0, c.south, stage="inbound", holding=True, hold_fix="WILLO")
+    soon = c._eta(here, Plan(**{**vars(p), "stage": "downwind"}), D_JOIN_FIXED_NM)
+    gap = c._gap_s("A320", p, here)
+    on_base = [soon - 2 * gap, "A320", Plan("BASE", "A320", 0.0, c.south, stage="base"), True, 0.0]
+
+    def far(when, room=0.0):
+        return [when, "A320", Plan("FAR", "A320", 0.0, c.south, stage="downwind"), True, room]
+
+    assert c._line_place([on_base, far(soon + 3 * gap)], 0.0, views, p) == 1  # into the hole ahead of the far one
+    assert c._line_place([on_base, far(soon + 0.5 * gap)], 0.0, views, p) == 2  # no room: behind it
+    assert c._line_place([on_base, far(soon + 0.5 * gap, room=gap)], 0.0, views, p) == 1  # it can slow down for it
+    assert c._line_place([far(soon + 3 * gap), on_base], 0.0, views, p) == 2  # never ahead of one on base
+    ahead = [soon + 3 * gap, "A320", Plan("SAME", "A320", 0.0, c.south, stage="inbound", holding=True,
+                                           hold_fix="WILLO"), False, 0.0]
+    assert c._line_place([on_base, ahead], 0.0, views, p) == 2  # its own stack keeps its order
+    ahead[2].holding = False  # still on its way to the stack: passed by one already holding in it
+    assert c._line_place([on_base, ahead], 0.0, views, p) == 1
